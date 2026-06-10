@@ -1,25 +1,25 @@
-//! `cli` — CLI + TUI + headless (M7/M8). See code-design §8.
+﻿//! `cli` â€” CLI + TUI + headless (M7/M8). See code-design Â§8.
 //!
 //! Commands:
-//! - `maestro run "<NL>"` — NL → Lua via planner, then execute
-//! - `maestro run /<wf>` — Run workflow.lua file
-//! - `maestro run --resume` — Resume from checkpoint
-//! - `maestro run --headless` — JSONL output mode
-//! - `maestro run --approve` — Auto-approve without prompt
-//! - `maestro status <run_id>` — Check run status
-//! - `maestro logs <run_id>` — View run logs
-//! - `maestro list` — List all runs
+//! - `maestro run "<NL>"` â€” NL â†’ Lua via planner, then execute
+//! - `maestro run /<wf>` â€” Run workflow.lua file
+//! - `maestro run --resume` â€” Resume from checkpoint
+//! - `maestro run --headless` â€” JSONL output mode
+//! - `maestro run --approve` â€” Auto-approve without prompt
+//! - `maestro status <run_id>` â€” Check run status
+//! - `maestro logs <run_id>` â€” View run logs
+//! - `maestro list` â€” List all runs
 
 use crate::core::contract::backend::RunContext;
 use crate::core::contract::event::RunStatus;
 use crate::core::contract::ids::TokenUsage;
 use crate::core::journal::JournalStore;
 use crate::core::scheduler::{BackendRegistry, Scheduler, SchedulerConfig};
-use crate::core::state::{get_run_store, list_runs, RunCheckpoint, CheckpointStatus};
+use crate::core::state::{list_runs, RunCheckpoint, CheckpointStatus};
 use crate::runtime::{ExecLimits, Runtime};
 use anyhow::Result;
 use futures::FutureExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 /// Run mode: TUI (interactive) or headless (JSONL).
@@ -116,58 +116,28 @@ impl From<&RunCheckpoint> for StatusOutput {
 }
 
 /// List all runs.
-pub fn list_runs_cmd(base_dir: &PathBuf) -> Result<Vec<StatusOutput>> {
-    let run_ids = list_runs(base_dir)?;
-    let mut outputs = Vec::new();
-
-    for run_id in run_ids {
-        if let Ok(store) = get_run_store(run_id, base_dir) {
-            if let Some(checkpoint) = store.get_checkpoint() {
-                outputs.push(StatusOutput::from(&checkpoint));
-            }
-        }
-    }
-
-    // Sort by updated_at descending
-    outputs.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
-
-    Ok(outputs)
+pub fn list_runs_cmd(base_dir: &Path) -> Result<Vec<StatusOutput>> {
+    crate::service::query::list_runs(base_dir)
 }
 
 /// Get status of a specific run.
-pub fn status_cmd(run_id: uuid::Uuid, base_dir: &PathBuf) -> Result<Option<StatusOutput>> {
-    let store = get_run_store(run_id, base_dir)?;
-    if let Some(checkpoint) = store.get_checkpoint() {
-        Ok(Some(StatusOutput::from(&checkpoint)))
-    } else {
-        Ok(None)
-    }
+pub fn status_cmd(run_id: uuid::Uuid, base_dir: &Path) -> Result<Option<StatusOutput>> {
+    crate::service::query::get_status(run_id, base_dir)
 }
 
 /// Get logs for a specific run.
-pub fn logs_cmd(run_id: uuid::Uuid, base_dir: &PathBuf, limit: Option<usize>) -> Result<Vec<String>> {
-    let store = get_run_store(run_id, base_dir)?;
-    let events = store.get_event_log()?;
-
-    let logs: Vec<String> = events
-        .into_iter()
-        .take(limit.unwrap_or(1000))
-        .map(|e| serde_json::to_string(&e).unwrap_or_default())
-        .collect();
-
-    Ok(logs)
+pub fn logs_cmd(run_id: uuid::Uuid, base_dir: &Path, limit: Option<usize>) -> Result<Vec<String>> {
+    crate::service::query::get_logs(run_id, base_dir, limit)
 }
 
 /// Get findings for a specific run.
-pub fn findings_cmd(run_id: uuid::Uuid, base_dir: &PathBuf) -> Result<Vec<crate::core::contract::finding::Finding>> {
-    let store = get_run_store(run_id, base_dir)?;
-    Ok(store.get_findings())
+pub fn findings_cmd(run_id: uuid::Uuid, base_dir: &Path) -> Result<Vec<crate::core::contract::finding::Finding>> {
+    crate::service::query::get_findings(run_id, base_dir)
 }
 
 /// Cancel a running workflow.
-pub fn cancel_cmd(run_id: uuid::Uuid, base_dir: &PathBuf) -> Result<()> {
-    let store = get_run_store(run_id, base_dir)?;
-    store.cancel()?;
+pub fn cancel_cmd(run_id: uuid::Uuid, base_dir: &Path) -> Result<()> {
+    crate::service::query::cancel_run(run_id, base_dir)?;
     println!("Run {} cancelled", run_id);
     Ok(())
 }
@@ -249,7 +219,7 @@ pub async fn run(backend: Arc<dyn crate::core::contract::backend::AgentBackend>,
     };
     scheduler.init_run_with(run_id, run_ctx.events.clone());
 
-    // Forward the scheduler event stream into the journal's run store — the
+    // Forward the scheduler event stream into the journal's run store â€” the
     // single persistence instance for this run (avoids split-brain checkpoints).
     let store = journal.store();
     let mut rx = run_ctx.events.subscribe();
@@ -314,20 +284,20 @@ fn print_progress(evt: &crate::core::contract::event::AgentEvent) {
     use crate::core::contract::event::{AgentEvent, LogLevel};
     match evt {
         AgentEvent::PhaseStarted { phase_id, label, planned, .. } => {
-            eprintln!("▶ phase {} · {} ({} planned)", phase_id, label, planned);
+            eprintln!("â–¶ phase {} Â· {} ({} planned)", phase_id, label, planned);
         }
         AgentEvent::AgentStarted { prompt_preview, .. } => {
             let preview: String = prompt_preview.chars().take(72).collect();
-            eprintln!("  ↳ agent: {}…", preview);
+            eprintln!("  â†³ agent: {}â€¦", preview);
         }
         AgentEvent::AgentDone { status, elapsed_ms, .. } => {
-            eprintln!("  ✓ agent {:?} ({} ms)", status, elapsed_ms);
+            eprintln!("  âœ“ agent {:?} ({} ms)", status, elapsed_ms);
         }
         AgentEvent::Log { level, msg, .. } => {
             let mark = match level {
-                LogLevel::Warn => "⚠",
-                LogLevel::Error => "✗",
-                _ => "·",
+                LogLevel::Warn => "âš ",
+                LogLevel::Error => "âœ—",
+                _ => "Â·",
             };
             eprintln!("  {} {}", mark, msg);
         }
@@ -346,7 +316,7 @@ async fn execute_runtime(
 
     let run_id = run_ctx.run_id;
     // mlua is not Send-safe to drive from an async worker thread, and the SDK
-    // primitives call Handle::block_on internally — both require a blocking
+    // primitives call Handle::block_on internally â€” both require a blocking
     // thread outside the async runtime.
     let result = tokio::task::spawn_blocking(move || rt.execute(&script))
         .await
