@@ -1,18 +1,17 @@
 //! 事件流轮询与过滤。
 //!
-//! 由 connection.rs 主循环中的 	okio::select! 分支调用，
+//! 由 connection.rs 主循环中的 tokio::select! 分支调用，
 //! 非阻塞地轮询所有活跃 subscription 的事件流。
 //!
 //! ## 工作机制
-//! - poll_subscriptions 遍历所有 subscription，对每个 BroadcastStream 调用 
-ext().now_or_never()
+//! - poll_subscriptions 遍历所有 subscription，对每个 BroadcastStream 调用 next().now_or_never()
 //! - 如果事件通过 passes_filter（类型白名单匹配），返回 (run_id, event) 给 connection 层转发
 //! - 如果所有 stream 暂时无数据，sleep 10ms 后返回 None（避免 busy loop）
 //! - subscription 为空时进入 pending() 永久挂起（直到新订阅加入）
 //!
 //! ## 过滤
 //! passes_filter 将 AgentEvent 的 serde tag 名与客户端指定的类型列表匹配。
-//! 例如 ilter: ["phase_started", "agent_done"] 只接收这两种事件。
+//! 例如 filter: ["phase_started", "agent_done"] 只接收这两种事件。
 use crate::core::contract::event::AgentEvent;
 use crate::core::contract::ids::RunId;
 use crate::ws::protocol::event_type_name;
@@ -196,7 +195,7 @@ mod tests {
     #[tokio::test]
     async fn poll_subscriptions_no_immediate_events() {
         let run_id = RunId::now_v7();
-        let (tx, rx) = tokio::sync::broadcast::channel(16);
+        let (_tx, rx) = tokio::sync::broadcast::channel(16);
         let mut subs = HashMap::new();
         subs.insert(run_id, Subscription {
             filter: None,

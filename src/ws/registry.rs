@@ -17,11 +17,12 @@ use tokio_util::sync::CancellationToken;
 
 /// A handle to an active run, shared between the WS layer and the background task.
 pub struct RunHandle {
-    /// Broadcast sender — same one injected into `cli::run` via `RunArgs.events_tx`.
+    /// Broadcast sender — the same one threaded into the run's `RunContext`
+    /// (via `service::run::prepare`), so subscribers receive its events.
     pub events: broadcast::Sender<AgentEvent>,
     /// Cancellation token — calling `cancel()` signals the run to stop.
     pub cancel: CancellationToken,
-    /// The background task executing `cli::run`.
+    /// The background task executing the run (`service::run::execute`).
     pub task: JoinHandle<()>,
 }
 
@@ -89,9 +90,8 @@ impl RunRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::contract::backend::AgentStatus;
     use crate::core::contract::event::AgentEvent;
-    use crate::core::contract::ids::{RunId, TokenUsage};
+    use crate::core::contract::ids::RunId;
     use chrono::Utc;
 
     fn make_handle() -> RunHandle {

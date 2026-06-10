@@ -30,8 +30,10 @@
 //! 3. 客户端确认 { type: "confirm_run", approve: true }
 //! 4. handler 从 pending_confirms 取出 script → spawn 执行
 //! 5. 超时未确认的条目由 sub::check_confirm_timeouts 定期清理
-use crate::cli;
+use crate::core::contract::backend::RunContext;
+use crate::core::contract::event::AgentEvent;
 use crate::core::contract::ids::RunId;
+use crate::service::run::RunSpec;
 use crate::ws::protocol::{ErrorCode, ServerMsg};
 use crate::ws::registry::RunHandle;
 
@@ -40,7 +42,45 @@ use super::AppState;
 
 use std::collections::HashMap;
 use std::time::Instant;
-use tokio::sync::mpsc;
+use tokio::sync::{broadcast, mpsc, OwnedSemaphorePermit};
+use tokio_util::sync::CancellationToken;
+
+/// Build a [`RunContext`] from caller-owned event/cancel handles, prepare the
+/// run via the shared service, spawn its execution, and register it in the
+/// run registry. The `events_tx` and `cancel` are stored in the [`RunHandle`]
+/// so subscribers can stream events and `cancel` can stop the run.
+///
+/// On preparation failure the `permit` is released (dropped here) and the error
+/// is returned for the caller to map onto a `ServerMsg::Error`.
+fn spawn_prepared(
+    state: &AppState,
+    spec: RunSpec,
+    events_tx: broadcast::Sender<AgentEvent>,
+    cancel: CancellationToken,
+    permit: OwnedSemaphorePermit,
+) -> anyhow::Result<()> {
+    let run_id = spec.run_id;
+    let run_ctx = RunContext {
+        run_id,
+        cancel: cancel.clone(),
+        events: events_tx.clone(),
+    };
+    let prepared =
+        crate::service::run::prepare(&spec, state.backend.clone(), &state.base_dir, &run_ctx)?;
+
+    let registry = state.registry.clone();
+    let script = spec.script;
+    let task = tokio::spawn(async move {
+        let _ = crate::service::run::execute(&run_ctx, prepared.runtime, script).await;
+        registry.remove(&run_id);
+        drop(permit);
+    });
+
+    state
+        .registry
+        .insert(run_id, RunHandle { events: events_tx, cancel, task });
+    Ok(())
+}
 
 #[allow(clippy::too_many_arguments)]
 pub async fn handle_run(
@@ -51,15 +91,20 @@ pub async fn handle_run(
     _subscriptions: &mut HashMap<RunId, Subscription>,
     pending_confirms: &mut HashMap<RunId, (String, Instant)>,
 ) {
-    use crate::service::run::{validate_source, RunInput, ValidateSourceError};
-    let input = RunInput { nl: payload.nl.clone(), workflow: payload.workflow.clone(), script: payload.script.clone() };
-    if let Err(e) = validate_source(&input) {
-        let msg = match e {
-            ValidateSourceError::NoneProvided => "exactly one of nl, workflow, or script must be provided",
-            ValidateSourceError::MultipleProvided => "exactly one of nl, workflow, or script must be provided",
-        };
+    use crate::service::run::{resolve_fresh, validate_source, RunInput, ScriptSource};
+
+    let input = RunInput {
+        nl: payload.nl.clone(),
+        workflow: payload.workflow.clone(),
+        script: payload.script.clone(),
+    };
+    if validate_source(&input).is_err() {
         let _ = out_tx
-            .send(ServerMsg::Error { req_id, code: ErrorCode::BadRequest, message: msg.to_string() })
+            .send(ServerMsg::Error {
+                req_id,
+                code: ErrorCode::BadRequest,
+                message: "exactly one of nl, workflow, or script must be provided".to_string(),
+            })
             .await;
         return;
     }
@@ -78,96 +123,62 @@ pub async fn handle_run(
         }
     };
 
-    let run_id = uuid::Uuid::now_v7();
-    let (events_tx, _events_rx) = tokio::sync::broadcast::channel(256);
-    let cancel = tokio_util::sync::CancellationToken::new();
-
-    if payload.confirm && payload.nl.is_some() {
-        let nl = payload.nl.as_ref().unwrap();
-        match crate::service::run::resolve_script(
-            crate::service::run::ScriptSource::Nl(nl),
-            state.backend.clone(),
-        ).await {
-            Ok(script) => {
-                pending_confirms.insert(run_id, (script.clone(), Instant::now()));
-                let _ = out_tx
-                    .send(ServerMsg::ScriptPreview { req_id, run_id, script })
-                    .await;
+    // NL + confirm: plan the script, stash it for confirmation, and return a
+    // preview. The run id is fixed here so `confirm_run` reuses it.
+    if payload.confirm {
+        if let Some(nl) = payload.nl.as_deref() {
+            match resolve_fresh(ScriptSource::Nl(nl), state.backend.clone()).await {
+                Ok(spec) => {
+                    pending_confirms.insert(spec.run_id, (spec.script.clone(), Instant::now()));
+                    let _ = out_tx
+                        .send(ServerMsg::ScriptPreview { req_id, run_id: spec.run_id, script: spec.script })
+                        .await;
+                }
+                Err(e) => {
+                    let _ = out_tx
+                        .send(ServerMsg::Error { req_id, code: ErrorCode::BackendError, message: format!("planning failed: {}", e) })
+                        .await;
+                }
             }
-            Err(e) => {
-                let _ = out_tx
-                    .send(ServerMsg::Error { req_id, code: ErrorCode::BackendError, message: format!("planning failed: {}", e) })
-                    .await;
-            }
+            drop(permit);
+            return;
         }
-        drop(permit);
-        return;
     }
 
-    let backend = state.backend.clone();
-    let registry = state.registry.clone();
-
-    let script_result = if let Some(ref nl) = payload.nl {
-        crate::service::run::resolve_script(
-            crate::service::run::ScriptSource::Nl(nl),
-            backend.clone(),
-        ).await
-    } else if let Some(ref path) = payload.workflow {
-        crate::service::run::resolve_script(
-            crate::service::run::ScriptSource::Workflow(path),
-            backend.clone(),
-        ).await
+    // Resolve the script source (NL → plan, workflow → read file, or passthrough).
+    let is_nl = payload.nl.is_some();
+    let source = if let Some(nl) = payload.nl.as_deref() {
+        ScriptSource::Nl(nl)
+    } else if let Some(wf) = payload.workflow.as_deref() {
+        ScriptSource::Workflow(wf)
     } else {
-        Ok(payload.script.unwrap_or_default())
+        ScriptSource::Script(payload.script.as_deref().unwrap_or_default())
     };
-    let script = match script_result {
+
+    let mut spec = match resolve_fresh(source, state.backend.clone()).await {
         Ok(s) => s,
         Err(e) => {
             drop(permit);
-            let code = if let Some(ref nl) = payload.nl {
-                ErrorCode::BackendError
-            } else {
-                ErrorCode::BadRequest
-            };
+            let code = if is_nl { ErrorCode::BackendError } else { ErrorCode::BadRequest };
             let _ = out_tx
                 .send(ServerMsg::Error { req_id, code, message: e.to_string() })
                 .await;
             return;
         }
     };
+    spec.extra_args = payload.args;
+    let run_id = spec.run_id;
 
-    let events_tx_clone = events_tx.clone();
-    let cancel_clone = cancel.clone();
-    let run_args = cli::RunArgs {
-        nl: payload.nl,
-        workflow: payload.workflow,
-        script: Some(script),
-        resume: false,
-        mode: cli::RunMode::Headless,
-        approve: true,
-        extra_args: payload.args,
-        output: None,
-        events_tx: Some(events_tx),
-    };
+    let (events_tx, _events_rx) = tokio::sync::broadcast::channel(256);
+    let cancel = tokio_util::sync::CancellationToken::new();
+    if let Err(e) = spawn_prepared(state, spec, events_tx, cancel, permit) {
+        let _ = out_tx
+            .send(ServerMsg::Error { req_id, code: ErrorCode::Internal, message: format!("failed to start run: {}", e) })
+            .await;
+        return;
+    }
 
-    let task = tokio::spawn(async move {
-        let _ = cli::run(backend, run_args).await;
-        registry.remove(&run_id);
-        drop(permit);
-    });
-
-    state.registry.insert(
-        run_id,
-        RunHandle {
-            events: events_tx_clone,
-            cancel: cancel_clone,
-            task,
-        },
-    );
-
-    let _ = out_tx
-        .send(ServerMsg::Accepted { req_id, run_id })
-        .await;
+    let _ = out_tx.send(ServerMsg::Accepted { req_id, run_id }).await;
 }
 
 pub async fn handle_confirm_run(
@@ -177,62 +188,7 @@ pub async fn handle_confirm_run(
     out_tx: &mpsc::Sender<ServerMsg>,
     pending_confirms: &mut HashMap<RunId, (String, Instant)>,
 ) {
-    if let Some((_script, _ts)) = pending_confirms.remove(&payload.run_id) {
-        if payload.approve {
-            let permit = match state.run_permits.clone().try_acquire_owned() {
-                Ok(p) => p,
-                Err(_) => {
-                    let _ = out_tx
-                        .send(ServerMsg::Error {
-                            req_id,
-                            code: ErrorCode::Capacity,
-                            message: "max concurrent runs reached".to_string(),
-                        })
-                        .await;
-                    return;
-                }
-            };
-
-            let (events_tx, _events_rx) = tokio::sync::broadcast::channel(256);
-            let cancel = tokio_util::sync::CancellationToken::new();
-            let run_id = payload.run_id;
-            let backend = state.backend.clone();
-            let registry = state.registry.clone();
-
-            let events_tx_clone = events_tx.clone();
-            let cancel_clone = cancel.clone();
-            let run_args = cli::RunArgs {
-                nl: None,
-                workflow: None,
-                script: Some(_script),
-                resume: false,
-                mode: cli::RunMode::Headless,
-                approve: true,
-                extra_args: serde_json::json!({}),
-                output: None,
-                events_tx: Some(events_tx),
-            };
-
-            let task = tokio::spawn(async move {
-                let _ = cli::run(backend, run_args).await;
-                registry.remove(&run_id);
-                drop(permit);
-            });
-
-            state.registry.insert(
-                run_id,
-                RunHandle {
-                    events: events_tx_clone,
-                    cancel: cancel_clone,
-                    task,
-                },
-            );
-
-            let _ = out_tx.send(ServerMsg::Ok { req_id }).await;
-        } else {
-            let _ = out_tx.send(ServerMsg::Ok { req_id }).await;
-        }
-    } else {
+    let Some((script, _ts)) = pending_confirms.remove(&payload.run_id) else {
         let _ = out_tx
             .send(ServerMsg::Error {
                 req_id,
@@ -243,36 +199,12 @@ pub async fn handle_confirm_run(
                 ),
             })
             .await;
-    }
-}
-
-pub async fn handle_resume(
-    req_id: String,
-    run_id: RunId,
-    state: &AppState,
-    out_tx: &mpsc::Sender<ServerMsg>,
-) {
-    if state.registry.contains(&run_id) {
-        let _ = out_tx
-            .send(ServerMsg::Error { req_id, code: ErrorCode::AlreadyRunning, message: format!("run {} is already running", run_id) })
-            .await;
         return;
-    }
+    };
 
-    match crate::service::run::check_resumable(run_id, &state.base_dir) {
-        crate::service::run::ResumeCheck::NotFound => {
-            let _ = out_tx
-                .send(ServerMsg::Error { req_id, code: ErrorCode::NotFound, message: format!("run {} not found", run_id) })
-                .await;
-            return;
-        }
-        crate::service::run::ResumeCheck::NotResumable(status) => {
-            let _ = out_tx
-                .send(ServerMsg::Error { req_id, code: ErrorCode::RunFinished, message: format!("run {} is not resumable (status: {:?})", run_id, status) })
-                .await;
-            return;
-        }
-        crate::service::run::ResumeCheck::CanResume => {}
+    if !payload.approve {
+        let _ = out_tx.send(ServerMsg::Ok { req_id }).await;
+        return;
     }
 
     let permit = match state.run_permits.clone().try_acquire_owned() {
@@ -289,43 +221,100 @@ pub async fn handle_resume(
         }
     };
 
+    // Reuse the preview's run id so client-facing ids stay stable.
+    let spec = RunSpec {
+        run_id: payload.run_id,
+        script,
+        task_label: "maestro workflow".to_string(),
+        resuming: false,
+        extra_args: serde_json::json!({}),
+    };
     let (events_tx, _events_rx) = tokio::sync::broadcast::channel(256);
     let cancel = tokio_util::sync::CancellationToken::new();
-    let backend = state.backend.clone();
-    let registry = state.registry.clone();
+    if let Err(e) = spawn_prepared(state, spec, events_tx, cancel, permit) {
+        let _ = out_tx
+            .send(ServerMsg::Error { req_id, code: ErrorCode::Internal, message: format!("failed to start run: {}", e) })
+            .await;
+        return;
+    }
 
-    let events_tx_clone = events_tx.clone();
-    let cancel_clone = cancel.clone();
-    let run_args = cli::RunArgs {
-        nl: None,
-        workflow: None,
-        script: None,
-        resume: true,
-        mode: cli::RunMode::Headless,
-        approve: true,
-        extra_args: serde_json::json!({}),
-        output: None,
-        events_tx: Some(events_tx),
+    let _ = out_tx.send(ServerMsg::Ok { req_id }).await;
+}
+
+pub async fn handle_resume(
+    req_id: String,
+    run_id: RunId,
+    state: &AppState,
+    out_tx: &mpsc::Sender<ServerMsg>,
+) {
+    use crate::service::run::{check_resumable, resolve_resume, ResumeCheck};
+
+    if state.registry.contains(&run_id) {
+        let _ = out_tx
+            .send(ServerMsg::Error { req_id, code: ErrorCode::AlreadyRunning, message: format!("run {} is already running", run_id) })
+            .await;
+        return;
+    }
+
+    match check_resumable(run_id, &state.base_dir) {
+        ResumeCheck::NotFound => {
+            let _ = out_tx
+                .send(ServerMsg::Error { req_id, code: ErrorCode::NotFound, message: format!("run {} not found", run_id) })
+                .await;
+            return;
+        }
+        ResumeCheck::NotResumable(status) => {
+            let _ = out_tx
+                .send(ServerMsg::Error { req_id, code: ErrorCode::RunFinished, message: format!("run {} is not resumable (status: {:?})", run_id, status) })
+                .await;
+            return;
+        }
+        ResumeCheck::CanResume => {}
+    }
+
+    let permit = match state.run_permits.clone().try_acquire_owned() {
+        Ok(p) => p,
+        Err(_) => {
+            let _ = out_tx
+                .send(ServerMsg::Error {
+                    req_id,
+                    code: ErrorCode::Capacity,
+                    message: "max concurrent runs reached".to_string(),
+                })
+                .await;
+            return;
+        }
     };
 
+    // Resume is fire-and-forget: the run id is already known, so we register the
+    // event/cancel handles and return `Accepted` immediately, resolving the
+    // persisted script + preparing the runtime inside the spawned task. Resume
+    // failures surface as a stalled run rather than a synchronous error.
+    let (events_tx, _events_rx) = tokio::sync::broadcast::channel(256);
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let run_ctx = RunContext {
+        run_id,
+        cancel: cancel.clone(),
+        events: events_tx.clone(),
+    };
+    let backend = state.backend.clone();
+    let base_dir = state.base_dir.clone();
+    let registry = state.registry.clone();
     let task = tokio::spawn(async move {
-        let _ = cli::run(backend, run_args).await;
+        if let Ok(spec) = resolve_resume(run_id, &base_dir) {
+            if let Ok(prepared) = crate::service::run::prepare(&spec, backend, &base_dir, &run_ctx) {
+                let _ = crate::service::run::execute(&run_ctx, prepared.runtime, spec.script).await;
+            }
+        }
         registry.remove(&run_id);
         drop(permit);
     });
 
-    state.registry.insert(
-        run_id,
-        RunHandle {
-            events: events_tx_clone,
-            cancel: cancel_clone,
-            task,
-        },
-    );
+    state
+        .registry
+        .insert(run_id, RunHandle { events: events_tx, cancel, task });
 
-    let _ = out_tx
-        .send(ServerMsg::Accepted { req_id, run_id })
-        .await;
+    let _ = out_tx.send(ServerMsg::Accepted { req_id, run_id }).await;
 }
 
 pub async fn handle_cancel(
@@ -527,7 +516,19 @@ mod tests {
     #[tokio::test]
     async fn run_with_nl_confirm_planning_success() {
         let dir = std::env::temp_dir().join("maestro_test_run_confirm_ok");
-        let state = test_state(&dir);
+        // The planner extracts a Lua script from the agent output, so the mock
+        // must return one (an empty `{}` is not a valid script).
+        let state = AppState {
+            backend: Arc::new(MockBackend::new("test", vec![MockBehavior::Success {
+                output: serde_json::json!("report({ summary = \"ok\" })"),
+                tokens: Default::default(),
+                delay: Duration::ZERO,
+            }])),
+            registry: test_state(&dir).registry,
+            base_dir: test_state(&dir).base_dir,
+            run_permits: test_state(&dir).run_permits,
+            confirm_timeout: test_state(&dir).confirm_timeout,
+        };
         let (tx, mut rx) = mpsc::channel(16);
         let mut subs = HashMap::new();
         let mut pending = HashMap::new();
@@ -551,7 +552,7 @@ mod tests {
     async fn run_with_nl_confirm_planning_failure() {
         let dir = std::env::temp_dir().join("maestro_test_run_confirm_fail");
         let error_backend = Arc::new(MockBackend::new("test", vec![MockBehavior::Fail {
-            kind: crate::core::contract::FailKind::Protocol,
+            kind: crate::core::FailKind::Protocol,
             delay: Duration::ZERO,
         }]));
         let state = AppState {
@@ -582,7 +583,7 @@ mod tests {
     async fn run_with_nl_planning_failure() {
         let dir = std::env::temp_dir().join("maestro_test_run_nl_fail");
         let error_backend = Arc::new(MockBackend::new("test", vec![MockBehavior::Fail {
-            kind: crate::core::contract::FailKind::Protocol,
+            kind: crate::core::FailKind::Protocol,
             delay: Duration::ZERO,
         }]));
         let state = AppState {

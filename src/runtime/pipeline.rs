@@ -359,6 +359,116 @@ impl PipelineExecutor {
 }
 
 // ============================================================================
+// Lua SDK Bridge
+// ============================================================================
+
+use crate::runtime::sdk::convert::{lua_value_from_json, value_to_json, JsonArg};
+use crate::runtime::sdk::SdkContext;
+use mlua::{Function, Lua, Table, Value};
+
+/// Register the `pipeline(params)` SDK function in Lua.
+///
+/// `params` carries an `items` array, a `stages` array (each a function or a
+/// `{ label, handler }` table), and an optional `max_inflight`. The handlers run
+/// inside the executor, blocking on the shared tokio runtime.
+pub(crate) fn register_pipeline_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<()> {
+    let globals = lua.globals();
+    let run_id = cx.run_id();
+    let handle = cx.handle.clone();
+    let events = cx.events();
+
+    let pipeline_fn = lua.create_function(move |lua, params: Table| {
+        let events = events.clone();
+
+        let items_raw: Vec<Value> = params.get("items").map_err(|e| {
+            mlua::Error::RuntimeError(format!("pipeline: missing 'items' array: {}", e))
+        })?;
+        let items: Vec<serde_json::Value> = items_raw
+            .into_iter()
+            .map(value_to_json)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| mlua::Error::RuntimeError(format!("pipeline: item conversion error: {}", e)))?;
+
+        if items.is_empty() {
+            let t = lua.create_table()?;
+            t.set("items", lua.create_table()?)?;
+            t.set("ok", 0)?;
+            t.set("failed", 0)?;
+            return Ok(t);
+        }
+
+        let stages_table: Table = params.get("stages").map_err(|e| {
+            mlua::Error::RuntimeError(format!("pipeline: missing 'stages' array: {}", e))
+        })?;
+
+        let mut stages = Vec::new();
+        for i in 1..=stages_table.len()? {
+            let stage_val: Value = stages_table.get(i)?;
+            let (label, handler): (String, Function) = match stage_val {
+                Value::Function(func) => (format!("stage_{}", i), func),
+                Value::Table(tbl) => (tbl.get("label")?, tbl.get("handler")?),
+                _ => {
+                    return Err(mlua::Error::RuntimeError(format!(
+                        "pipeline: stage {} must be a function or table",
+                        i
+                    )))
+                }
+            };
+            let label_c = label.clone();
+            let stage = PipelineStage::new(&label, move |data| {
+                // `JsonArg` converts against the handler's own Lua VM (not a
+                // throwaway one), so the value is valid for `handler.call`.
+                match handler.call::<Value>(JsonArg(data)) {
+                    Ok(Value::Nil) => Ok(serde_json::Value::Null),
+                    Ok(v) => value_to_json(v).map_err(|e| format!("pipeline: result conversion: {}", e)),
+                    Err(e) => Err(format!("pipeline: stage '{}' error: {}", label_c, e)),
+                }
+            });
+            stages.push(stage);
+        }
+
+        if stages.is_empty() {
+            return Err(mlua::Error::RuntimeError("pipeline: at least one stage required".into()));
+        }
+
+        let max_inflight = params.get::<i64>("max_inflight").unwrap_or(5).max(1) as usize;
+        let config = PipelineConfig { stages, max_inflight, ..Default::default() };
+
+        let executor = PipelineExecutor::new(config, Some(events), run_id);
+        let result = handle
+            .block_on(executor.execute(items))
+            .map_err(|e| mlua::Error::RuntimeError(format!("pipeline: execution error: {}", e)))?;
+
+        let t = lua.create_table()?;
+        let items_t = lua.create_table()?;
+        for (i, item) in result.items.iter().enumerate() {
+            let item_t = lua.create_table()?;
+            item_t.set("index", item.item_index as i64)?;
+            item_t.set("output", lua_value_from_json(lua, item.output.clone())?)?;
+            let stages_t = lua.create_table()?;
+            for (j, sr) in item.stage_results.iter().enumerate() {
+                let sr_t = lua.create_table()?;
+                sr_t.set("label", sr.label.as_str())?;
+                sr_t.set("status", format!("{:?}", sr.status))?;
+                sr_t.set("elapsed_ms", sr.elapsed_ms as i64)?;
+                stages_t.set(j + 1, sr_t)?;
+            }
+            item_t.set("stages", stages_t)?;
+            items_t.set(i + 1, item_t)?;
+        }
+        t.set("items", items_t)?;
+        t.set("ok", result.stats.ok as i64)?;
+        t.set("failed", result.stats.failed as i64)?;
+        t.set("total_stages", result.stats.total_stages as i64)?;
+        t.set("total_elapsed_ms", result.stats.total_elapsed_ms as i64)?;
+        Ok(t)
+    })?;
+    globals.set("pipeline", pipeline_fn)?;
+
+    Ok(())
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 

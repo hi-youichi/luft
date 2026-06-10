@@ -8,6 +8,7 @@ mod converge;
 mod error;
 mod pipeline;
 mod sandbox;
+mod sdk;
 
 pub use converge::{ConvergeConfig, ConvergeResult, RoundStats};
 pub use error::{ExecLimits, ScriptError};

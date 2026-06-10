@@ -11,21 +11,20 @@
 //! | GetLogs         | query::handle_get_logs    | 查询   |
 //! | GetFindings     | query::handle_get_findings| 查询   |
 //! | GetReport       | query::handle_get_report  | 查询   |
-//! | Run             | un::handle_run           | 运行   |
-//! | ConfirmRun      | un::handle_confirm_run   | 运行   |
-//! | Resume          | un::handle_resume        | 运行   |
-//! | Cancel          | un::handle_cancel        | 运行   |
+//! | Run             | run::handle_run           | 运行   |
+//! | ConfirmRun      | run::handle_confirm_run   | 运行   |
+//! | Resume          | run::handle_resume        | 运行   |
+//! | Cancel          | run::handle_cancel        | 运行   |
 //! | Subscribe       | sub::handle_subscribe     | 订阅   |
 //! | Unsubscribe     | sub::handle_unsubscribe   | 订阅   |
 //!
 //! 所有 handler 共享相同的签名模式:
 //! (req_id, payload, state, out_tx, ...) → ()
-//! - eq_id 用于响应关联
+//! - req_id 用于响应关联
 //! - out_tx 用于异步发送 ServerMsg 回客户端
 //! - handler 不返回值，错误通过 ServerMsg::Error 发送
 use crate::core::contract::ids::RunId;
 use crate::ws::protocol::{ClientMsg, ServerMsg};
-use crate::ws::registry::RunHandle;
 
 use super::sub;
 use super::query;

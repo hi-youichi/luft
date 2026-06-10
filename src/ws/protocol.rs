@@ -3,7 +3,7 @@
 //! All messages are UTF-8 JSON text frames (max 64 KB). Every client message
 //! carries a required `id` field; server responses correlate via `req_id`.
 
-use crate::cli::StatusOutput;
+use crate::service::query::StatusOutput;
 use crate::core::contract::event::AgentEvent;
 use crate::core::contract::finding::Finding;
 use crate::core::contract::ids::RunId;

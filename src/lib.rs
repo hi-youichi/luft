@@ -9,13 +9,13 @@
 //! - [`mcp`]       — Maestro MCP data-plane server
 //! - [`adapters`]  — AcpAdapter / OpenCode backend adapters
 //! - [`planner`]   — NL → Lua planner
-//! - [`cli`]       — CLI + TUI + headless
+//! - [`service`]   — presentation-free run/query API (shared by the CLI binary + WS)
 
 pub mod core;
 
 pub mod adapters;
-pub mod cli;
 pub mod mcp;
 pub mod planner;
 pub mod runtime;
 pub mod service;
+pub mod ws;

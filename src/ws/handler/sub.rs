@@ -11,10 +11,10 @@
 //! - check_confirm_timeouts — 定期清理超时的 pending confirm（由 connection.rs 的 ticker 调用）
 //!
 //! ## 辅助函数
-//! - esolve_run_error — 根据 run 目录是否存在，将通用错误映射为 NotFound 或 RunFinished
+//! - resolve_run_error — 根据 run 目录是否存在，将通用错误映射为 NotFound 或 RunFinished
 //!
 //! ## 订阅工作流
-//! `	ext
+//! `text
 //!  client                server
 //!    │  Subscribe ──────→  │  registry.subscribe(run_id) → Some(rx) → 创建 Subscription
 //!    │  ←─ Event ────────  │  poll_subscriptions() 轮询 → 过滤 → 转发

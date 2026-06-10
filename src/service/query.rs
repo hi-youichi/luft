@@ -1,19 +1,69 @@
 use crate::core::contract::event::AgentEvent;
 use crate::core::contract::finding::Finding;
 use crate::core::contract::ids::RunId;
-use crate::core::state::{get_run_store, list_runs as list_run_ids};
-use crate::cli::StatusOutput;
+use crate::core::state::{get_run_store, list_runs as list_run_ids, RunCheckpoint};
 use anyhow::Result;
 use std::path::Path;
+
+/// Summary view of a run's checkpoint — the query DTO shared by the CLI and the
+/// WS protocol. It lives in the query layer (not a presentation layer) so that
+/// `ws` and the binary `commands` depend downward on `service`, not the reverse.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct StatusOutput {
+    pub run_id: String,
+    pub task: String,
+    pub status: String,
+    pub current_phase: u32,
+    pub completed_phases: usize,
+    pub total_agents: usize,
+    pub completed_agents: usize,
+    pub total_tokens: u64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl From<&RunCheckpoint> for StatusOutput {
+    fn from(cp: &RunCheckpoint) -> Self {
+        let created = chrono::DateTime::from_timestamp(cp.created_at as i64, 0)
+            .map(|dt| dt.to_rfc3339())
+            .unwrap_or_default();
+        let updated = chrono::DateTime::from_timestamp(cp.updated_at as i64, 0)
+            .map(|dt| dt.to_rfc3339())
+            .unwrap_or_default();
+
+        Self {
+            run_id: cp.run_id.to_string(),
+            task: cp.task.clone(),
+            status: format!("{:?}", cp.status).to_lowercase(),
+            current_phase: cp.current_phase,
+            completed_phases: cp.completed_phases.len(),
+            total_agents: cp.agent_results.len(),
+            completed_agents: cp.agent_results.values().filter(|r| r.status == "ok").count(),
+            total_tokens: cp.total_tokens,
+            created_at: created,
+            updated_at: updated,
+        }
+    }
+}
+
+/// Fetch a run's checkpoint, guarding against unknown run ids: returns
+/// `Ok(None)` rather than letting `get_run_store` create the run directory for
+/// an id that was never started. The single existence-checked accessor shared
+/// by `list_runs` / `get_status` and the binary `status` command.
+pub fn get_checkpoint(run_id: RunId, base_dir: &Path) -> Result<Option<RunCheckpoint>> {
+    if !base_dir.join(run_id.to_string()).exists() {
+        return Ok(None);
+    }
+    let store = get_run_store(run_id, base_dir)?;
+    Ok(store.get_checkpoint())
+}
 
 pub fn list_runs(base_dir: &Path) -> Result<Vec<StatusOutput>> {
     let run_ids = list_run_ids(base_dir)?;
     let mut outputs = Vec::new();
     for rid in run_ids {
-        if let Ok(store) = get_run_store(rid, base_dir) {
-            if let Some(checkpoint) = store.get_checkpoint() {
-                outputs.push(StatusOutput::from(&checkpoint));
-            }
+        if let Ok(Some(checkpoint)) = get_checkpoint(rid, base_dir) {
+            outputs.push(StatusOutput::from(&checkpoint));
         }
     }
     outputs.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
@@ -21,18 +71,17 @@ pub fn list_runs(base_dir: &Path) -> Result<Vec<StatusOutput>> {
 }
 
 pub fn get_status(run_id: RunId, base_dir: &Path) -> Result<Option<StatusOutput>> {
+    Ok(get_checkpoint(run_id, base_dir)?.as_ref().map(StatusOutput::from))
+}
+
+/// Raw event log for a run (chronological). Callers own any slicing/formatting.
+pub fn get_events(run_id: RunId, base_dir: &Path) -> Result<Vec<AgentEvent>> {
     let store = get_run_store(run_id, base_dir)?;
-    if let Some(checkpoint) = store.get_checkpoint() {
-        Ok(Some(StatusOutput::from(&checkpoint)))
-    } else {
-        Ok(None)
-    }
+    Ok(store.get_event_log()?)
 }
 
 pub fn get_logs(run_id: RunId, base_dir: &Path, limit: Option<usize>) -> Result<Vec<String>> {
-    let store = get_run_store(run_id, base_dir)?;
-    let events = store.get_event_log()?;
-    let logs: Vec<String> = events
+    let logs: Vec<String> = get_events(run_id, base_dir)?
         .into_iter()
         .take(limit.unwrap_or(1000))
         .map(|e| serde_json::to_string(&e).unwrap_or_default())
