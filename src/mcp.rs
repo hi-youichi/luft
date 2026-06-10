@@ -70,6 +70,11 @@ impl McpStore {
         self.artifacts.read().unwrap().clone()
     }
 
+    /// Get all logs.
+    pub fn get_logs(&self) -> Vec<LogReport> {
+        self.logs.read().unwrap().clone()
+    }
+
     /// Add a log entry.
     pub fn add_log(&self, log: LogReport) {
         let mut logs = self.logs.write().unwrap();
@@ -672,5 +677,329 @@ mod tests {
         assert!(names.contains(&"report_artifacts"));
         assert!(names.contains(&"report_log"));
         assert!(names.contains(&"report_status"));
+    }
+
+    #[test]
+    fn test_mcp_store_new_creates_empty_store() {
+        let store = McpStore::new();
+        let findings = store.get_findings();
+        assert!(findings.is_empty());
+        
+        let artifacts = store.get_artifacts();
+        assert!(artifacts.is_empty());
+        
+        let logs = store.get_logs();
+        assert!(logs.is_empty());
+    }
+
+    #[test]
+    fn test_mcp_store_add_and_get_findings() {
+        let store = McpStore::new();
+        let finding1 = Finding {
+            kind: "test1".to_string(),
+            severity: Severity::Info,
+            title: "Test Finding 1".to_string(),
+            detail: "Test detail 1".to_string(),
+            location: None,
+            evidence: vec![],
+            data: serde_json::Value::Null,
+        };
+        
+        let finding2 = Finding {
+            kind: "test2".to_string(),
+            severity: Severity::High,
+            title: "Test Finding 2".to_string(),
+            detail: "Test detail 2".to_string(),
+            location: None,
+            evidence: vec![],
+            data: serde_json::Value::Null,
+        };
+
+        store.add_finding(finding1);
+        store.add_finding(finding2);
+        
+        let findings = store.get_findings();
+        assert_eq!(findings.len(), 2);
+        assert_eq!(findings[0].title, "Test Finding 1");
+        assert_eq!(findings[1].title, "Test Finding 2");
+    }
+
+    #[test]
+    fn test_mcp_store_clear_findings() {
+        let store = McpStore::new();
+        let finding = Finding {
+            kind: "test".to_string(),
+            severity: Severity::Info,
+            title: "Test Finding".to_string(),
+            detail: "Test detail".to_string(),
+            location: None,
+            evidence: vec![],
+            data: serde_json::Value::Null,
+        };
+
+        store.add_finding(finding.clone());
+        assert_eq!(store.get_findings().len(), 1);
+        
+        store.clear_findings();
+        assert!(store.get_findings().is_empty());
+    }
+
+    #[test]
+    fn test_mcp_store_add_and_get_artifacts() {
+        let store = McpStore::new();
+        let artifact = ArtifactReport {
+            key: "test_artifact".to_string(),
+            path: Some("/path/to/file.txt".to_string()),
+            inline: Some(serde_json::json!({"content": "test content"})),
+            agent_id: uuid::Uuid::now_v7(),
+            ts: 12345,
+        };
+
+        store.add_artifact(artifact);
+        let artifacts = store.get_artifacts();
+        assert_eq!(artifacts.len(), 1);
+        assert_eq!(artifacts[0].key, "test_artifact");
+        assert_eq!(artifacts[0].path, Some("/path/to/file.txt".to_string()));
+    }
+
+    #[test]
+    fn test_mcp_store_add_and_get_logs() {
+        let store = McpStore::new();
+        let log = LogReport {
+            level: "info".to_string(),
+            msg: "Test log message".to_string(),
+            agent_id: uuid::Uuid::now_v7(),
+            ts: 12345,
+        };
+
+        store.add_log(log.clone());
+        store.add_log(log);
+        
+        let logs = store.get_logs();
+        assert_eq!(logs.len(), 2);
+        assert_eq!(logs[0].msg, "Test log message");
+        assert_eq!(logs[0].level, "info");
+    }
+
+    #[test]
+    fn test_mcp_store_update_and_get_status() {
+        let store = McpStore::new();
+        let agent_id = uuid::Uuid::now_v7();
+        let status = StatusReport {
+            status: "running".to_string(),
+            progress: Some(0.5),
+            message: Some("Processing...".to_string()),
+            agent_id,
+            ts: 12345,
+        };
+
+        store.update_status(agent_id, status.clone());
+        let retrieved_status = store.get_status(&agent_id);
+        
+        assert!(retrieved_status.is_some());
+        let retrieved = retrieved_status.unwrap();
+        assert_eq!(retrieved.status, "running");
+        assert_eq!(retrieved.progress, Some(0.5));
+        assert_eq!(retrieved.message, Some("Processing...".to_string()));
+    }
+
+    #[test]
+    fn test_mcp_store_get_nonexistent_status() {
+        let store = McpStore::new();
+        let agent_id = uuid::Uuid::now_v7();
+        let status = store.get_status(&agent_id);
+        assert!(status.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_handle_tool_call_unknown_tool() {
+        let store = McpStore::new();
+        let unknown_tool_name = "unknown_tool";
+        let arguments = serde_json::json!({});
+        
+        let response = handle_tool_call(unknown_tool_name, arguments, &store, None).await;
+        
+        assert!(response.result.is_none());
+        assert!(response.error.is_some());
+        if let Some(error) = response.error {
+            assert_eq!(error.code, -32602);
+            assert!(error.message.contains("Unknown tool"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_tool_call_report_finding() {
+        let store = McpStore::new();
+        let arguments = serde_json::json!({
+            "kind": "test",
+            "severity": "high",
+            "title": "Test Finding",
+            "detail": "Test detail",
+            "location": {
+                "file": "test.rs",
+                "line": 42
+            },
+            "evidence": ["evidence1", "evidence2"],
+            "data": {"key": "value"}
+        });
+
+        let response = handle_tool_call("report_finding", arguments, &store, None).await;
+        
+        assert!(response.result.is_some());
+        assert!(response.error.is_none());
+        
+        let findings = store.get_findings();
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].kind, "test");
+        assert_eq!(findings[0].severity, Severity::High);
+        assert_eq!(findings[0].title, "Test Finding");
+        assert_eq!(findings[0].evidence.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_handle_tool_call_report_artifacts() {
+        let store = McpStore::new();
+        let arguments = serde_json::json!({
+            "artifacts": [
+                {
+                    "key": "artifact1",
+                    "path": "/path/file1.txt"
+                },
+                {
+                    "key": "artifact2",
+                    "inline": {"content": "inline content"}
+                }
+            ]
+        });
+
+        let response = handle_tool_call("report_artifacts", arguments, &store, None).await;
+        
+        assert!(response.result.is_some());
+        assert!(response.error.is_none());
+        
+        let artifacts = store.get_artifacts();
+        assert_eq!(artifacts.len(), 2);
+        assert_eq!(artifacts[0].key, "artifact1");
+        assert_eq!(artifacts[1].key, "artifact2");
+    }
+
+    #[tokio::test]
+    async fn test_handle_tool_call_report_log() {
+        let store = McpStore::new();
+        let arguments = serde_json::json!({
+            "level": "error",
+            "msg": "Error occurred"
+        });
+
+        let response = handle_tool_call("report_log", arguments, &store, None).await;
+        
+        assert!(response.result.is_some());
+        assert!(response.error.is_none());
+        
+        let logs = store.get_logs();
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0].level, "error");
+        assert_eq!(logs[0].msg, "Error occurred");
+    }
+
+    #[tokio::test]
+    async fn test_handle_tool_call_report_status() {
+        let store = McpStore::new();
+        let _agent_id = uuid::Uuid::now_v7();
+        let arguments = serde_json::json!({
+            "status": "progress",
+            "progress": 0.75,
+            "message": "75% complete"
+        });
+
+        let response = handle_tool_call("report_status", arguments, &store, None).await;
+        
+        assert!(response.result.is_some());
+        assert!(response.error.is_none());
+        
+        let status = store.get_status(&uuid::Uuid::nil()); // The function uses uuid::Uuid::nil()
+        assert!(status.is_some());
+        let retrieved = status.unwrap();
+        assert_eq!(retrieved.status, "progress");
+        assert_eq!(retrieved.progress, Some(0.75));
+        assert_eq!(retrieved.message, Some("75% complete".to_string()));
+    }
+
+    #[test]
+    fn test_mcp_response_result() {
+        let result_value = serde_json::json!({"success": true});
+        let response = McpResponse::result(Some(serde_json::json!(1)), result_value.clone());
+        
+        assert_eq!(response.jsonrpc, "2.0");
+        assert_eq!(response.id, Some(serde_json::json!(1)));
+        assert_eq!(response.result, Some(result_value));
+        assert!(response.error.is_none());
+    }
+
+    #[test]
+    fn test_mcp_response_error() {
+        let response = McpResponse::error(Some(serde_json::json!(2)), -32600, "Test error".to_string());
+        
+        assert_eq!(response.jsonrpc, "2.0");
+        assert_eq!(response.id, Some(serde_json::json!(2)));
+        assert!(response.result.is_none());
+        assert!(response.error.is_some());
+        if let Some(error) = response.error {
+            assert_eq!(error.code, -32600);
+            assert_eq!(error.message, "Test error");
+        }
+    }
+
+    #[test]
+    fn test_mcp_response_notification() {
+        let params = serde_json::json!({"key": "value"});
+        let response = McpResponse::notification("test_method", params);
+        
+        assert_eq!(response.jsonrpc, "2.0");
+        assert!(response.id.is_none());
+        assert!(response.error.is_none());
+        assert!(response.result.is_some());
+    }
+    
+    #[test]
+    fn test_mcp_store_empty_list_tools() {
+        let _store = McpStore::new();
+        let tools = get_tool_definitions();
+        assert!(!tools.is_empty());
+        assert_eq!(tools.len(), 5); // Should have 5 predefined tools
+    }
+    
+    #[test]
+    fn test_add_finding_and_get_it() {
+        let store = McpStore::new();
+        let finding = Finding {
+            kind: "security".to_string(),
+            severity: Severity::Critical,
+            title: "Security Finding".to_string(),
+            detail: "Critical security issue found".to_string(),
+            location: Some(crate::core::contract::finding::Location {
+                file: std::path::PathBuf::from("src/main.rs"),
+                line: Some(42),
+            }),
+            evidence: vec!["Line 42 has vulnerability".to_string()],
+            data: serde_json::json!({"cve": "CVE-2024-1234"}),
+        };
+        
+        store.add_finding(finding.clone());
+        let findings = store.get_findings();
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].kind, "security");
+        assert_eq!(findings[0].severity, Severity::Critical);
+    }
+    
+    #[tokio::test]
+    async fn test_handle_tool_call_request_next_task() {
+        let store = McpStore::new();
+        let arguments = serde_json::json!({});
+        
+        let response = handle_tool_call("request_next_task", arguments, &store, None).await;
+        
+        assert!(response.result.is_some());
+        assert!(response.error.is_none());
     }
 }
