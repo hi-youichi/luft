@@ -11,7 +11,7 @@
 | **adapters** | OpenCode ACP 真实后端（`AgentBackend` 实现） | [architecture/adapters.md](./architecture/adapters.md) |
 | **planner** | 自然语言 → Lua 脚本（agent 写脚本 + 校验重试） | [architecture/planner.md](./architecture/planner.md) |
 | **mcp** | MCP 数据面服务器（5 个上报工具，stdio JSON-RPC） | [architecture/mcp.md](./architecture/mcp.md) |
-| **cli** | 命令行入口 + run 生命周期编排 + TUI/headless 输出 | [architecture/cli.md](./architecture/cli.md) |
+| **cli** | 命令行入口 + run 生命周期编排 + headless 输出 | [architecture/cli.md](./architecture/cli.md) |
 
 ## 模块布局
 
@@ -59,7 +59,7 @@ trait AgentBackend: Send + Sync {
 
 ### AgentEvent 广播总线 — 唯一可观测性数据源
 
-`tokio::sync::broadcast<AgentEvent>`。同一条流被持久化（[state](./architecture/core.md)）、headless（JSONL）、TUI（[cli](./architecture/cli.md)）同时消费。详见 [core.md §3.2](./architecture/core.md)。
+`tokio::sync::broadcast<AgentEvent>`。同一条流被持久化（[state](./architecture/core.md)）、headless（JSONL）同时消费。详见 [core.md §3.2](./architecture/core.md)。
 
 ### AgentCacheKey — `core` ↔ `runtime`（resume）接缝
 
@@ -125,7 +125,6 @@ producer 生成 findings → adversary 投票 → 存活 finding 进入下一轮
 - **ExecLimits 已定义未强制**——见 [runtime.md §5](./architecture/runtime.md)。
 - **pipeline 非真流式**——见 [runtime.md §6](./architecture/runtime.md)。
 - **MCP 数据面已建未联**：agent 尚未连接 MCP server，findings 走文本回退——见 [mcp.md §6](./architecture/mcp.md)。
-- **TUI 为文本桩、`watch` 未实现**——见 [cli.md §7](./architecture/cli.md)。
 
 ## 另见
 

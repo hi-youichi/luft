@@ -1,6 +1,6 @@
 # cli 模块架构
 
-> **命令行入口 + 运行编排 + 输出模式。** clap 解析命令，编排一次 run 的完整生命周期（脚本解析 → journal → scheduler → runtime → 事件落盘 → 报告），并以 TUI 或 headless 形式输出。
+> **命令行入口 + 运行编排 + 输出模式。** clap 解析命令，编排一次 run 的完整生命周期（脚本解析 → journal → scheduler → runtime → 事件落盘 → 报告），并以 headless 形式输出。
 
 源码：[`src/main.rs`](../../src/main.rs)（二进制入口）+ [`src/cli.rs`](../../src/cli.rs)（运行逻辑）
 
@@ -19,8 +19,7 @@
    │                                          Scheduler + 事件总线
    ├─ List/Status/Logs ─► 直接读 RunStore     spawn 事件→RunStore 转发
    ├─ Workflows/Save                          Runtime::new
-   └─                                         ├─ Tui      ──► run_tui
-                                              └─ Headless ──► run_headless
+    └─                                         └─ Headless ──► run_headless
                                                    execute_runtime(spawn_blocking + RunDone)
 ```
 
@@ -65,7 +64,7 @@
 ⑤ spawn 后台任务: 订阅事件 → 逐条 store.append_event(落盘 events.jsonl + checkpoint)
      ★ 复用 journal 的同一个 RunStore 实例，避免 split-brain checkpoint
 ⑥ Runtime::new(scheduler, run_ctx, extra_args, ExecLimits, journal, Handle::current())
-⑦ 按 mode 分派: run_tui | run_headless
+⑦ 按 mode 分派: run_headless
      → execute_runtime: spawn_blocking(rt.execute(script)) → emit RunDone(status, report)
 ```
 
@@ -78,9 +77,8 @@
 | 模式 | 行为 |
 |------|------|
 | **Headless** | 执行后在 500ms 宽限期内 drain 事件，每条 `AgentEvent` 打印一行 JSONL，最后打印 `{type:"report", run_id, report}` |
-| **Tui** | 当前是**简化文本输出**：执行、等 50ms 让事件 flush、打印 `=== Report ===` + pretty JSON |
 
-`execute_runtime` 是两种模式的公共内核：用 `spawn_blocking` 在阻塞线程跑 `rt.execute`（mlua 约束），据结果 emit `RunStatus::Completed`/`Failed` 的 `RunDone` 事件，返回 report 或 `ScriptError`。
+`execute_runtime` 是 headless 模式的公共内核：用 `spawn_blocking` 在阻塞线程跑 `rt.execute`（mlua 约束），据结果 emit `RunStatus::Completed`/`Failed` 的 `RunDone` 事件，返回 report 或 `ScriptError`。
 
 ---
 
@@ -108,7 +106,6 @@
 
 ## 7. 当前状态与局限（v0.1）
 
-- **TUI 是文本桩**：尚无 ratatui 实时界面；README 中的 `watch <id>` 命令❌未实现。实时视图设计见 [design/tui.md](../design/tui.md)（P2-1）。
 - `save` 命令是占位实现（只打印，不真正写入内容）。
 - `--resume` 选最近的可恢复 run，不支持按 id 精确恢复（`RunCreationMode::Resume` 已在 core 备好，cli 尚未暴露该入口）。
 - headless 的事件 drain 用固定 500ms 宽限期 + 轮询，而非确定性的完成信号。
