@@ -4,11 +4,12 @@
 //! the library exposes only the presentation-free service.
 
 use crate::backend;
+use crate::commands::event_log::EventLogger;
 use crate::commands::runs_base_dir;
 use crate::RunArgs;
 use anyhow::Result;
-use futures::FutureExt;
 use maestro::core::contract::backend::RunContext;
+use maestro::core::contract::event::AgentEvent;
 use maestro::runtime::Runtime;
 use maestro::service::run as svc;
 use std::path::{Path, PathBuf};
@@ -31,7 +32,7 @@ pub async fn run_workflow(args: RunArgs) -> Result<()> {
             detected.to_string()
         }
     };
-    let backend = backend::create_backend(&backend_id)?;
+    let backend = backend::create_backend(&backend_id, !args.no_acp_raw)?;
     let base_dir = runs_base_dir();
 
     // Resolve a fully-specified run (script + run id + resume flag). NL planning,
@@ -93,10 +94,16 @@ pub async fn run_workflow(args: RunArgs) -> Result<()> {
         );
     }
 
+    // Optional event-log sink, fed identically by headless and TUI paths.
+    let logger = match &args.log {
+        Some(path) => Some(EventLogger::new(Some(path), args.log_format)?),
+        None => None,
+    };
+
     if args.headless {
-        run_headless(run_ctx, prepared.runtime, spec.script, args.output).await
+        run_headless(run_ctx, prepared.runtime, spec.script, args.output, logger).await
     } else {
-        run_tui(run_ctx, prepared.runtime, spec.script, args.output).await
+        run_tui(run_ctx, prepared.runtime, spec.script, args.output, logger).await
     }
 }
 
@@ -127,7 +134,7 @@ fn write_report(path: &Path, report: &serde_json::Value) -> Result<()> {
 /// Print a concise one-line progress marker for a live event (to stderr, so it
 /// never pollutes the headless JSONL on stdout).
 fn print_progress(evt: &maestro::core::contract::event::AgentEvent) {
-    use maestro::core::contract::event::{AgentEvent, LogLevel};
+    use maestro::core::contract::event::LogLevel;
     match evt {
         AgentEvent::PhaseStarted { phase_id, label, planned, .. } => {
             eprintln!("▶ phase {} · {} ({} planned)", phase_id, label, planned);
@@ -151,31 +158,75 @@ fn print_progress(evt: &maestro::core::contract::event::AgentEvent) {
     }
 }
 
-/// Headless mode: output events as JSONL, then the final report.
+/// Drain `rx`, handing each event to `handle`, until the terminal
+/// [`AgentEvent::RunDone`] (or the channel closes). Returns the count of events
+/// skipped because the bounded broadcast buffer lagged.
+///
+/// Draining concurrently with execution is what keeps the high-frequency
+/// `acp_raw` stream from being dropped by the bounded bus.
+async fn drain_events<F: FnMut(&AgentEvent)>(
+    mut rx: tokio::sync::broadcast::Receiver<AgentEvent>,
+    mut handle: F,
+) -> u64 {
+    use tokio::sync::broadcast::error::RecvError;
+    let mut skipped = 0;
+    loop {
+        match rx.recv().await {
+            Ok(evt) => {
+                handle(&evt);
+                // RunDone is the terminal event — stop once it's been handled.
+                if matches!(evt, AgentEvent::RunDone { .. }) {
+                    break;
+                }
+            }
+            Err(RecvError::Closed) => break,
+            Err(RecvError::Lagged(n)) => skipped += n,
+        }
+    }
+    skipped
+}
+
+/// Headless mode: stream events as JSONL live (concurrently with execution),
+/// then the final report. When `logger` is set, each event is also written to
+/// the event-log sink.
 async fn run_headless(
     run_ctx: RunContext,
     rt: Runtime,
     script: String,
     output: Option<PathBuf>,
+    mut logger: Option<EventLogger>,
 ) -> Result<()> {
     use tokio::time::Duration;
 
     let run_id = run_ctx.run_id;
-    let mut events_rx = run_ctx.events.subscribe();
+
+    // Stream events live so the bounded broadcast buffer can't drop the
+    // high-frequency acp_raw stream. The printer exits on the terminal RunDone.
+    let rx = run_ctx.events.subscribe();
+    let printer = tokio::spawn(async move {
+        let skipped = drain_events(rx, |evt| {
+            if let Ok(s) = serde_json::to_string(evt) {
+                println!("{s}");
+            }
+            if let Some(l) = logger.as_mut() {
+                let _ = l.write(evt);
+            }
+        })
+        .await;
+        if let Some(l) = logger.as_mut() {
+            let _ = l.flush();
+        }
+        skipped
+    });
 
     let result = svc::execute(&run_ctx, rt, script).await?;
 
-    // Drain events with a short grace period for the background forwarder.
-    let deadline = tokio::time::Instant::now() + Duration::from_millis(500);
-    loop {
-        if tokio::time::Instant::now() >= deadline {
-            break;
-        }
-        match events_rx.recv().now_or_never() {
-            Some(Ok(evt)) => println!("{}", serde_json::to_string(&evt)?),
-            Some(Err(tokio::sync::broadcast::error::RecvError::Closed)) => break,
-            Some(Err(_)) => continue,
-            None => tokio::time::sleep(Duration::from_millis(10)).await,
+    // RunDone is emitted inside execute() before it returns, so the printer
+    // sees it and stops; the timeout only guards against a dropped RunDone.
+    // Joining before the report print keeps stdout ordered (events, then report).
+    if let Ok(Ok(skipped)) = tokio::time::timeout(Duration::from_secs(2), printer).await {
+        if skipped > 0 {
+            eprintln!("⚠ event stream lagged, skipped {skipped} events");
         }
     }
 
@@ -194,7 +245,10 @@ async fn run_headless(
                 }))?
             )
         }
-        Err(e) => eprintln!("Execution error: {}", e),
+        Err(e) => {
+            tracing::error!(error = %e, "workflow execution failed");
+            eprintln!("Execution error: {}", e);
+        }
     }
     Ok(())
 }
@@ -206,14 +260,21 @@ async fn run_tui(
     rt: Runtime,
     script: String,
     output: Option<PathBuf>,
+    mut logger: Option<EventLogger>,
 ) -> Result<()> {
     // Live progress: print events to stderr as they arrive (stdout is reserved
-    // for the final report). Aborted once execution finishes.
+    // for the final report). Aborted once execution finishes — the logger's
+    // BufWriter flushes on drop even when the task is aborted.
     let mut progress_rx = run_ctx.events.subscribe();
     let progress = tokio::spawn(async move {
         loop {
             match progress_rx.recv().await {
-                Ok(evt) => print_progress(&evt),
+                Ok(evt) => {
+                    print_progress(&evt);
+                    if let Some(l) = logger.as_mut() {
+                        let _ = l.write(&evt);
+                    }
+                }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                 Err(_) => continue,
             }
@@ -233,7 +294,88 @@ async fn run_tui(
             println!("\n=== Report ===");
             println!("{}", serde_json::to_string_pretty(&report).unwrap_or_default());
         }
-        Err(e) => eprintln!("Execution error: {}", e),
+        Err(e) => {
+            tracing::error!(error = %e, "workflow execution failed");
+            eprintln!("Execution error: {}", e);
+        }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use maestro::core::contract::event::{ProgressDelta, RunStatus};
+    use maestro::core::contract::ids::{RunId, TokenUsage};
+
+    fn progress(run_id: RunId, text: &str) -> AgentEvent {
+        AgentEvent::AgentProgress {
+            run_id,
+            agent_id: run_id,
+            delta: ProgressDelta::Message { text: text.into() },
+        }
+    }
+
+    fn run_done(run_id: RunId) -> AgentEvent {
+        AgentEvent::RunDone {
+            run_id,
+            status: RunStatus::Completed,
+            total_tokens: TokenUsage::default(),
+            report: serde_json::json!({ "ok": true }),
+        }
+    }
+
+    #[tokio::test]
+    async fn drain_stops_on_run_done_and_ignores_later_events() {
+        let (tx, rx) = tokio::sync::broadcast::channel(16);
+        let run_id = RunId::now_v7();
+        tx.send(progress(run_id, "hi")).unwrap();
+        tx.send(run_done(run_id)).unwrap();
+        tx.send(progress(run_id, "after")).unwrap(); // must not be emitted
+
+        let mut lines = Vec::new();
+        let skipped = drain_events(rx, |evt| lines.push(serde_json::to_string(evt).unwrap())).await;
+
+        assert_eq!(skipped, 0);
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].contains("\"type\":\"agent_progress\""));
+        assert!(lines[1].contains("\"type\":\"run_done\""));
+    }
+
+    #[tokio::test]
+    async fn drain_passes_through_acp_raw() {
+        let (tx, rx) = tokio::sync::broadcast::channel(16);
+        let run_id = RunId::now_v7();
+        tx.send(AgentEvent::AcpRaw {
+            run_id,
+            agent_id: run_id,
+            kind: "plan".into(),
+            raw: serde_json::json!({ "sessionUpdate": "plan" }),
+        })
+        .unwrap();
+        tx.send(run_done(run_id)).unwrap();
+
+        let mut lines = Vec::new();
+        drain_events(rx, |evt| lines.push(serde_json::to_string(evt).unwrap())).await;
+
+        assert!(lines[0].contains("\"type\":\"acp_raw\""));
+        assert!(lines[0].contains("\"kind\":\"plan\""));
+    }
+
+    #[tokio::test]
+    async fn drain_counts_lagged_but_still_terminates() {
+        // Cap-2 channel, overfilled before draining → early events are dropped.
+        let (tx, rx) = tokio::sync::broadcast::channel(2);
+        let run_id = RunId::now_v7();
+        for i in 0..4 {
+            tx.send(progress(run_id, &format!("m{i}"))).unwrap();
+        }
+        tx.send(run_done(run_id)).unwrap();
+
+        let mut lines = Vec::new();
+        let skipped = drain_events(rx, |evt| lines.push(serde_json::to_string(evt).unwrap())).await;
+
+        assert!(skipped > 0, "expected lagged events, got {skipped}");
+        assert!(lines.last().unwrap().contains("\"type\":\"run_done\""));
+    }
 }

@@ -214,14 +214,22 @@ pub fn prepare(
     // single persistence instance for this run (avoids split-brain checkpoints).
     let store = journal.store();
     let mut rx = run_ctx.events.subscribe();
+    let fwd_run_id = spec.run_id;
     tokio::spawn(async move {
         loop {
             match rx.recv().await {
+                // Raw ACP events are a live observability stream, not durable
+                // history — skip them so events.jsonl / get_logs stay lean.
+                Ok(AgentEvent::AcpRaw { .. }) => {}
                 Ok(evt) => {
-                    let _ = store.append_event(&evt);
+                    if let Err(e) = store.append_event(&evt) {
+                        tracing::warn!(run_id = %fwd_run_id, error = %e, "failed to persist event to journal");
+                    }
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
-                Err(_) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                    tracing::warn!(run_id = %fwd_run_id, skipped = n, "journal forwarder lagged; dropped events");
+                }
             }
         }
     });
@@ -257,6 +265,9 @@ pub async fn execute(
         .map_err(|e| anyhow::anyhow!("execution task panicked: {}", e))?;
 
     let status = if result.is_ok() { RunStatus::Completed } else { RunStatus::Failed };
+    if let Err(ref e) = result {
+        tracing::warn!(%run_id, error = %e, "run finished with a script error");
+    }
     let report = result.as_ref().ok().cloned().unwrap_or(serde_json::Value::Null);
     let _ = run_ctx.events.send(AgentEvent::RunDone {
         run_id,

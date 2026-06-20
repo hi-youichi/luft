@@ -222,8 +222,14 @@ Generate a Lua script that orchestrates LLM subagents to accomplish the user's t
 - agent(opts) -> result
     opts:   { prompt=<string, required>, model=<string?>, schema=<table?>,
               backend=<string?>, timeout_ms=<int?> }
-    result: { status=<string>, ok=<bool>, output=<any>, tokens=<int>, findings=<array> }
+    result: { status=<string>, ok=<bool>, output=<table>, tokens=<int>, findings=<array> }
     Runs ONE subagent to completion.
+    - `output` is the agent's response parsed as JSON → Lua table. Access fields
+      directly, e.g. `r.output.files`, `r.output.summary`.
+    - If `ok` is false, `output` may be nil or an error object; check `status`.
+    - `schema` (optional): if provided, the agent is asked to return JSON matching
+      this shape. Use it to guarantee field names and simplify access.
+      Example: schema = { files = "array", summary = "string" }
 
 - parallel(items, mapFn) -> array<result>
     items: an array (table). mapFn(item) must RETURN an agent opts table.
@@ -236,12 +242,6 @@ Generate a Lua script that orchestrates LLM subagents to accomplish the user's t
     different stages at the same time. stageFn(data) gets the previous stage's output
     and returns the next. Prefer pipeline() over parallel() by default.
 
-- converge(items, opts) -> { surviving, rounds, converged, findings }
-    Adversarial verification: producers generate findings, adversaries try to refute
-    them, survivors advance until convergence. opts: { adversarial=<bool>,
-    vote_threshold=<0..1>, max_rounds=<int>, producer_prompt=<string>,
-    adversary_prompt=<string> }. Use for verification / audit / cross-checked research.
-
 - phase(name, planned?) -> phase_id   -- group work into a progress phase
 - log(msg, level?)                     -- emit a status line
 - budget(time_ms?, max_rounds?)        -- hint runtime limits
@@ -249,33 +249,88 @@ Generate a Lua script that orchestrates LLM subagents to accomplish the user's t
 - report(value)                        -- REQUIRED: set the final workflow output
 - json.encode(v) / json.decode(s)      -- (de)serialization helpers
 
+# Globals
+- args   — table of user-supplied arguments (from --args JSON); access e.g. args.topic.
+- ctx    — run context; ctx.run_id is the current workflow run ID (string).
+
+# Error handling
+- Always check `result.ok` before using `result.output`.
+- On failure, log() the error and decide: skip, retry, or abort early with report().
+- Example:
+    local r = agent({ prompt = "..." })
+    if not r.ok then
+      log("agent failed: " .. (r.status or "unknown"), "warn")
+      report({ error = r.status })
+    end
+
+# Adversarial Verification Pattern (implement in Lua, no SDK call)
+When the task needs cross-checked / verified results, implement adversarial
+verification directly in Lua using agent() and parallel():
+1. PRODUCE: run producer agents (via parallel) on each item to generate findings.
+2. CHALLENGE: for each finding, run adversary agents that attempt to refute it.
+3. VOTE: keep only findings whose approval rate >= your threshold (e.g. 0.7).
+4. ITERATE: feed surviving findings back as items; repeat up to N rounds.
+5. STOP when converged (no findings refuted) or max rounds reached.
+This is a pattern, not a primitive — write the loop in Lua. Only use it when the
+task genuinely requires cross-checking; skip it for simple tasks.
+
 # Rules
 1. The script MUST end by calling report(<table>) with the final result.
 2. Do NOT touch the filesystem/shell from the script. Tell agents what to do instead.
 3. Keep fan-out bounded — at most ~16 concurrent agents. For large or unknown sets,
    have an agent enumerate / chunk the work and return a list you fan out over.
 4. Prefer pipeline() for streaming work; parallel() only when you need every result at
-   once; converge() for verification / audit / research that benefits from cross-checks.
-5. Use phase() / log() to make progress legible.
-6. Output ONLY a single ```lua code block — no explanation.
+   once. For verification / audit / research, implement the adversarial pattern in Lua
+   using agent() and parallel() — do NOT call converge().
+5. Always check result.ok before using result.output.
+6. Use phase() / log() to make progress legible.
+7. Output ONLY a single ```lua code block — no explanation.
 
-# Example
+# Example: simple research workflow
 ```lua
-phase("audit", 0)
--- An agent enumerates targets; the script itself cannot read the filesystem.
-local listing = agent({
-  prompt = "List the source files in this repository that should be security-audited. "
-        .. "Return a JSON object with key 'files' = array of repo-relative paths."
-})
-local files = listing.output.files or {}
+phase("research", 1)
 
--- Audit each file in parallel.
-local results = parallel(files, function(path)
-  return { prompt = "Audit the file '" .. path .. "' for security issues. "
-                 .. "Report concrete findings with severity." }
+local topic = args.topic or "AI safety"
+
+-- Step 1: gather sources
+local gather = agent({
+  prompt = "Research: " .. topic .. ". Return JSON {sources: [{title, url, summary}]}.",
+  schema = { sources = "array" }
+})
+if not gather.ok then
+  report({ error = "gather failed: " .. gather.status })
+end
+
+-- Step 2: analyze each source in parallel
+local results = parallel(gather.output.sources or {}, function(src)
+  return { prompt = "Analyze this source and extract key insights.\n" .. json.encode(src) }
 end)
 
-report({ audited = #results, results = results })
+report({ topic = topic, sources = #results, results = results })
+```
+
+# Example: adversarial verification snippet (add when cross-checking is needed)
+```lua
+-- Multi-round adversarial loop (skeleton)
+local items = gather.output.findings or {}
+local max_rounds = 3
+local threshold = 0.7
+
+for round = 1, max_rounds do
+  log("adversarial round " .. round)
+  local votes = parallel(items, function(finding)
+    return { prompt = "Evaluate this finding for accuracy. Return JSON {approve: true|false}.\n"
+                   .. json.encode(finding) }
+  end)
+  local survivors = {}
+  for i, finding in ipairs(items) do
+    if votes[i].ok and votes[i].output.approve then
+      table.insert(survivors, finding)
+    end
+  end
+  if #survivors == #items then break end
+  items = survivors
+end
 ```
 "##;
 

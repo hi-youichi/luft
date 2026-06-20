@@ -12,6 +12,7 @@
 
 mod backend;
 mod commands;
+mod logging;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -24,10 +25,15 @@ use std::path::PathBuf;
 struct Cli {
     #[command(subcommand)]
     command: Commands,
+    /// Program-log level (trace|debug|info|warn|error). Overrides RUST_LOG.
+    #[arg(long, global = true)]
+    log_level: Option<String>,
 }
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Generate a Lua workflow script from a natural language prompt (no execution).
+    Generate(GenerateArgs),
     /// Run a workflow (from file or NL prompt).
     Run(RunArgs),
     /// List available workflows.
@@ -64,7 +70,23 @@ enum Commands {
         backend: Option<String>,
         #[arg(long, default_value_t = 4, help = "Max concurrent runs")]
         max_concurrent: usize,
+        #[arg(long, help = "Disable raw ACP session/update passthrough (acp_raw events)")]
+        no_acp_raw: bool,
+        #[arg(long, help = "Also write the program log to this file")]
+        log_file: Option<PathBuf>,
     },
+}
+
+#[derive(clap::Args)]
+struct GenerateArgs {
+    #[arg(help = "Natural language prompt describing the workflow to generate")]
+    nl: String,
+
+    #[arg(short, long, help = "Write generated Lua script to this file (default: stdout)")]
+    output: Option<PathBuf>,
+
+    #[arg(short, long, help = "Backend to use (default: auto-detect opencode, fallback mock)")]
+    backend: Option<String>,
 }
 
 #[derive(clap::Args)]
@@ -87,6 +109,15 @@ struct RunArgs {
     #[arg(short, long, help = "Backend to use (default: auto-detect opencode, fallback mock)")]
     backend: Option<String>,
 
+    #[arg(long, help = "Disable raw ACP session/update passthrough (acp_raw events)")]
+    no_acp_raw: bool,
+
+    #[arg(long, help = "Write the event log to this file (in addition to normal output)")]
+    log: Option<PathBuf>,
+
+    #[arg(long, value_enum, default_value_t = commands::event_log::LogFormat::Pretty, help = "Event log format")]
+    log_format: commands::event_log::LogFormat,
+
     #[arg(
         short,
         long,
@@ -108,15 +139,29 @@ struct RunArgs {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    // Install the program-log subscriber before any work. Default level is
+    // quieter for the interactive `run` than for the long-running `serve`.
+    let default_level = match &cli.command {
+        Commands::Serve { .. } => "info",
+        _ => "warn",
+    };
+    let log_file = match &cli.command {
+        Commands::Serve { log_file, .. } => log_file.as_deref(),
+        _ => None,
+    };
+    // Held until the process exits so the non-blocking file appender flushes.
+    let _log_guard = logging::init(cli.log_level.as_deref(), default_level, log_file)?;
+
     match cli.command {
+        Commands::Generate(args) => commands::generate::generate_script(args).await?,
         Commands::Run(args) => commands::run::run_workflow(args).await?,
         Commands::Workflows => commands::workflows::list_workflows()?,
         Commands::Save { name, output } => commands::save::save_workflow(&name, &output)?,
         Commands::List { limit } => commands::list::list_runs_cmd(limit)?,
         Commands::Status { run_id } => commands::status::status_run_cmd(run_id)?,
         Commands::Logs { run_id, limit } => commands::logs::logs_run_cmd(run_id, limit)?,
-        Commands::Serve { addr, backend, max_concurrent } => {
-            commands::serve::serve_cmd(addr, backend, max_concurrent).await?
+        Commands::Serve { addr, backend, max_concurrent, no_acp_raw, log_file: _ } => {
+            commands::serve::serve_cmd(addr, backend, max_concurrent, no_acp_raw).await?
         }
     }
 
