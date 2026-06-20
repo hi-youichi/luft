@@ -7,7 +7,6 @@ pub mod list;
 pub mod logs;
 pub mod run;
 pub mod save;
-pub mod serve;
 pub mod status;
 pub mod workflows;
 

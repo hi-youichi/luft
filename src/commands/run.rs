@@ -1,6 +1,6 @@
 //! `run` subcommand: detect the backend, resolve (and optionally confirm) the
-//! script via the shared run service ([`maestro::service::run`]), then drive the
-//! TUI / headless presentation. This is the sole presentation layer for `run`;
+//! script via the shared run service ([`maestro::service::run`]), then drive
+//! output. This is the sole presentation layer for `run`;
 //! the library exposes only the presentation-free service.
 
 use crate::backend;
@@ -77,7 +77,7 @@ pub async fn run_workflow(args: RunArgs) -> Result<()> {
     }
 
     // The CLI owns the event channel + cancel token (subscribed locally for
-    // TUI/headless output).
+    // headless output).
     let (events_tx, _events_rx) = tokio::sync::broadcast::channel(256);
     let run_ctx = RunContext {
         run_id: spec.run_id,
@@ -94,17 +94,13 @@ pub async fn run_workflow(args: RunArgs) -> Result<()> {
         );
     }
 
-    // Optional event-log sink, fed identically by headless and TUI paths.
+    // Optional event-log sink.
     let logger = match &args.log {
         Some(path) => Some(EventLogger::new(Some(path), args.log_format)?),
         None => None,
     };
 
-    if args.headless {
-        run_headless(run_ctx, prepared.runtime, spec.script, args.output, logger).await
-    } else {
-        run_tui(run_ctx, prepared.runtime, spec.script, args.output, logger).await
-    }
+    run_headless(run_ctx, prepared.runtime, spec.script, args.output, logger).await
 }
 
 /// Persist the final report value to `path`.
@@ -129,33 +125,6 @@ fn write_report(path: &Path, report: &serde_json::Value) -> Result<()> {
     }
     std::fs::write(path, content)?;
     Ok(())
-}
-
-/// Print a concise one-line progress marker for a live event (to stderr, so it
-/// never pollutes the headless JSONL on stdout).
-fn print_progress(evt: &maestro::core::contract::event::AgentEvent) {
-    use maestro::core::contract::event::LogLevel;
-    match evt {
-        AgentEvent::PhaseStarted { phase_id, label, planned, .. } => {
-            eprintln!("▶ phase {} · {} ({} planned)", phase_id, label, planned);
-        }
-        AgentEvent::AgentStarted { prompt_preview, .. } => {
-            let preview: String = prompt_preview.chars().take(72).collect();
-            eprintln!("  ↳ agent: {}…", preview);
-        }
-        AgentEvent::AgentDone { status, elapsed_ms, .. } => {
-            eprintln!("  ✓ agent {:?} ({} ms)", status, elapsed_ms);
-        }
-        AgentEvent::Log { level, msg, .. } => {
-            let mark = match level {
-                LogLevel::Warn => "⚠",
-                LogLevel::Error => "✗",
-                _ => "·",
-            };
-            eprintln!("  {} {}", mark, msg);
-        }
-        _ => {}
-    }
 }
 
 /// Drain `rx`, handing each event to `handle`, until the terminal
@@ -244,55 +213,6 @@ async fn run_headless(
                     "report": report,
                 }))?
             )
-        }
-        Err(e) => {
-            tracing::error!(error = %e, "workflow execution failed");
-            eprintln!("Execution error: {}", e);
-        }
-    }
-    Ok(())
-}
-
-/// TUI mode (simple text output for now): execute and print the report.
-/// While the script runs, concise progress markers stream to stderr.
-async fn run_tui(
-    run_ctx: RunContext,
-    rt: Runtime,
-    script: String,
-    output: Option<PathBuf>,
-    mut logger: Option<EventLogger>,
-) -> Result<()> {
-    // Live progress: print events to stderr as they arrive (stdout is reserved
-    // for the final report). Aborted once execution finishes — the logger's
-    // BufWriter flushes on drop even when the task is aborted.
-    let mut progress_rx = run_ctx.events.subscribe();
-    let progress = tokio::spawn(async move {
-        loop {
-            match progress_rx.recv().await {
-                Ok(evt) => {
-                    print_progress(&evt);
-                    if let Some(l) = logger.as_mut() {
-                        let _ = l.write(&evt);
-                    }
-                }
-                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
-                Err(_) => continue,
-            }
-        }
-    });
-
-    let result = svc::execute(&run_ctx, rt, script).await?;
-    // Let the background forwarder flush the final events to disk.
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-    progress.abort();
-    match result {
-        Ok(report) => {
-            if let Some(path) = &output {
-                write_report(path, &report)?;
-                eprintln!("\nReport written to {}", path.display());
-            }
-            println!("\n=== Report ===");
-            println!("{}", serde_json::to_string_pretty(&report).unwrap_or_default());
         }
         Err(e) => {
             tracing::error!(error = %e, "workflow execution failed");

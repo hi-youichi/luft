@@ -43,8 +43,7 @@ pub struct AcpConfig {
     pub connect_timeout: Duration,
     /// Emit verbatim ACP `session/update` notifications as
     /// [`AgentEvent::AcpRaw`](crate::core::contract::event::AgentEvent::AcpRaw).
-    /// On by default; the WS layer excludes these from the default subscription
-    /// and the journal does not persist them (see `docs/design/acp-raw-events.md`).
+    /// On by default; the journal does not persist them (see `docs/design/acp-raw-events.md`).
     pub emit_raw_events: bool,
 }
 

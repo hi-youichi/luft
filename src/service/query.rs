@@ -5,9 +5,9 @@ use crate::core::state::{get_run_store, list_runs as list_run_ids, RunCheckpoint
 use anyhow::Result;
 use std::path::Path;
 
-/// Summary view of a run's checkpoint — the query DTO shared by the CLI and the
-/// WS protocol. It lives in the query layer (not a presentation layer) so that
-/// `ws` and the binary `commands` depend downward on `service`, not the reverse.
+/// Summary view of a run's checkpoint — the query DTO shared by the CLI.
+/// It lives in the query layer (not a presentation layer) so that
+/// the binary `commands` depend downward on `service`, not the reverse.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct StatusOutput {
     pub run_id: String,

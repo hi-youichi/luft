@@ -39,11 +39,8 @@ blake3 = "1"
 unicode-normalization = "0.1"
 mlua = { version = "0.10", features = ["lua54", "vendored", "async", "serialize", "send"] }
 jsonschema = "0.18"
-axum = { version = "0.7", features = ["ws"] }
-tokio-stream = { version = "0.1", features = ["sync"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
-tracing-appender = "0.2"
 
 [dev-dependencies]
 tempfile = "3"

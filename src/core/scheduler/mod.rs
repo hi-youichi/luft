@@ -295,7 +295,7 @@ impl Scheduler {
         }
     }
 
-    /// Current global active concurrency (for the TUI footer).
+    /// Current global active concurrency.
     pub fn active_concurrency(&self) -> usize {
         self.config.max_concurrency - self.semaphore.available_permits()
     }

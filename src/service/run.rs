@@ -97,7 +97,7 @@ pub fn check_resumable(run_id: RunId, base_dir: &Path) -> ResumeCheck {
 }
 
 /// A fully-resolved run: everything needed to prepare execution, regardless of
-/// how it was requested (CLI args vs WS payload).
+/// how it was requested.
 pub struct RunSpec {
     pub run_id: RunId,
     pub script: String,
@@ -176,8 +176,7 @@ pub struct PreparedRun {
 /// forwarder, and the Lua runtime — without executing it.
 ///
 /// `run_ctx` is supplied by the caller, which owns the event channel + cancel
-/// token: the CLI subscribes locally for TUI/headless output; the WS layer
-/// stores them in its `RunHandle` for streaming and cancellation. Must be
+/// token: the CLI subscribes locally for headless output. Must be
 /// called from within a tokio runtime (it spawns the forwarder and captures
 /// `Handle::current()`).
 pub fn prepare(
@@ -249,8 +248,7 @@ pub fn prepare(
 }
 
 /// Execute the Lua runtime on a blocking thread and emit a terminal `RunDone`
-/// event. Returns the report value (or the script error). Presentation-free, so
-/// both the CLI and WS layers share it.
+/// event. Returns the report value (or the script error).
 pub async fn execute(
     run_ctx: &RunContext,
     runtime: Runtime,

@@ -2,7 +2,7 @@
 //!
 //! [`EventLogger`] consumes [`AgentEvent`]s and writes one line each, in either
 //! human-readable (`pretty`) or machine (`jsonl`) form. Both the local `run`
-//! path and the (future) remote `listen` WS client feed the same logger, so the
+//! path feed the same logger, so the
 //! log is identical regardless of which end observed the stream.
 
 use anyhow::Result;

@@ -4,7 +4,6 @@
 //! - `maestro run "<NL>"` — NL → Lua via planner, then execute
 //! - `maestro run /<wf>` — Run workflow.lua file
 //! - `maestro run --resume` — Resume from checkpoint
-//! - `maestro run --headless` — JSONL output mode
 //! - `maestro run --confirm` — Show script for confirmation (default: auto-approve)
 //!
 //! `main` only parses args and routes each subcommand to its handler in
@@ -62,19 +61,6 @@ enum Commands {
         #[arg(help = "Run ID to inspect")]
         run_id: uuid::Uuid,
     },
-    /// Run the WebSocket server (clients drive runs over the WS protocol).
-    Serve {
-        #[arg(long, default_value = "0.0.0.0:8080", help = "Address to bind")]
-        addr: String,
-        #[arg(short, long, help = "Backend to use (default: auto-detect)")]
-        backend: Option<String>,
-        #[arg(long, default_value_t = 4, help = "Max concurrent runs")]
-        max_concurrent: usize,
-        #[arg(long, help = "Disable raw ACP session/update passthrough (acp_raw events)")]
-        no_acp_raw: bool,
-        #[arg(long, help = "Also write the program log to this file")]
-        log_file: Option<PathBuf>,
-    },
 }
 
 #[derive(clap::Args)]
@@ -99,9 +85,6 @@ struct RunArgs {
 
     #[arg(short, long, help = "Resume from last checkpoint")]
     resume: bool,
-
-    #[arg(long, help = "Headless mode (JSONL output to stdout)")]
-    headless: bool,
 
     #[arg(short, long, help = "Show script for confirmation before execution (default: auto-approve)")]
     confirm: bool,
@@ -139,18 +122,7 @@ struct RunArgs {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    // Install the program-log subscriber before any work. Default level is
-    // quieter for the interactive `run` than for the long-running `serve`.
-    let default_level = match &cli.command {
-        Commands::Serve { .. } => "info",
-        _ => "warn",
-    };
-    let log_file = match &cli.command {
-        Commands::Serve { log_file, .. } => log_file.as_deref(),
-        _ => None,
-    };
-    // Held until the process exits so the non-blocking file appender flushes.
-    let _log_guard = logging::init(cli.log_level.as_deref(), default_level, log_file)?;
+    logging::init(cli.log_level.as_deref(), "warn")?;
 
     match cli.command {
         Commands::Generate(args) => commands::generate::generate_script(args).await?,
@@ -160,9 +132,6 @@ async fn main() -> Result<()> {
         Commands::List { limit } => commands::list::list_runs_cmd(limit)?,
         Commands::Status { run_id } => commands::status::status_run_cmd(run_id)?,
         Commands::Logs { run_id, limit } => commands::logs::logs_run_cmd(run_id, limit)?,
-        Commands::Serve { addr, backend, max_concurrent, no_acp_raw, log_file: _ } => {
-            commands::serve::serve_cmd(addr, backend, max_concurrent, no_acp_raw).await?
-        }
     }
 
     Ok(())

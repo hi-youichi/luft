@@ -1,6 +1,5 @@
 //! Event bus contract (§1.4) — the single observability data source.
-//! headless serialises each [`AgentEvent`] as one JSONL line; the TUI projects
-//! the same stream into a phase→agent view; the state store persists it.
+//! Each [`AgentEvent`] is consumed by the event bus subscribers; the state store persists it.
 
 use crate::core::contract::backend::AgentStatus;
 use crate::core::contract::ids::{AgentId, PhaseId, RunId, TokenUsage};
@@ -39,7 +38,7 @@ pub enum AgentEvent {
     },
     /// Raw ACP `session/update` passthrough — the verbatim notification, surfaced
     /// for observability. Produced only when the ACP backend has raw events
-    /// enabled. Excluded from the default WS subscription and not persisted to
+    /// enabled. Not persisted to
     /// the journal (see `acp-raw-events.md`).
     AcpRaw {
         run_id: RunId,
