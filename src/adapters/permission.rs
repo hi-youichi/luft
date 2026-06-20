@@ -43,30 +43,37 @@ pub fn decide(policy: Option<&ToolPolicy>, input: &PermissionInputs) -> Decision
     // Deny list wins.
     if let Some(cmd) = &input.command {
         if policy.deny.iter().any(|d| cmd.contains(d.as_str())) {
+            tracing::warn!(%cmd, "permission denied: command matches deny list");
             return Decision::Deny(format!("command matches deny list: {cmd}"));
         }
     }
 
     if input.is_file_edit {
         return if policy.accept_edits {
+            tracing::debug!("permission: file edit approved");
             Decision::Approve
         } else {
+            tracing::warn!("permission denied: file edit not allowed");
             Decision::Deny("accept_edits=false".into())
         };
     }
 
     if let Some(cmd) = &input.command {
         return if policy.allow_commands.iter().any(|p| cmd.starts_with(p.as_str())) {
+            tracing::debug!(%cmd, "permission: command approved");
             Decision::Approve
         } else {
+            tracing::warn!(%cmd, "permission denied: command not in allowlist");
             Decision::Deny(format!("command not in allowlist: {cmd}"))
         };
     }
 
     if let Some(tool) = &input.mcp_tool {
         return if policy.allow_mcp.iter().any(|n| n == tool) {
+            tracing::debug!(%tool, "permission: MCP tool approved");
             Decision::Approve
         } else {
+            tracing::warn!(%tool, "permission denied: MCP tool not allowed");
             Decision::Deny(format!("mcp tool not allowed: {tool}"))
         };
     }

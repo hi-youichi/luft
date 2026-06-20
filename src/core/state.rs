@@ -79,6 +79,7 @@ pub struct RunStore {
 impl RunStore {
     /// Create or open a run store at the given path.
     pub fn new(run_dir: &Path) -> Result<Arc<Self>, std::io::Error> {
+        tracing::debug!(path = %run_dir.display(), "creating RunStore");
         fs::create_dir_all(run_dir)?;
 
         let store = Arc::new(Self {
@@ -109,6 +110,7 @@ impl RunStore {
 
     /// Initialize a new run.
     pub fn init_run(&self, run_id: RunId, task: &str) -> Result<(), std::io::Error> {
+        tracing::info!(%run_id, %task, "initializing run store");
         let checkpoint = RunCheckpoint {
             run_id,
             task: task.to_string(),
@@ -143,6 +145,7 @@ impl RunStore {
 
     /// Open an existing run for resume.
     pub fn open_run(&self, _run_id: RunId) -> Result<Option<RunCheckpoint>, std::io::Error> {
+        tracing::debug!(%_run_id, "opening existing run");
         let checkpoint_path = self.run_dir.join("checkpoint.json");
 
         if !checkpoint_path.exists() {
@@ -236,7 +239,7 @@ impl RunStore {
 
             // Persist updated checkpoint to disk (write-only, no lock needed - already held)
             if let Err(e) = self.write_checkpoint_to_disk(checkpoint) {
-                eprintln!("failed to save checkpoint: {}", e);
+                tracing::warn!(error = %e, "failed to save checkpoint");
             }
         }
     }
@@ -317,6 +320,7 @@ impl RunStore {
 
     /// Mark run as cancelled.
     pub fn cancel(&self) -> Result<(), std::io::Error> {
+        tracing::info!("cancelling run");
         let mut guard = self.checkpoint.write().unwrap();
         if let Some(ref mut checkpoint) = *guard {
             checkpoint.status = CheckpointStatus::Cancelled;

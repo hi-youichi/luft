@@ -107,6 +107,20 @@ impl Scheduler {
 
     /// Schedule and run a single agent task: quota check → permit → retry loop →
     /// events. Cancellation flows via `RunContext::cancel`.
+    ///
+    /// The `agent` span carries `run_id`/`agent_id`/`phase_id`/`model` so every
+    /// log emitted on this task's async path inherits them (see
+    /// `docs/design/program-logging.md`).
+    #[tracing::instrument(
+        name = "agent",
+        skip_all,
+        fields(
+            run_id = %run_id,
+            agent_id = %task.agent_id,
+            phase_id = task.phase_id,
+            model = task.model.as_deref().unwrap_or("default"),
+        )
+    )]
     pub async fn run_agent(
         &self,
         run_id: RunId,
@@ -130,6 +144,7 @@ impl Scheduler {
         // Quota.
         let used = quota_used.fetch_add(1, Ordering::Relaxed) + 1;
         if used > self.config.quota_per_run {
+            tracing::warn!(used, limit = self.config.quota_per_run, "run quota exceeded");
             return Err(SchedulerError::QuotaExceeded {
                 limit: self.config.quota_per_run,
                 used,
@@ -182,6 +197,7 @@ impl Scheduler {
                     // Validate output against schema if configured (M4).
                     if let Some(ref schema) = task.output_schema {
                         if let Err(e) = validate_output(&result.output, schema) {
+                            tracing::error!(error = %e, "agent output failed schema validation");
                             break Err(SchedulerError::SchemaValidation(e.to_string()));
                         }
                     }
@@ -189,16 +205,23 @@ impl Scheduler {
                 },
                 Err(e) => {
                     if agent_token.is_cancelled() || matches!(e, BackendError::Cancelled) {
+                        tracing::debug!("agent cancelled");
                         break Err(cancel_kind(&run_cancel));
                     }
                     if !e.is_retryable() {
+                        tracing::error!(error = %e, "non-retryable backend error");
                         break Err(SchedulerError::NonRetryable(e));
                     }
                     attempt += 1;
                     if attempt > self.config.retry.max_attempts {
+                        tracing::error!(attempts = attempt, error = %e, "agent exhausted retries");
                         break Err(SchedulerError::Exhausted { attempts: attempt, source: e });
                     }
                     let backoff = self.config.retry.backoff(attempt);
+                    tracing::warn!(
+                        attempt, backoff_ms = backoff.as_millis() as u64, error = %e,
+                        "retryable backend error; retrying"
+                    );
                     tokio::select! {
                         _ = tokio::time::sleep(backoff) => {}
                         _ = agent_token.cancelled() => break Err(cancel_kind(&run_cancel)),
@@ -222,6 +245,7 @@ impl Scheduler {
             tokens,
             elapsed_ms,
         });
+        tracing::info!(?status, elapsed_ms, "agent finished");
 
         // Invoke journal callback if configured (M1 transparent persistence).
         if let Some(ref cb) = self.journal_callback {

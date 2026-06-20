@@ -25,7 +25,9 @@ impl BackendRegistry {
     }
 
     pub fn register(&mut self, backend: Arc<dyn AgentBackend>) {
-        self.backends.insert(backend.id(), backend);
+        let id = backend.id();
+        tracing::debug!(id, "registering backend");
+        self.backends.insert(id, backend);
     }
 
     /// Builder-style registration.
@@ -38,7 +40,10 @@ impl BackendRegistry {
         self.backends
             .get(id)
             .cloned()
-            .ok_or_else(|| SchedulerError::UnknownBackend(id.to_owned()))
+            .ok_or_else(|| {
+                tracing::error!(id, "backend not found in registry");
+                SchedulerError::UnknownBackend(id.to_owned())
+            })
     }
 
     /// First registered backend (v0.1 single-backend default routing).
@@ -47,6 +52,9 @@ impl BackendRegistry {
             .values()
             .next()
             .cloned()
-            .ok_or(SchedulerError::NoBackendRegistered)
+            .ok_or_else(|| {
+                tracing::error!("no backend registered");
+                SchedulerError::NoBackendRegistered
+            })
     }
 }

@@ -19,6 +19,7 @@ pub fn collect(
 ) -> AgentResult {
     let status = status_from_stop_reason(stop_reason);
     let findings = extract_findings_from_output(&message);
+    tracing::debug!(agent_id = %task.agent_id, ?status, findings = findings.len(), tokens = tokens.total(), stop_reason, "collecting agent result");
     let output = if !findings.is_empty() {
         serde_json::to_value(&findings).unwrap_or(serde_json::Value::Null)
     } else {

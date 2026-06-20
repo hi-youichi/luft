@@ -137,6 +137,7 @@ impl JournalStore {
     /// Create a new journal store at the given directory.
     /// Initializes the underlying RunStore and creates an empty cache index.
     pub fn new(run_dir: &Path) -> Result<Self, JournalError> {
+        tracing::debug!(path = %run_dir.display(), "creating journal store");
         let inner = RunStore::new(run_dir)?;
         Ok(Self {
             inner,
@@ -153,6 +154,7 @@ impl JournalStore {
 
     /// Initialize a new run in the journal.
     pub fn init_run(&self, run_id: RunId, task: &str) -> Result<(), JournalError> {
+        tracing::info!(%run_id, %task, "initializing run in journal");
         self.inner.init_run(run_id, task)?;
         Ok(())
     }
@@ -164,6 +166,7 @@ impl JournalStore {
     /// 2. Rebuilds the in-memory cache_index from agent_results
     /// 3. Returns the checkpoint for the caller to inspect
     pub fn open(&self, run_id: RunId) -> Result<RunCheckpoint, JournalError> {
+        tracing::info!(%run_id, "opening journal for resume");
         let checkpoint = self
             .inner
             .open_run(run_id)?
@@ -230,7 +233,7 @@ impl JournalStore {
 
         // Persist the full cache entry directly to checkpoint disk (preserves cache_key_hash)
         if let Err(e) = self.inner.upsert_agent_result(&cache) {
-            eprintln!("failed to persist agent cache: {}", e);
+            tracing::warn!(%agent_id, error = %e, "failed to persist agent cache");
         }
 
         // Also append event to log (this triggers update_from_event which finds the existing hash)
@@ -290,7 +293,7 @@ impl JournalStore {
         }
 
         if let Err(e) = self.inner.upsert_agent_result(&cache) {
-            eprintln!("failed to persist agent result: {}", e);
+            tracing::warn!(%agent_id, error = %e, "failed to persist agent result");
         }
     }
 
@@ -411,7 +414,7 @@ impl crate::core::scheduler::JournalCallback for JournalStore {
 
         // Persist to checkpoint disk
         if let Err(e) = self.inner.upsert_agent_result(&cache) {
-            eprintln!("failed to persist agent result from callback: {}", e);
+            tracing::warn!(%agent_id, error = %e, "failed to persist agent result from callback");
         }
     }
 }
@@ -491,6 +494,7 @@ pub fn gc_runs(journal_dir: &Path, older_than: Duration) -> Result<usize, Journa
     let runs = crate::core::state::list_runs(journal_dir)?;
     let cutoff = current_timestamp().saturating_sub(older_than.as_secs());
 
+    tracing::debug!("GC: scanning {} runs", runs.len());
     let mut cleaned = 0;
     for run_id in &runs {
         let run_dir = journal_dir.join(run_id.to_string());
@@ -512,6 +516,7 @@ pub fn gc_runs(journal_dir: &Path, older_than: Duration) -> Result<usize, Journa
         );
 
         if is_old && is_terminal {
+            tracing::info!(%run_id, "GC: removing old terminal run");
             std::fs::remove_dir_all(&run_dir)?;
             cleaned += 1;
         }
