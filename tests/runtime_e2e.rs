@@ -72,14 +72,13 @@ async fn agent_parallel_pipeline_converge() {
                 { label = "two", handler = function(x) return { step2 = x } end },
             },
         })
-        local cv = converge({"c1", "c2"}, { max_rounds = 2 })
+        -- converge disabled (temporarily removed from SDK)
         report({
             a_ok = a.ok,
             par_n = #r,
             par_all = r[1].ok and r[2].ok and r[3].ok,
             pl_ok = pl.ok,
             pl_failed = pl.failed,
-            cv_rounds = cv.rounds,
         })
     "#;
     let out = run_with(ok_backend(), script, None, uuid::Uuid::now_v7()).await;
@@ -88,8 +87,107 @@ async fn agent_parallel_pipeline_converge() {
     assert_eq!(out["par_all"], true);
     assert_eq!(out["pl_ok"], 2);
     assert_eq!(out["pl_failed"], 0);
-    // Mock emits no findings, so convergence terminates immediately.
-    assert_eq!(out["cv_rounds"], 0);
+}
+
+/// Run `script` and return every event that landed on the bus (drained after
+/// execution). Mirrors `run_with` but keeps the receiver alive.
+async fn run_collecting_events(
+    backend: Arc<dyn AgentBackend>,
+    script: &str,
+) -> Vec<maestro::core::contract::event::AgentEvent> {
+    let registry = BackendRegistry::new().with(backend);
+    let scheduler = Scheduler::new(SchedulerConfig::default(), registry, None);
+    let run_id = uuid::Uuid::now_v7();
+    let (tx, mut rx) = tokio::sync::broadcast::channel(2048);
+    let run_ctx = RunContext { run_id, cancel: CancellationToken::new(), events: tx };
+    scheduler.init_run_with(run_id, run_ctx.events.clone());
+    let handle = tokio::runtime::Handle::current();
+    let rt = Runtime::new(scheduler, run_ctx, serde_json::json!({}), ExecLimits::default(), None, handle)
+        .expect("runtime init");
+
+    let s = script.to_string();
+    tokio::task::spawn_blocking(move || rt.execute(&s)).await.expect("join").expect("script ok");
+
+    let mut events = Vec::new();
+    while let Ok(e) = rx.try_recv() {
+        events.push(e);
+    }
+    events
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn sdk_events_emitted_with_span_pairing() {
+    use maestro::core::contract::event::AgentEvent;
+
+    let script = r#"
+        budget(300000, 5)
+        phase("work", 3)
+        local r = parallel({"x","y","z"}, function(it)
+            return { prompt = "review " .. it, model = "mock" }
+        end)
+        report({ n = #r })
+    "#;
+    let events = run_collecting_events(ok_backend(), script).await;
+
+    // budget(t, r) → BudgetSet with the literal values.
+    let budget = events.iter().find_map(|e| match e {
+        AgentEvent::BudgetSet { time_limit_ms, max_rounds, .. } => Some((*time_limit_ms, *max_rounds)),
+        _ => None,
+    });
+    assert_eq!(budget, Some((Some(300000), Some(5))));
+
+    // parallel → Started/Done sharing one span_id; 3 items all succeed under mock.
+    let p_start = events.iter().find_map(|e| match e {
+        AgentEvent::ParallelStarted { span_id, count, .. } => Some((*span_id, *count)),
+        _ => None,
+    }).expect("ParallelStarted");
+    let p_done = events.iter().find_map(|e| match e {
+        AgentEvent::ParallelDone { span_id, ok, failed, .. } => Some((*span_id, *ok, *failed)),
+        _ => None,
+    }).expect("ParallelDone");
+    assert_eq!(p_start.0, p_done.0, "parallel span_id must pair");
+    assert_eq!(p_start.1, 3);
+    assert_eq!((p_done.1, p_done.2), (3, 0));
+
+    // report → ReportEmitted carrying the full value.
+    let report = events.iter().find_map(|e| match e {
+        AgentEvent::ReportEmitted { report, .. } => Some(report.clone()),
+        _ => None,
+    }).expect("ReportEmitted");
+    assert_eq!(report["n"], 3);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn workflow_events_emitted() {
+    use maestro::core::contract::event::AgentEvent;
+
+    let dir = tempfile::tempdir().unwrap();
+    let sub_path = dir.path().join("sub.lua");
+    std::fs::write(&sub_path, "report({ sub = true })").unwrap();
+
+    let script = format!(
+        r#"
+        local w = workflow("{}", {{ k = 1 }})
+        report({{ got = w.sub }})
+    "#,
+        sub_path.display()
+    );
+    let events = run_collecting_events(ok_backend(), &script).await;
+
+    let w_start = events.iter().find_map(|e| match e {
+        AgentEvent::WorkflowStarted { span_id, path, args, .. } => Some((*span_id, path.clone(), args.clone())),
+        _ => None,
+    }).expect("WorkflowStarted");
+    let w_done = events.iter().find_map(|e| match e {
+        AgentEvent::WorkflowDone { span_id, report, error, .. } => Some((*span_id, report.clone(), error.clone())),
+        _ => None,
+    }).expect("WorkflowDone");
+
+    assert_eq!(w_start.0, w_done.0, "workflow span_id must pair");
+    assert!(w_start.1.ends_with("sub.lua"));
+    assert_eq!(w_start.2["k"], 1);
+    assert!(w_done.2.is_none(), "sub-workflow succeeded");
+    assert_eq!(w_done.1["sub"], true, "WorkflowDone carries the sub-report");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
