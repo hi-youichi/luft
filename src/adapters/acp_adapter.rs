@@ -24,9 +24,9 @@ use std::time::Duration;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 use agent_client_protocol::schema::{
-    ContentBlock, InitializeRequest, NewSessionRequest, PromptRequest, ProtocolVersion,
-    RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
-    SelectedPermissionOutcome, SessionNotification, TextContent,
+    ContentBlock, InitializeRequest, McpServer, McpServerStdio, NewSessionRequest,
+    PromptRequest, ProtocolVersion, RequestPermissionOutcome, RequestPermissionRequest,
+    RequestPermissionResponse, SelectedPermissionOutcome, SessionNotification, TextContent,
 };
 use agent_client_protocol::{Agent, ByteStreams, Client, ConnectionTo, Responder};
 
@@ -83,8 +83,8 @@ impl AgentBackend for AcpAdapter {
     fn capabilities(&self) -> AgentCapabilities {
         AgentCapabilities {
             streaming: true,
-            mcp_injection: false, // MCP data-plane injection is P1
-            structured_output: false,
+            mcp_injection: true,
+            structured_output: true,
             models: vec![],
         }
     }
@@ -161,6 +161,22 @@ async fn run_acp_session(
     let policy = task.allowlist.clone();
     let emit_raw = config.emit_raw_events;
 
+    // 2a. Prepare MCP server for structured output (if schema present).
+    let _schema_guard = if let Some(ref schema) = task.output_schema {
+        let schema_json = serde_json::to_string(schema)
+            .map_err(|e| BackendError::Execution(format!("schema serialize: {e}")))?;
+        let schema_file = tempfile::NamedTempFile::new()
+            .map_err(|e| BackendError::Execution(format!("schema temp file: {e}")))?;
+        std::fs::write(&schema_file, &schema_json)
+            .map_err(|e| BackendError::Execution(format!("schema temp write: {e}")))?;
+        let schema_path = schema_file.path().to_string_lossy().into_owned();
+        tracing::debug!(schema_file = %schema_path, "prepared MCP structured-output server");
+        Some(SchemaFileGuard(schema_file))
+    } else {
+        None
+    };
+    let schema_file_path = _schema_guard.as_ref().map(|g| g.0.path().to_string_lossy().into_owned());
+
     // 3. Build + drive the ACP client connection.
     let conn_fut = {
         let acc_h = acc.clone();
@@ -213,10 +229,26 @@ async fn run_acp_session(
                         .block_task()
                         .await?;
                     tracing::debug!("ACP handshake: session/new");
-                    let ns = conn
-                        .send_request(NewSessionRequest::new(cwd))
-                        .block_task()
-                        .await?;
+                    let ns = {
+                        let req = NewSessionRequest::new(cwd);
+                        let req = if let Some(ref sf) = schema_file_path {
+                            let maestro_bin = std::env::current_exe()
+                                .unwrap_or_else(|_| std::path::PathBuf::from("maestro"));
+                            let mcp = McpServerStdio::new(
+                                "maestro-structured-output",
+                                maestro_bin,
+                            )
+                            .args(vec![
+                                "mcp-structured-output".to_string(),
+                                "--schema-file".to_string(),
+                                sf.clone(),
+                            ]);
+                            req.mcp_servers(vec![McpServer::Stdio(mcp)])
+                        } else {
+                            req
+                        };
+                        conn.send_request(req).block_task().await?
+                    };
                     tracing::debug!("ACP handshake: session/prompt");
                     let pr = conn
                         .send_request(PromptRequest::new(
@@ -265,8 +297,11 @@ async fn run_acp_session(
     let stop = stop_holder.lock().unwrap().take().unwrap_or_default();
     let message = std::mem::take(&mut *acc.message.lock().unwrap());
     let tokens = *acc.tokens.lock().unwrap();
-    Ok(result_collector::collect(&task, &stop, message, tokens))
+    let structured = acc.structured_output.lock().unwrap().take();
+    Ok(result_collector::collect(&task, &stop, message, tokens, structured))
 }
+
+struct SchemaFileGuard(tempfile::NamedTempFile);
 
 fn is_connection_closed(s: &str) -> bool {
     s.contains("receiver dropped")

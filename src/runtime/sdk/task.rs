@@ -36,6 +36,17 @@ pub(crate) fn build_task(
         _ => None,
     };
 
+    let prompt = match &output_schema {
+        Some(_) => format!(
+            "{prompt}\n\n\
+             ---\n\
+             IMPORTANT: You MUST call the `structured_output` tool to submit your result.\n\
+             Do NOT return the result as a text message. Call the tool.",
+            prompt = prompt,
+        ),
+        None => prompt,
+    };
+
     let cache_key = AgentCacheKey::new(&prompt, model.as_deref(), phase_id);
     let task = AgentTask {
         agent_id: uuid::Uuid::now_v7(),
@@ -118,6 +129,36 @@ mod tests {
         o.set("timeout_ms", 0).unwrap();
         let (task, _, _) = build_task(&o, 0).unwrap();
         assert!(task.timeout.is_none());
+    }
+
+    #[test]
+    fn build_task_schema_injects_tool_call_instruction() {
+        let lua = Lua::new();
+        let o = opts(&lua);
+        o.set("prompt", "analyze").unwrap();
+        let schema = lua.create_table().unwrap();
+        schema.set("type", "object").unwrap();
+        let props = lua.create_table().unwrap();
+        props.set("x", lua.create_table().unwrap()).unwrap();
+        schema.set("properties", props).unwrap();
+        o.set("schema", schema).unwrap();
+
+        let (task, _, _) = build_task(&o, 0).unwrap();
+        assert!(task.prompt.contains("IMPORTANT"));
+        assert!(task.prompt.contains("structured_output"));
+        assert!(task.prompt.contains("tool"));
+        assert!(!task.prompt.contains("JSON Schema"));
+        assert!(task.output_schema.is_some());
+    }
+
+    #[test]
+    fn build_task_no_schema_keeps_prompt_clean() {
+        let lua = Lua::new();
+        let o = opts(&lua);
+        o.set("prompt", "just text").unwrap();
+        let (task, _, _) = build_task(&o, 0).unwrap();
+        assert_eq!(task.prompt, "just text");
+        assert!(task.output_schema.is_none());
     }
 
     #[test]

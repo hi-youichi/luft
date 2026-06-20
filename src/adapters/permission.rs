@@ -35,6 +35,12 @@ pub struct PermissionInputs {
 /// can do its work in v0.1. With a policy we honour, in order:
 /// deny-list → `accept_edits` → `allow_commands` → `allow_mcp`.
 pub fn decide(policy: Option<&ToolPolicy>, input: &PermissionInputs) -> Decision {
+    if let Some(tool) = &input.mcp_tool {
+        if tool == "structured_output" {
+            return Decision::Approve;
+        }
+    }
+
     let policy = match policy {
         None => return Decision::Approve,
         Some(p) => p,
@@ -89,13 +95,17 @@ pub fn decide(policy: Option<&ToolPolicy>, input: &PermissionInputs) -> Decision
 /// is `None` (→ approve), this only affects policy-constrained runs.
 pub fn extract_inputs(req: &RequestPermissionRequest) -> PermissionInputs {
     let v = serde_json::to_value(req).unwrap_or(serde_json::Value::Null);
+    let raw = v.to_string();
     let is_file_edit = find_str_field(&v, "kind").as_deref() == Some("edit")
-        || v.to_string().contains("write_text_file");
+        || raw.contains("write_text_file");
     let command = find_str_field(&v, "command");
+    let mcp_tool = find_str_field(&v, "tool")
+        .or_else(|| find_str_field(&v, "name"))
+        .filter(|_n| raw.contains("mcp") || raw.contains("structured_output"));
     PermissionInputs {
         command,
         is_file_edit,
-        mcp_tool: None,
+        mcp_tool,
     }
 }
 

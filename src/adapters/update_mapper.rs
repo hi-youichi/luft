@@ -16,6 +16,7 @@ use std::sync::Mutex;
 pub struct Accumulator {
     pub message: Mutex<String>,
     pub tokens: Mutex<TokenUsage>,
+    pub structured_output: Mutex<Option<serde_json::Value>>,
 }
 
 impl Accumulator {
@@ -70,6 +71,17 @@ pub fn handle_update(
         SessionUpdate::ToolCall(tc) => {
             let v = to_json(tc);
             let name = find_str(&v, "title").filter(|s| !s.is_empty()).unwrap_or_else(|| "tool".to_string());
+
+            if name == "structured_output" {
+                if let Some(args) = find_object(&v, "arguments")
+                    .or_else(|| find_object(&v, "input"))
+                    .or_else(|| find_object(&v, "rawInput"))
+                {
+                    *acc.structured_output.lock().unwrap() = Some(serde_json::Value::Object(args.clone()));
+                    tracing::debug!("captured structured_output tool call");
+                }
+            }
+
             let summary = find_str(&v, "kind").unwrap_or_default();
             emit(events, run_id, agent_id, ProgressDelta::ToolCall { name, summary });
         }
@@ -83,6 +95,14 @@ pub fn handle_update(
                     ProgressDelta::FileEdit { path: path.into() },
                 );
             }
+        }
+        SessionUpdate::UsageUpdate(u) => {
+            tracing::trace!(
+                used = u.used,
+                size = u.size,
+                cost = ?u.cost,
+                "ACP usage_update"
+            );
         }
         _ => {}
     }

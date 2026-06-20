@@ -16,11 +16,14 @@ pub fn collect(
     stop_reason: &str,
     message: String,
     tokens: TokenUsage,
+    structured_output: Option<serde_json::Value>,
 ) -> AgentResult {
     let status = status_from_stop_reason(stop_reason);
     let findings = extract_findings_from_output(&message);
-    tracing::debug!(agent_id = %task.agent_id, ?status, findings = findings.len(), tokens = tokens.total(), stop_reason, "collecting agent result");
-    let output = if !findings.is_empty() {
+    tracing::debug!(agent_id = %task.agent_id, ?status, findings = findings.len(), tokens = tokens.total(), stop_reason, has_structured = structured_output.is_some(), "collecting agent result");
+    let output = if let Some(json) = structured_output {
+        json
+    } else if !findings.is_empty() {
         serde_json::to_value(&findings).unwrap_or(serde_json::Value::Null)
     } else if let Ok(json) = serde_json::from_str::<serde_json::Value>(&message) {
         if json.is_object() {
@@ -149,23 +152,28 @@ mod tests {
         }
     }
 
+    #[track_caller]
+    fn collect_simple(stop: &str, msg: &str) -> AgentResult {
+        collect(&task(), stop, msg.into(), TokenUsage::default(), None)
+    }
+
     #[test]
     fn end_turn_is_ok_text_output() {
-        let r = collect(&task(), "EndTurn", "hello".into(), TokenUsage::default());
+        let r = collect_simple("EndTurn", "hello");
         assert_eq!(r.status, AgentStatus::Ok);
         assert_eq!(r.output, serde_json::json!({ "text": "hello" }));
     }
 
     #[test]
     fn cancelled_stop_reason_maps() {
-        let r = collect(&task(), "Cancelled", String::new(), TokenUsage::default());
+        let r = collect_simple("Cancelled", "");
         assert_eq!(r.status, AgentStatus::Cancelled);
     }
 
     #[test]
     fn findings_become_output() {
         let msg = r#"{"findings":[{"kind":"bug","severity":"high","title":"X","detail":"Y"}]}"#;
-        let r = collect(&task(), "EndTurn", msg.into(), TokenUsage::default());
+        let r = collect_simple("EndTurn", msg);
         assert_eq!(r.findings[0].kind, "bug");
         assert!(r.output.is_array());
     }
@@ -173,14 +181,14 @@ mod tests {
     #[test]
     fn raw_json_object_becomes_output() {
         let msg = r#"{"files_deleted":["src/ws/","src/commands/serve.rs"]}"#;
-        let r = collect(&task(), "EndTurn", msg.into(), TokenUsage::default());
+        let r = collect_simple("EndTurn", msg);
         assert_eq!(r.output["files_deleted"][0], "src/ws/");
     }
 
     #[test]
     fn json_in_code_block_becomes_output() {
         let msg = "Done!\n```json\n{\"ok\":true,\"output\":\"all good\"}\n```\n";
-        let r = collect(&task(), "EndTurn", msg.into(), TokenUsage::default());
+        let r = collect_simple("EndTurn", msg);
         assert_eq!(r.output["ok"], true);
         assert_eq!(r.output["output"], "all good");
     }
@@ -188,7 +196,19 @@ mod tests {
     #[test]
     fn plain_text_still_wraps_as_text() {
         let msg = "I deleted the files as requested.";
-        let r = collect(&task(), "EndTurn", msg.into(), TokenUsage::default());
+        let r = collect_simple("EndTurn", msg);
         assert_eq!(r.output, serde_json::json!({"text": msg}));
+    }
+
+    #[test]
+    fn structured_output_takes_precedence() {
+        let r = collect(
+            &task(),
+            "EndTurn",
+            "ignored text".into(),
+            TokenUsage::default(),
+            Some(serde_json::json!({"result": "structured"})),
+        );
+        assert_eq!(r.output["result"], "structured");
     }
 }

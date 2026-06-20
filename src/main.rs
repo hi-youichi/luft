@@ -61,6 +61,9 @@ enum Commands {
         #[arg(help = "Run ID to inspect")]
         run_id: uuid::Uuid,
     },
+    /// MCP server subcommand for structured output injection (internal).
+    #[command(hide = true)]
+    McpStructuredOutput(commands::mcp_server::McpStructuredOutputArgs),
 }
 
 #[derive(clap::Args)]
@@ -132,6 +135,7 @@ async fn main() -> Result<()> {
         Commands::List { limit } => commands::list::list_runs_cmd(limit)?,
         Commands::Status { run_id } => commands::status::status_run_cmd(run_id)?,
         Commands::Logs { run_id, limit } => commands::logs::logs_run_cmd(run_id, limit)?,
+        Commands::McpStructuredOutput(args) => commands::mcp_server::run(args)?,
     }
 
     Ok(())

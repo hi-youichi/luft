@@ -2,6 +2,7 @@
 //! args and routes each subcommand to the matching handler here.
 
 pub mod event_log;
+pub mod mcp_server;
 pub mod generate;
 pub mod list;
 pub mod logs;
