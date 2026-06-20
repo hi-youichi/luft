@@ -1,5 +1,5 @@
 -- parallel-demo.lua — 并行处理多个任务
--- cargo run -- --workflow examples/parallel-demo.lua --backend mock --approve
+-- cargo run -- run --workflow examples/parallel-demo.lua --backend mock
 
 local files = { "src/main.rs", "src/lib.rs", "src/cli.rs" }
 

@@ -1,5 +1,5 @@
 -- converge-demo.lua — 对抗性收敛验证
--- cargo run -- --workflow examples/converge-demo.lua --backend mock --approve
+-- cargo run -- run --workflow examples/converge-demo.lua --backend mock
 
 local claims = {
     "API 端点 /users 需要 RBAC 鉴权",

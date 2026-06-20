@@ -1,5 +1,5 @@
 -- hello.lua — 最简 agent 调用
--- cargo run -- --workflow examples/hello.lua --backend mock --approve
+-- cargo run -- run --workflow examples/hello.lua --backend mock
 
 local result = agent({
     prompt = "Say hello in exactly 3 words",

@@ -1,5 +1,5 @@
 -- pipeline-demo.lua — 多阶段流式管道
--- cargo run -- --workflow examples/pipeline-demo.lua --backend mock --approve
+-- cargo run -- run --workflow examples/pipeline-demo.lua --backend mock
 
 local topics = { "Rust async runtime", "Lua VM embedding", "MCP protocol" }
 
