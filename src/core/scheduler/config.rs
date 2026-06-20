@@ -37,6 +37,8 @@ pub struct RetryPolicy {
     pub initial_backoff: Duration,
     pub backoff_multiplier: f64,
     pub max_backoff: Duration,
+    /// Max schema validation retries before giving up (0 = no retry).
+    pub schema_retry_max: u32,
 }
 
 impl Default for RetryPolicy {
@@ -46,6 +48,7 @@ impl Default for RetryPolicy {
             initial_backoff: Duration::from_millis(500),
             backoff_multiplier: 2.0,
             max_backoff: Duration::from_secs(10),
+            schema_retry_max: 1,
         }
     }
 }

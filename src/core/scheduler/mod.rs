@@ -124,7 +124,7 @@ impl Scheduler {
     pub async fn run_agent(
         &self,
         run_id: RunId,
-        task: AgentTask,
+        mut task: AgentTask,
         backend_id: Option<&str>,
     ) -> Result<AgentResult, SchedulerError> {
         let backend = match backend_id {
@@ -177,6 +177,8 @@ impl Scheduler {
 
         let start = Instant::now();
         let mut attempt = 0u32;
+        let original_prompt = task.prompt.clone();
+        let mut schema_retry_count = 0u32;
         let outcome: Result<AgentResult, SchedulerError> = loop {
             let ctx = RunContext {
                 run_id,
@@ -194,11 +196,38 @@ impl Scheduler {
 
             match res {
                 Ok(result) => {
-                    // Validate output against schema if configured (M4).
                     if let Some(ref schema) = task.output_schema {
                         if let Err(e) = validate_output(&result.output, schema) {
-                            tracing::error!(error = %e, "agent output failed schema validation");
-                            break Err(SchedulerError::SchemaValidation(e.to_string()));
+                            schema_retry_count += 1;
+                            if schema_retry_count > self.config.retry.schema_retry_max {
+                                tracing::error!(
+                                    error = %e,
+                                    attempts = schema_retry_count,
+                                    "agent output failed schema validation, retries exhausted"
+                                );
+                                break Err(SchedulerError::SchemaValidation(e.to_string()));
+                            }
+                            tracing::warn!(
+                                error = %e,
+                                attempt = schema_retry_count,
+                                "schema validation failed, retrying with feedback"
+                            );
+                            let schema_json = serde_json::to_string_pretty(schema)
+                                .unwrap_or_default();
+                            task.prompt = format!(
+                                "{original_prompt}\n\n\
+                                 ---\n\
+                                 Your previous response did not match the required schema.\n\
+                                 Error: {error}\n\
+                                 Please correct your output and return ONLY a valid JSON object.\n\
+                                 \n\
+                                 Required JSON Schema:\n\
+                                 {schema}",
+                                original_prompt = original_prompt,
+                                error = e,
+                                schema = schema_json,
+                            );
+                            continue;
                         }
                     }
                     break Ok(result)
@@ -344,6 +373,7 @@ mod tests {
                 initial_backoff: Duration::from_millis(1),
                 backoff_multiplier: 2.0,
                 max_backoff: Duration::from_millis(5),
+                schema_retry_max: 1,
             },
         }
     }
