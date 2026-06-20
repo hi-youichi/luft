@@ -22,6 +22,14 @@ pub fn collect(
     tracing::debug!(agent_id = %task.agent_id, ?status, findings = findings.len(), tokens = tokens.total(), stop_reason, "collecting agent result");
     let output = if !findings.is_empty() {
         serde_json::to_value(&findings).unwrap_or(serde_json::Value::Null)
+    } else if let Ok(json) = serde_json::from_str::<serde_json::Value>(&message) {
+        if json.is_object() {
+            json
+        } else {
+            serde_json::json!({ "text": message })
+        }
+    } else if let Some(json) = extract_last_json_block(&message) {
+        json
     } else {
         serde_json::json!({ "text": message })
     };
@@ -70,6 +78,24 @@ pub fn extract_findings_from_output(output: &str) -> Vec<Finding> {
     }
 
     findings
+}
+
+fn extract_last_json_block(message: &str) -> Option<serde_json::Value> {
+    let mut last_json: Option<serde_json::Value> = None;
+    for block in message.split("```") {
+        let trimmed = block.trim();
+        let candidate = trimmed
+            .strip_prefix("json")
+            .or_else(|| trimmed.strip_prefix("JSON"))
+            .map(|s| s.trim())
+            .unwrap_or(trimmed);
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(candidate) {
+            if json.is_object() {
+                last_json = Some(json);
+            }
+        }
+    }
+    last_json
 }
 
 fn parse_finding(json: &serde_json::Value) -> Option<Finding> {
@@ -142,5 +168,27 @@ mod tests {
         let r = collect(&task(), "EndTurn", msg.into(), TokenUsage::default());
         assert_eq!(r.findings[0].kind, "bug");
         assert!(r.output.is_array());
+    }
+
+    #[test]
+    fn raw_json_object_becomes_output() {
+        let msg = r#"{"files_deleted":["src/ws/","src/commands/serve.rs"]}"#;
+        let r = collect(&task(), "EndTurn", msg.into(), TokenUsage::default());
+        assert_eq!(r.output["files_deleted"][0], "src/ws/");
+    }
+
+    #[test]
+    fn json_in_code_block_becomes_output() {
+        let msg = "Done!\n```json\n{\"ok\":true,\"output\":\"all good\"}\n```\n";
+        let r = collect(&task(), "EndTurn", msg.into(), TokenUsage::default());
+        assert_eq!(r.output["ok"], true);
+        assert_eq!(r.output["output"], "all good");
+    }
+
+    #[test]
+    fn plain_text_still_wraps_as_text() {
+        let msg = "I deleted the files as requested.";
+        let r = collect(&task(), "EndTurn", msg.into(), TokenUsage::default());
+        assert_eq!(r.output, serde_json::json!({"text": msg}));
     }
 }
