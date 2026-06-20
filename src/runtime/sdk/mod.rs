@@ -18,7 +18,7 @@ use crate::core::contract::event::EventSender;
 use crate::core::contract::ids::RunId;
 use crate::core::journal::JournalStore;
 use crate::core::Scheduler;
-use std::sync::atomic::AtomicU32;
+use std::sync::atomic::{AtomicU32, AtomicU64};
 use std::sync::{Arc, Mutex};
 use tokio::runtime::Handle;
 
@@ -40,6 +40,9 @@ pub(crate) struct SdkContext {
     /// Phase counter — incremented by `phase()`, read by `agent()`/`parallel()`
     /// so cache keys and events carry a meaningful phase id.
     pub phase_counter: Arc<AtomicU32>,
+    /// Span counter — `fetch_add`'d by each blocking SDK primitive to correlate
+    /// its `*Started`/`*Done` event pair (see `docs/design/sdk-events.md`).
+    pub span_counter: Arc<AtomicU64>,
 }
 
 impl SdkContext {
@@ -57,6 +60,7 @@ impl SdkContext {
             handle,
             report_sink,
             phase_counter: Arc::new(AtomicU32::new(0)),
+            span_counter: Arc::new(AtomicU64::new(0)),
         }
     }
 

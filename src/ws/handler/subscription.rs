@@ -56,7 +56,9 @@ pub async fn poll_subscriptions(
 
 fn passes_filter(evt: &AgentEvent, filter: &Option<Vec<String>>) -> bool {
     match filter {
-        None => true,
+        // Default subscription excludes the high-volume raw ACP stream — it must
+        // be opted into explicitly via the filter.
+        None => event_type_name(evt) != "acp_raw",
         Some(types) => {
             let name = event_type_name(evt);
             types.iter().any(|t| t == name)
@@ -71,10 +73,19 @@ fn event_run_id(evt: &AgentEvent) -> RunId {
         AgentEvent::PhaseStarted { run_id, .. } => *run_id,
         AgentEvent::AgentStarted { run_id, .. } => *run_id,
         AgentEvent::AgentProgress { run_id, .. } => *run_id,
+        AgentEvent::AcpRaw { run_id, .. } => *run_id,
         AgentEvent::AgentDone { run_id, .. } => *run_id,
         AgentEvent::PhaseDone { run_id, .. } => *run_id,
         AgentEvent::RunDone { run_id, .. } => *run_id,
         AgentEvent::Log { run_id, .. } => *run_id,
+        AgentEvent::BudgetSet { run_id, .. } => *run_id,
+        AgentEvent::ReportEmitted { run_id, .. } => *run_id,
+        AgentEvent::ParallelStarted { run_id, .. } => *run_id,
+        AgentEvent::ParallelDone { run_id, .. } => *run_id,
+        AgentEvent::WorkflowStarted { run_id, .. } => *run_id,
+        AgentEvent::WorkflowDone { run_id, .. } => *run_id,
+        AgentEvent::ConvergeStarted { run_id, .. } => *run_id,
+        AgentEvent::ConvergeDone { run_id, .. } => *run_id,
         AgentEvent::PipelineStarted { run_id, .. } => *run_id,
         AgentEvent::PipelineStageStarted { run_id, .. } => *run_id,
         AgentEvent::PipelineItemDone { run_id, .. } => *run_id,
@@ -146,6 +157,28 @@ mod tests {
         assert!(!passes_filter(&evt, &Some(vec!["agent_done".into()])));
     }
 
+    fn sample_acp_raw(run_id: RunId) -> AgentEvent {
+        AgentEvent::AcpRaw {
+            run_id,
+            agent_id: run_id,
+            kind: "plan".into(),
+            raw: serde_json::json!({ "sessionUpdate": "plan" }),
+        }
+    }
+
+    #[test]
+    fn passes_filter_none_excludes_acp_raw() {
+        // Default subscription (no filter) must NOT receive the raw ACP stream.
+        let evt = sample_acp_raw(RunId::now_v7());
+        assert!(!passes_filter(&evt, &None));
+    }
+
+    #[test]
+    fn passes_filter_explicit_acp_raw_opt_in() {
+        let evt = sample_acp_raw(RunId::now_v7());
+        assert!(passes_filter(&evt, &Some(vec!["acp_raw".into()])));
+    }
+
     #[test]
     fn event_run_id_all_variants() {
         let run_id = RunId::now_v7();
@@ -154,10 +187,19 @@ mod tests {
             AgentEvent::PhaseStarted { run_id, phase_id: 0, label: "p".into(), planned: 1 },
             AgentEvent::AgentStarted { run_id, phase_id: 0, agent_id: run_id, prompt_preview: "p".into(), model: None },
             AgentEvent::AgentProgress { run_id, agent_id: run_id, delta: ProgressDelta::Message { text: "d".into() } },
+            AgentEvent::AcpRaw { run_id, agent_id: run_id, kind: "plan".into(), raw: serde_json::json!({"sessionUpdate":"plan"}) },
             AgentEvent::AgentDone { run_id, agent_id: run_id, status: AgentStatus::Ok, tokens: TokenUsage::default(), elapsed_ms: 0 },
             AgentEvent::PhaseDone { run_id, phase_id: 0, ok: 1, failed: 0 },
             AgentEvent::RunDone { run_id, status: RunStatus::Completed, total_tokens: TokenUsage::default(), report: serde_json::json!(null) },
             AgentEvent::Log { run_id, agent_id: None, level: LogLevel::Info, msg: "m".into() },
+            AgentEvent::BudgetSet { run_id, time_limit_ms: Some(1), max_rounds: Some(2) },
+            AgentEvent::ReportEmitted { run_id, phase_id: 0, report: serde_json::json!({}) },
+            AgentEvent::ParallelStarted { run_id, phase_id: 0, span_id: 1, count: 2 },
+            AgentEvent::ParallelDone { run_id, phase_id: 0, span_id: 1, ok: 2, failed: 0, results: serde_json::json!([]), elapsed_ms: 5 },
+            AgentEvent::WorkflowStarted { run_id, span_id: 1, path: "w.lua".into(), args: serde_json::json!({}) },
+            AgentEvent::WorkflowDone { run_id, span_id: 1, path: "w.lua".into(), report: serde_json::json!(null), elapsed_ms: 5, error: None },
+            AgentEvent::ConvergeStarted { run_id, phase_id: 0, span_id: 1, items: 3, max_rounds: 3 },
+            AgentEvent::ConvergeDone { run_id, phase_id: 0, span_id: 1, rounds: 2, converged: true, surviving: 1, result: serde_json::json!({}), elapsed_ms: 5, error: None },
             AgentEvent::PipelineStarted { run_id, total_stages: 1, items: 1 },
             AgentEvent::PipelineStageStarted { run_id, stage_index: 0, label: "s".into(), agents_in_stage: 1 },
             AgentEvent::PipelineItemDone { run_id, stage_index: 0, item_index: 0, status: AgentStatus::Ok, tokens: TokenUsage::default(), elapsed_ms: 0 },

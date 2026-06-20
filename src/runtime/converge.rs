@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Converge — adversarial verification and convergence logic.
 //!
 //! This module implements the core dynamic workflow convergence algorithm:
@@ -11,11 +12,14 @@
 //! reaches the user.
 
 use crate::core::contract::backend::{AgentStatus, RunContext};
+use crate::core::contract::event::AgentEvent;
 use crate::core::contract::finding::Finding;
 use crate::core::Scheduler;
 use crate::runtime::error::ScriptError;
+use crate::runtime::sdk::SdkContext;
 use mlua::{Lua, Table, Value};
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 /// Configuration for convergence verification.
@@ -98,6 +102,7 @@ pub async fn execute_convergence(
     run_ctx: &RunContext,
 ) -> Result<ConvergeResult, ScriptError> {
     if items.is_empty() {
+        tracing::debug!("converge: no items, returning empty");
         return Ok(ConvergeResult {
             surviving_items: vec![],
             findings: vec![],
@@ -106,6 +111,8 @@ pub async fn execute_convergence(
             round_stats: vec![],
         });
     }
+
+    tracing::info!(n_items = items.len(), max_rounds = config.max_rounds, adversarial = config.adversarial, "converge started");
 
     let mut state = ConvergeState {
         items,
@@ -116,6 +123,7 @@ pub async fn execute_convergence(
 
     for round in 1..=config.max_rounds {
         let items_count = state.items.len();
+        tracing::info!(round, items_count, "converge round started");
         let round_input = state.items.clone();
 
         // Phase 1: Producer agents generate findings
@@ -133,11 +141,13 @@ pub async fn execute_convergence(
         state.findings.extend(current_findings);
 
         if findings.is_empty() {
+            tracing::info!(round, "converge: no findings generated, ending");
             break;
         }
 
         // Phase 2: Adversarial agents refute findings (if enabled)
         let (surviving_findings, vote_stats) = if config.adversarial {
+            tracing::debug!(round, n_findings = findings.len(), adversaries = config.adversaries_per_finding, "adversarial verification started");
             verify_findings(
                 &findings,
                 adversary_prompt,
@@ -161,16 +171,26 @@ pub async fn execute_convergence(
             findings_refuted: findings.len() - surviving_findings.len(),
             approval_rate: vote_stats.approval_rate,
         };
+        tracing::info!(
+            round,
+            generated = findings.len(),
+            survived = surviving_findings.len(),
+            refuted = findings.len() - surviving_findings.len(),
+            approval_rate = vote_stats.approval_rate,
+            "converge round finished"
+        );
         state.round_stats.push(round_stats);
 
         // Check for convergence
         if surviving_findings.is_empty() {
+            tracing::info!(round, "converge: all findings refuted, converged");
             state.converged = true;
             break;
         }
 
         // Check if items unchanged (full convergence)
         if surviving_findings.len() == findings.len() && round > 1 {
+            tracing::info!(round, "converge: no findings refuted, full convergence");
             state.converged = true;
             break;
         }
@@ -192,6 +212,7 @@ pub async fn execute_convergence(
             .collect();
     }
 
+    tracing::info!(rounds = state.round_stats.len(), converged = state.converged, surviving = state.items.len(), total_findings = state.findings.len(), "converge finished");
     Ok(ConvergeResult {
         surviving_items: state.items,
         findings: state.findings,
@@ -234,6 +255,7 @@ async fn generate_findings(
     // Run all producers in parallel
     let results = scheduler.run_parallel(run_ctx.run_id, tasks).await;
     let agents_run = results.len();
+    tracing::debug!(agents_run, "producer agents completed");
     let mut all_findings = Vec::new();
 
     for result in results.into_iter().flatten() {
@@ -288,7 +310,10 @@ async fn verify_findings(
 
             if let Ok(r) = result {
                 if r.status == AgentStatus::Ok {
+                    tracing::trace!(%agent_id, "adversary approved finding");
                     approval_count += 1;
+                } else {
+                    tracing::trace!(%agent_id, ?r.status, "adversary rejected finding");
                 }
             }
         }
@@ -312,6 +337,8 @@ async fn verify_findings(
         })
         .map(|(f, _)| f)
         .collect();
+
+    tracing::debug!(surviving = surviving.len(), refuted = findings.len() - surviving.len(), approval_rate, "adversarial voting completed");
 
     let stats = VoteStats { approval_rate };
 
@@ -344,23 +371,26 @@ fn extract_string(s: mlua::String) -> Option<String> {
 ///
 /// `handle` is the tokio runtime handle used to block on the async scheduler.
 /// It must be called from a blocking execution context (see `sandbox`).
-pub fn register_converge_sdk(
-    lua: &Lua,
-    scheduler: &Arc<Scheduler>,
-    run_ctx: &RunContext,
-    handle: tokio::runtime::Handle,
-) -> mlua::Result<()> {
+pub fn register_converge_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<()> {
     let globals = lua.globals();
-    let sched = scheduler.clone();
-    let rc = run_ctx.clone();
+    let sched = cx.scheduler.clone();
+    let rc = cx.run_ctx.clone();
+    let handle = cx.handle.clone();
+    let events = cx.events();
+    let run_id = cx.run_id();
+    let phase_counter = cx.phase_counter.clone();
+    let span_counter = cx.span_counter.clone();
 
     let converge_fn = lua.create_function(move |_lua, (items, options): (Table, Table)| {
         let scheduler = sched.clone();
         let run_ctx = rc.clone();
         let handle = handle.clone();
-
         // Parse options
         let config = parse_converge_options(&options);
+        tracing::debug!(adversarial = config.adversarial, max_rounds = config.max_rounds, "converge SDK invoked");
+        let phase_id = phase_counter.load(Ordering::Relaxed);
+        let span_id = span_counter.fetch_add(1, Ordering::Relaxed);
+        let max_rounds = config.max_rounds;
 
         let producer_prompt = options
             .get::<mlua::String>("producer_prompt")
@@ -385,6 +415,15 @@ pub fn register_converge_sdk(
             .filter_map(|v| lua_value_to_json(&v).ok())
             .collect();
 
+        let _ = events.send(AgentEvent::ConvergeStarted {
+            run_id,
+            phase_id,
+            span_id,
+            items: items_vec.len(),
+            max_rounds,
+        });
+        let t0 = std::time::Instant::now();
+
         // Execute convergence by blocking on the shared scheduler runtime.
         let result = handle.block_on(execute_convergence(
             items_vec,
@@ -394,9 +433,34 @@ pub fn register_converge_sdk(
             &scheduler,
             &run_ctx,
         ));
+        let elapsed_ms = t0.elapsed().as_millis() as u64;
 
         match result {
+            Ok(ref res) => {
+                tracing::info!(rounds = res.rounds, converged = res.converged, surviving = res.surviving_items.len(), elapsed_ms, "converge SDK completed");
+            }
+            Err(ref e) => {
+                tracing::error!(error = %e, elapsed_ms, "converge SDK failed");
+            }
+        }
+        match result {
             Ok(res) => {
+                let _ = events.send(AgentEvent::ConvergeDone {
+                    run_id,
+                    phase_id,
+                    span_id,
+                    rounds: res.rounds,
+                    converged: res.converged,
+                    surviving: res.surviving_items.len(),
+                    result: serde_json::json!({
+                        "surviving": res.surviving_items,
+                        "rounds": res.rounds,
+                        "converged": res.converged,
+                        "findings": res.findings,
+                    }),
+                    elapsed_ms,
+                    error: None,
+                });
                 let result_table = _lua.create_table()?;
                 let surviving = _lua.create_table()?;
                 for (i, item) in res.surviving_items.iter().enumerate() {
@@ -420,7 +484,20 @@ pub fn register_converge_sdk(
 
                 Ok(result_table)
             }
-            Err(e) => Err(mlua::Error::RuntimeError(format!("converge error: {}", e))),
+            Err(e) => {
+                let _ = events.send(AgentEvent::ConvergeDone {
+                    run_id,
+                    phase_id,
+                    span_id,
+                    rounds: 0,
+                    converged: false,
+                    surviving: 0,
+                    result: serde_json::Value::Null,
+                    elapsed_ms,
+                    error: Some(e.to_string()),
+                });
+                Err(mlua::Error::RuntimeError(format!("converge error: {}", e)))
+            }
         }
     })?;
 

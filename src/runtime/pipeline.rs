@@ -225,6 +225,7 @@ impl PipelineExecutor {
 
         let n_stages = self.config.stages.len();
         let n_items = items.len();
+        tracing::info!(n_stages, n_items, max_inflight = self.config.max_inflight, "pipeline execution started");
         let run_id = self.run_id;
 
         // Emit PipelineStarted event
@@ -247,6 +248,7 @@ impl PipelineExecutor {
         for (stage_idx, stage) in self.config.stages.iter().enumerate() {
             let stage_start = Instant::now();
             let stage_label = stage.label.clone();
+            tracing::info!(stage_idx, %stage_label, items = current_items.len(), "pipeline stage started");
 
             // Emit PipelineStageStarted event
             self.emit(AgentEvent::PipelineStageStarted {
@@ -292,12 +294,14 @@ impl PipelineExecutor {
                         item.stage_statuses[stage_idx] = StageStatus::Ok;
                     }
                     Err(e) => {
+                        tracing::warn!(item_index = item.index, stage_idx, error = %e, "pipeline item failed at stage");
                         item.stage_statuses[stage_idx] = StageStatus::Failed(e);
                     }
                 }
             }
 
-            let _ = stage_start.elapsed(); // available for logging
+            let stage_elapsed = stage_start.elapsed();
+            tracing::info!(stage_idx, %stage_label, elapsed_ms = stage_elapsed.as_millis() as u64, "pipeline stage finished");
         }
 
         let total_elapsed = pipeline_start.elapsed().as_millis() as u64;
@@ -338,6 +342,8 @@ impl PipelineExecutor {
             total_ok: ok_count,
             total_failed: failed_count,
         });
+
+        tracing::info!(total_elapsed_ms = total_elapsed, ok = ok_count, failed = failed_count, "pipeline execution finished");
 
         Ok(PipelineResult {
             items: item_results,
@@ -432,12 +438,17 @@ pub(crate) fn register_pipeline_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<
         }
 
         let max_inflight = params.get::<i64>("max_inflight").unwrap_or(5).max(1) as usize;
+        let n_stages = stages.len();
         let config = PipelineConfig { stages, max_inflight, ..Default::default() };
 
         let executor = PipelineExecutor::new(config, Some(events), run_id);
+        tracing::debug!(n_items = items.len(), n_stages, "pipeline SDK invoked");
         let result = handle
             .block_on(executor.execute(items))
-            .map_err(|e| mlua::Error::RuntimeError(format!("pipeline: execution error: {}", e)))?;
+            .map_err(|e| {
+                tracing::error!(error = %e, "pipeline execution failed");
+                mlua::Error::RuntimeError(format!("pipeline: execution error: {}", e))
+            })?;
 
         let t = lua.create_table()?;
         let items_t = lua.create_table()?;

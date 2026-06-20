@@ -221,10 +221,19 @@ pub fn event_type_name(evt: &AgentEvent) -> &'static str {
         AgentEvent::PhaseStarted { .. } => "phase_started",
         AgentEvent::AgentStarted { .. } => "agent_started",
         AgentEvent::AgentProgress { .. } => "agent_progress",
+        AgentEvent::AcpRaw { .. } => "acp_raw",
         AgentEvent::AgentDone { .. } => "agent_done",
         AgentEvent::PhaseDone { .. } => "phase_done",
         AgentEvent::RunDone { .. } => "run_done",
         AgentEvent::Log { .. } => "log",
+        AgentEvent::BudgetSet { .. } => "budget_set",
+        AgentEvent::ReportEmitted { .. } => "report_emitted",
+        AgentEvent::ParallelStarted { .. } => "parallel_started",
+        AgentEvent::ParallelDone { .. } => "parallel_done",
+        AgentEvent::WorkflowStarted { .. } => "workflow_started",
+        AgentEvent::WorkflowDone { .. } => "workflow_done",
+        AgentEvent::ConvergeStarted { .. } => "converge_started",
+        AgentEvent::ConvergeDone { .. } => "converge_done",
         AgentEvent::PipelineStarted { .. } => "pipeline_started",
         AgentEvent::PipelineStageStarted { .. } => "pipeline_stage_started",
         AgentEvent::PipelineItemDone { .. } => "pipeline_item_done",
@@ -248,6 +257,8 @@ pub fn default_capabilities() -> Vec<&'static str> {
         "get_report",
         "script_preview",
         "event_filter",
+        "acp_raw",
+        "sdk_events",
     ]
 }
 
@@ -442,10 +453,19 @@ mod tests {
             (AgentEvent::PhaseStarted { run_id, phase_id: 0, label: "p".into(), planned: 1 }, "phase_started"),
             (AgentEvent::AgentStarted { run_id, phase_id: 0, agent_id: run_id, prompt_preview: "p".into(), model: None }, "agent_started"),
             (AgentEvent::AgentProgress { run_id, agent_id: run_id, delta: ProgressDelta::Message { text: "d".into() } }, "agent_progress"),
+            (AgentEvent::AcpRaw { run_id, agent_id: run_id, kind: "plan".into(), raw: serde_json::json!({"sessionUpdate":"plan"}) }, "acp_raw"),
             (AgentEvent::AgentDone { run_id, agent_id: run_id, status: AgentStatus::Ok, tokens: TokenUsage::default(), elapsed_ms: 0 }, "agent_done"),
             (AgentEvent::PhaseDone { run_id, phase_id: 0, ok: 1, failed: 0 }, "phase_done"),
             (AgentEvent::RunDone { run_id, status: RunStatus::Completed, total_tokens: TokenUsage::default(), report: serde_json::json!(null) }, "run_done"),
             (AgentEvent::Log { run_id, agent_id: None, level: LogLevel::Info, msg: "m".into() }, "log"),
+            (AgentEvent::BudgetSet { run_id, time_limit_ms: Some(1), max_rounds: Some(2) }, "budget_set"),
+            (AgentEvent::ReportEmitted { run_id, phase_id: 0, report: serde_json::json!({}) }, "report_emitted"),
+            (AgentEvent::ParallelStarted { run_id, phase_id: 0, span_id: 1, count: 2 }, "parallel_started"),
+            (AgentEvent::ParallelDone { run_id, phase_id: 0, span_id: 1, ok: 2, failed: 0, results: serde_json::json!([]), elapsed_ms: 5 }, "parallel_done"),
+            (AgentEvent::WorkflowStarted { run_id, span_id: 1, path: "w.lua".into(), args: serde_json::json!({}) }, "workflow_started"),
+            (AgentEvent::WorkflowDone { run_id, span_id: 1, path: "w.lua".into(), report: serde_json::json!(null), elapsed_ms: 5, error: None }, "workflow_done"),
+            (AgentEvent::ConvergeStarted { run_id, phase_id: 0, span_id: 1, items: 3, max_rounds: 3 }, "converge_started"),
+            (AgentEvent::ConvergeDone { run_id, phase_id: 0, span_id: 1, rounds: 2, converged: true, surviving: 1, result: serde_json::json!({}), elapsed_ms: 5, error: None }, "converge_done"),
             (AgentEvent::PipelineStarted { run_id, total_stages: 1, items: 1 }, "pipeline_started"),
             (AgentEvent::PipelineStageStarted { run_id, stage_index: 0, label: "s".into(), agents_in_stage: 1 }, "pipeline_stage_started"),
             (AgentEvent::PipelineItemDone { run_id, stage_index: 0, item_index: 0, status: AgentStatus::Ok, tokens: TokenUsage::default(), elapsed_ms: 0 }, "pipeline_item_done"),
@@ -471,7 +491,9 @@ mod tests {
         assert!(caps.contains(&"run"));
         assert!(caps.contains(&"subscribe"));
         assert!(caps.contains(&"cancel"));
-        assert_eq!(caps.len(), 13);
+        assert!(caps.contains(&"acp_raw"));
+        assert!(caps.contains(&"sdk_events"));
+        assert_eq!(caps.len(), 15);
     }
 
     #[test]

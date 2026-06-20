@@ -43,6 +43,7 @@ pub(super) fn record(
     result: &AgentResult,
 ) {
     if let Some(j) = journal {
+        tracing::debug!(agent_id = %agent_id, phase_id, hash = &cache_key.hash[..8.min(cache_key.hash.len())], "recording result to journal");
         j.record_result(
             cache_key,
             agent_id,

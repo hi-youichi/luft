@@ -25,13 +25,29 @@ impl Accumulator {
 }
 
 /// Handle one streamed update: emit a progress event and update the accumulator.
+///
+/// When `emit_raw` is set, the verbatim `SessionUpdate` is additionally emitted
+/// as [`AgentEvent::AcpRaw`] before the (lossy) projection — this captures even
+/// the variants the projection drops.
 pub fn handle_update(
     update: &SessionUpdate,
     run_id: RunId,
     agent_id: AgentId,
     acc: &Accumulator,
     events: &EventSender,
+    emit_raw: bool,
 ) {
+    if emit_raw {
+        let raw = to_json(update);
+        let kind = raw
+            .get("sessionUpdate")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+        tracing::trace!(%run_id, %agent_id, %kind, "ACP raw update");
+        let _ = events.send(AgentEvent::AcpRaw { run_id, agent_id, kind, raw });
+    }
+
     match update {
         SessionUpdate::AgentMessageChunk(chunk) => {
             if let Some(text) = json_find_text(chunk) {
@@ -73,6 +89,7 @@ pub fn handle_update(
 
     // Best-effort: any update carrying a `usage` object updates token totals.
     if let Some(usage) = extract_usage(update) {
+        tracing::trace!(input = usage.input, output = usage.output, "token usage update");
         *acc.tokens.lock().unwrap() = usage;
         emit(events, run_id, agent_id, ProgressDelta::Tokens { usage });
     }
@@ -323,7 +340,7 @@ mod tests {
         let acc = Accumulator::new();
         let (tx, mut rx) = tokio::sync::broadcast::channel(16);
 
-        handle_update(&update, RunId::nil(), AgentId::nil(), &acc, &tx);
+        handle_update(&update, RunId::nil(), AgentId::nil(), &acc, &tx, false);
 
         assert_eq!(acc.message.lock().unwrap().as_str(), "hello");
         let evt = rx.try_recv().unwrap();
@@ -345,7 +362,7 @@ mod tests {
         let acc = Accumulator::new();
         let (tx, mut rx) = tokio::sync::broadcast::channel(16);
 
-        handle_update(&update, RunId::nil(), AgentId::nil(), &acc, &tx);
+        handle_update(&update, RunId::nil(), AgentId::nil(), &acc, &tx, false);
 
         assert!(acc.message.lock().unwrap().is_empty());
         let evt = rx.try_recv().unwrap();
@@ -368,7 +385,7 @@ mod tests {
         let acc = Accumulator::new();
         let (tx, mut rx) = tokio::sync::broadcast::channel(16);
 
-        handle_update(&update, RunId::nil(), AgentId::nil(), &acc, &tx);
+        handle_update(&update, RunId::nil(), AgentId::nil(), &acc, &tx, false);
 
         let evt = rx.try_recv().unwrap();
         match evt {
@@ -387,7 +404,7 @@ mod tests {
         let acc = Accumulator::new();
         let (tx, mut rx) = tokio::sync::broadcast::channel(16);
 
-        handle_update(&update, RunId::nil(), AgentId::nil(), &acc, &tx);
+        handle_update(&update, RunId::nil(), AgentId::nil(), &acc, &tx, false);
 
         let evt = rx.try_recv().unwrap();
         match evt {
@@ -408,7 +425,7 @@ mod tests {
         let acc = Accumulator::new();
         let (tx, mut rx) = tokio::sync::broadcast::channel(16);
 
-        handle_update(&update, RunId::nil(), AgentId::nil(), &acc, &tx);
+        handle_update(&update, RunId::nil(), AgentId::nil(), &acc, &tx, false);
 
         let evt = rx.try_recv().unwrap();
         match evt {
@@ -430,7 +447,7 @@ mod tests {
         let acc = Accumulator::new();
         let (tx, _rx) = tokio::sync::broadcast::channel(16);
 
-        handle_update(&update, RunId::nil(), AgentId::nil(), &acc, &tx);
+        handle_update(&update, RunId::nil(), AgentId::nil(), &acc, &tx, false);
         assert!(tx.is_empty());
     }
 
@@ -443,10 +460,67 @@ mod tests {
 
         for t in ["hello ", "world", "!"] {
             let chunk = ContentChunk::new(ContentBlock::Text(TextContent::new(t)));
-            handle_update(&SessionUpdate::AgentMessageChunk(chunk), RunId::nil(), AgentId::nil(), &acc, &tx);
+            handle_update(&SessionUpdate::AgentMessageChunk(chunk), RunId::nil(), AgentId::nil(), &acc, &tx, false);
         }
 
         assert_eq!(acc.message.lock().unwrap().as_str(), "hello world!");
+    }
+
+    #[test]
+    fn handle_update_emit_raw_prepends_acp_raw() {
+        use agent_client_protocol::schema::{ContentBlock, ContentChunk, TextContent};
+
+        let chunk = ContentChunk::new(ContentBlock::Text(TextContent::new("hi")));
+        let update = SessionUpdate::AgentMessageChunk(chunk);
+        let acc = Accumulator::new();
+        let (tx, mut rx) = tokio::sync::broadcast::channel(16);
+
+        handle_update(&update, RunId::nil(), AgentId::nil(), &acc, &tx, true);
+
+        // Raw event comes first, carrying the discriminator + verbatim payload.
+        match rx.try_recv().unwrap() {
+            AgentEvent::AcpRaw { kind, raw, .. } => {
+                assert_eq!(kind, "agent_message_chunk");
+                assert_eq!(raw.get("sessionUpdate").and_then(|v| v.as_str()), Some("agent_message_chunk"));
+            }
+            other => panic!("expected AcpRaw, got {other:?}"),
+        }
+        // Projection still follows.
+        assert!(matches!(rx.try_recv().unwrap(), AgentEvent::AgentProgress { .. }));
+    }
+
+    #[test]
+    fn handle_update_emit_raw_false_emits_no_acp_raw() {
+        use agent_client_protocol::schema::{ContentBlock, ContentChunk, TextContent};
+
+        let chunk = ContentChunk::new(ContentBlock::Text(TextContent::new("hi")));
+        let update = SessionUpdate::AgentMessageChunk(chunk);
+        let acc = Accumulator::new();
+        let (tx, mut rx) = tokio::sync::broadcast::channel(16);
+
+        handle_update(&update, RunId::nil(), AgentId::nil(), &acc, &tx, false);
+
+        // Only the projected AgentProgress, never an AcpRaw.
+        assert!(matches!(rx.try_recv().unwrap(), AgentEvent::AgentProgress { .. }));
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn handle_update_emit_raw_captures_dropped_variant() {
+        // `Plan` is not projected (`_ => {}`), but raw must still surface it.
+        let plan = agent_client_protocol::schema::Plan::new(vec![]);
+        let update = SessionUpdate::Plan(plan);
+        let acc = Accumulator::new();
+        let (tx, mut rx) = tokio::sync::broadcast::channel(16);
+
+        handle_update(&update, RunId::nil(), AgentId::nil(), &acc, &tx, true);
+
+        match rx.try_recv().unwrap() {
+            AgentEvent::AcpRaw { kind, .. } => assert_eq!(kind, "plan"),
+            other => panic!("expected AcpRaw, got {other:?}"),
+        }
+        // No projection event for Plan.
+        assert!(rx.try_recv().is_err());
     }
 
     #[test]

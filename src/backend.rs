@@ -4,7 +4,9 @@ use anyhow::Result;
 use maestro::core::{AgentBackend, MockBackend, MockBehavior, TokenUsage};
 use std::sync::Arc;
 
-pub fn create_backend(id: &str) -> Result<Arc<dyn AgentBackend>> {
+/// Construct a backend by id. `emit_raw_events` toggles the ACP backend's raw
+/// `session/update` passthrough (ignored by the mock backend).
+pub fn create_backend(id: &str, emit_raw_events: bool) -> Result<Arc<dyn AgentBackend>> {
     match id {
         "mock" => Ok(Arc::new(MockBackend::new(
             "mock",
@@ -14,9 +16,12 @@ pub fn create_backend(id: &str) -> Result<Arc<dyn AgentBackend>> {
                 delay: std::time::Duration::from_millis(10),
             }],
         ))),
-        "opencode" => Ok(Arc::new(
-            maestro::adapters::AcpAdapter::default_opencode(),
-        )),
+        "opencode" => Ok(Arc::new(maestro::adapters::AcpAdapter::new(
+            maestro::adapters::AcpConfig {
+                emit_raw_events,
+                ..Default::default()
+            },
+        ))),
         _ => anyhow::bail!("unknown backend: {}", id),
     }
 }

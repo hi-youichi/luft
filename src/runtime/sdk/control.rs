@@ -20,6 +20,7 @@ pub(crate) fn register_control_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<(
         let phase_counter = cx.phase_counter.clone();
         let phase_fn = lua.create_function(move |_, (label, planned): (String, Option<i64>)| {
             let phase_id = phase_counter.fetch_add(1, Ordering::Relaxed) + 1;
+            tracing::info!(phase_id, %label, planned = planned.unwrap_or(0), "phase started");
             let _ = events.send(AgentEvent::PhaseStarted {
                 run_id,
                 phase_id,
@@ -42,6 +43,7 @@ pub(crate) fn register_control_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<(
                 Some("error") => LogLevel::Error,
                 _ => LogLevel::Info,
             };
+            tracing::trace!(?level, %msg, "script log");
             let _ = events.send(AgentEvent::Log { run_id, agent_id: None, level, msg });
             Ok(())
         })?;
@@ -50,7 +52,9 @@ pub(crate) fn register_control_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<(
 
     // ---- budget(time_ms?, max_rounds?) ------------------------------------
     {
-        let budget_fn = lua.create_function(|lua, (time_limit, max_rounds): (Option<i64>, Option<i64>)| {
+        let events = cx.events();
+        let budget_fn = lua.create_function(move |lua, (time_limit, max_rounds): (Option<i64>, Option<i64>)| {
+            tracing::debug!(time_limit_ms = ?time_limit, ?max_rounds, "budget set");
             let globals = lua.globals();
             let budget_table = globals
                 .get::<Table>("__budget")
@@ -62,6 +66,11 @@ pub(crate) fn register_control_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<(
                 budget_table.set("max_rounds", mr)?;
             }
             globals.set("__budget", budget_table)?;
+            let _ = events.send(AgentEvent::BudgetSet {
+                run_id,
+                time_limit_ms: time_limit.map(|t| t.max(0) as u64),
+                max_rounds: max_rounds.map(|m| m.max(0) as u32),
+            });
             Ok(())
         })?;
         globals.set("budget", budget_fn)?;

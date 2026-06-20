@@ -40,10 +40,15 @@ pub(super) fn register(lua: &Lua, cx: &SdkContext) -> mlua::Result<()> {
         }
 
         let agent_id = task.agent_id;
+        tracing::debug!(%agent_id, backend = ?backend, "agent() submitting to scheduler");
         let result = handle
             .block_on(sched.run_agent(run_id, task, backend.as_deref()))
-            .map_err(|e| mlua::Error::RuntimeError(format!("agent error: {}", e)))?;
+            .map_err(|e| {
+                tracing::error!(%agent_id, error = %e, "agent() scheduler error");
+                mlua::Error::RuntimeError(format!("agent error: {}", e))
+            })?;
 
+        tracing::debug!(%agent_id, "agent() completed");
         record(&journal, &cache_key, agent_id, phase_id, &result);
 
         let (status, output, tokens, findings) = slot_from_result(result);

@@ -30,7 +30,7 @@ use agent_client_protocol::schema::{
 };
 use agent_client_protocol::{Agent, ByteStreams, Client, ConnectionTo, Responder};
 
-const DEFAULT_TIMEOUT: Duration = Duration::from_secs(300);
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(14400);
 
 /// ACP backend configuration.
 #[derive(Debug, Clone)]
@@ -41,6 +41,11 @@ pub struct AcpConfig {
     pub log_level: Option<String>,
     /// `initialize` handshake timeout.
     pub connect_timeout: Duration,
+    /// Emit verbatim ACP `session/update` notifications as
+    /// [`AgentEvent::AcpRaw`](crate::core::contract::event::AgentEvent::AcpRaw).
+    /// On by default; the WS layer excludes these from the default subscription
+    /// and the journal does not persist them (see `docs/design/acp-raw-events.md`).
+    pub emit_raw_events: bool,
 }
 
 impl Default for AcpConfig {
@@ -49,6 +54,7 @@ impl Default for AcpConfig {
             binary: PathBuf::from("opencode"),
             log_level: None,
             connect_timeout: Duration::from_secs(10),
+            emit_raw_events: true,
         }
     }
 }
@@ -108,6 +114,14 @@ impl AgentBackend for AcpAdapter {
 }
 
 /// The `!Send` one-shot session, driven inside a `LocalSet`.
+///
+/// The `backend` span carries `run_id`/`agent_id` so the session's diagnostics
+/// inherit them (see `docs/design/program-logging.md`).
+#[tracing::instrument(
+    name = "backend",
+    skip_all,
+    fields(run_id = %run_id, agent_id = %task.agent_id, backend = "opencode")
+)]
 async fn run_acp_session(
     config: AcpConfig,
     task: AgentTask,
@@ -126,6 +140,7 @@ async fn run_acp_session(
         .stderr(Stdio::null());
 
     let mut child = cmd.spawn().map_err(|e| {
+        tracing::error!(binary = %config.binary.display(), error = %e, "failed to spawn ACP backend");
         BackendError::Spawn(format!("failed to spawn {}: {e}", config.binary.display()))
     })?;
     let stdin = child
@@ -145,6 +160,7 @@ async fn run_acp_session(
     let cwd = std::fs::canonicalize(&task.workdir).unwrap_or_else(|_| task.workdir.clone());
     let prompt = task.prompt.clone();
     let policy = task.allowlist.clone();
+    let emit_raw = config.emit_raw_events;
 
     // 3. Build + drive the ACP client connection.
     let conn_fut = {
@@ -160,8 +176,9 @@ async fn run_acp_session(
                         let acc_h = acc_h.clone();
                         let events_h = events_h.clone();
                         async move {
+                            tracing::trace!("ACP session/update received");
                             update_mapper::handle_update(
-                                &n.update, run_id, agent_id, &acc_h, &events_h,
+                                &n.update, run_id, agent_id, &acc_h, &events_h, emit_raw,
                             );
                             Ok(())
                         }
@@ -179,6 +196,7 @@ async fn run_acp_session(
                                 permission::decide(policy.as_ref(), &inputs),
                                 permission::Decision::Approve
                             );
+                            tracing::debug!(approve, options = req.options.len(), "ACP permission request");
                             let outcome = match (approve, req.options.first()) {
                                 (true, Some(opt)) => RequestPermissionOutcome::Selected(
                                     SelectedPermissionOutcome::new(opt.option_id.clone()),
@@ -191,13 +209,16 @@ async fn run_acp_session(
                     agent_client_protocol::on_receive_request!(),
                 )
                 .connect_with(transport, move |conn: ConnectionTo<Agent>| async move {
+                    tracing::debug!("ACP handshake: initialize");
                     conn.send_request(InitializeRequest::new(ProtocolVersion::V1))
                         .block_task()
                         .await?;
+                    tracing::debug!("ACP handshake: session/new");
                     let ns = conn
                         .send_request(NewSessionRequest::new(cwd))
                         .block_task()
                         .await?;
+                    tracing::debug!("ACP handshake: session/prompt");
                     let pr = conn
                         .send_request(PromptRequest::new(
                             ns.session_id,
@@ -205,6 +226,7 @@ async fn run_acp_session(
                         ))
                         .block_task()
                         .await?;
+                    tracing::debug!(stop_reason = ?pr.stop_reason, "ACP prompt complete");
                     *stop_holder.lock().unwrap() = Some(format!("{:?}", pr.stop_reason));
                     Ok::<(), agent_client_protocol::Error>(())
                 })
@@ -217,10 +239,12 @@ async fn run_acp_session(
     let outcome = tokio::select! {
         r = conn_fut => r,
         _ = cancel.cancelled() => {
+            tracing::debug!("ACP session cancelled");
             let _ = child.start_kill();
             return Err(BackendError::Cancelled);
         }
         _ = tokio::time::sleep(timeout) => {
+            tracing::warn!(timeout_ms = timeout.as_millis() as u64, "ACP session timed out");
             let _ = child.start_kill();
             return Err(BackendError::Timeout);
         }
@@ -230,8 +254,10 @@ async fn run_acp_session(
     outcome.map_err(|e| {
         let s = e.to_string();
         if is_connection_closed(&s) {
+            tracing::warn!("ACP connection closed");
             BackendError::Protocol("connection closed".into())
         } else {
+            tracing::error!(error = %s, "ACP protocol error");
             BackendError::Protocol(s)
         }
     })?;

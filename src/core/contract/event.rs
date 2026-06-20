@@ -37,6 +37,20 @@ pub enum AgentEvent {
         agent_id: AgentId,
         delta: ProgressDelta,
     },
+    /// Raw ACP `session/update` passthrough — the verbatim notification, surfaced
+    /// for observability. Produced only when the ACP backend has raw events
+    /// enabled. Excluded from the default WS subscription and not persisted to
+    /// the journal (see `acp-raw-events.md`).
+    AcpRaw {
+        run_id: RunId,
+        agent_id: AgentId,
+        /// `SessionUpdate` discriminator (the `sessionUpdate` tag), e.g.
+        /// `"agent_message_chunk"`, `"plan"` — lets consumers filter without
+        /// parsing `raw`.
+        kind: String,
+        /// The ACP `SessionUpdate`, serialized verbatim.
+        raw: serde_json::Value,
+    },
     AgentDone {
         run_id: RunId,
         agent_id: AgentId,
@@ -61,6 +75,66 @@ pub enum AgentEvent {
         agent_id: Option<AgentId>,
         level: LogLevel,
         msg: String,
+    },
+    // SDK primitive events (§ sdk-events.md) — DSL-granularity observability for
+    // the orchestration script. Blocking primitives emit a Started/Done span
+    // pair correlated by `span_id`; instantaneous ones emit a single event.
+    BudgetSet {
+        run_id: RunId,
+        time_limit_ms: Option<u64>,
+        max_rounds: Option<u32>,
+    },
+    ReportEmitted {
+        run_id: RunId,
+        phase_id: PhaseId,
+        report: serde_json::Value,
+    },
+    ParallelStarted {
+        run_id: RunId,
+        phase_id: PhaseId,
+        span_id: u64,
+        count: usize,
+    },
+    ParallelDone {
+        run_id: RunId,
+        phase_id: PhaseId,
+        span_id: u64,
+        ok: usize,
+        failed: usize,
+        results: serde_json::Value,
+        elapsed_ms: u64,
+    },
+    WorkflowStarted {
+        run_id: RunId,
+        span_id: u64,
+        path: String,
+        args: serde_json::Value,
+    },
+    WorkflowDone {
+        run_id: RunId,
+        span_id: u64,
+        path: String,
+        report: serde_json::Value,
+        elapsed_ms: u64,
+        error: Option<String>,
+    },
+    ConvergeStarted {
+        run_id: RunId,
+        phase_id: PhaseId,
+        span_id: u64,
+        items: usize,
+        max_rounds: u32,
+    },
+    ConvergeDone {
+        run_id: RunId,
+        phase_id: PhaseId,
+        span_id: u64,
+        rounds: u32,
+        converged: bool,
+        surviving: usize,
+        result: serde_json::Value,
+        elapsed_ms: u64,
+        error: Option<String>,
     },
     // M2 Pipeline events
     PipelineStarted {

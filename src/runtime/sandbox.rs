@@ -34,7 +34,7 @@ use crate::core::Scheduler;
 use crate::runtime::error::{ExecLimits, ScriptError};
 use crate::runtime::sdk::convert::serde_json_to_lua;
 use crate::runtime::sdk::SdkContext;
-use crate::runtime::{converge, pipeline, sdk};
+use crate::runtime::{pipeline, sdk};
 use mlua::{Lua, Value};
 use std::sync::{Arc, Mutex};
 use tokio::runtime::Handle;
@@ -63,6 +63,7 @@ impl Runtime {
         journal: Option<Arc<JournalStore>>,
         handle: Handle,
     ) -> Result<Self, ScriptError> {
+        tracing::info!(run_id = %run_ctx.run_id, "creating runtime");
         let lua = Lua::new();
         apply_sandbox(&lua)?;
 
@@ -77,6 +78,7 @@ impl Runtime {
 
         let cx = SdkContext::new(run_ctx, scheduler, report_sink.clone(), journal, handle);
         register_sdk(&lua, &cx)?;
+        tracing::debug!(run_id = %cx.run_id(), "SDK primitives registered");
 
         Ok(Self { lua, report_sink })
     }
@@ -86,16 +88,25 @@ impl Runtime {
     /// MUST be called from a blocking context (not an async worker thread),
     /// because the SDK primitives call `Handle::block_on` internally.
     pub fn execute(&self, script: &str) -> Result<serde_json::Value, ScriptError> {
+        tracing::info!("begin script execution ({} bytes)", script.len());
+        let start = std::time::Instant::now();
         self.lua.load(script).exec()?;
+        let elapsed = start.elapsed();
         let guard = self.report_sink.lock().unwrap();
+        let has_report = guard.is_some();
+        tracing::info!(elapsed_ms = elapsed.as_millis() as u64, has_report, "script execution finished");
         Ok(guard.clone().unwrap_or(serde_json::Value::Null))
     }
 }
 
 /// Validates a script (syntax only) without executing it.
 pub fn validate_script(script: &str) -> Result<(), ScriptError> {
+    tracing::debug!(bytes = script.len(), "validating script syntax");
     let lua = Lua::new();
-    lua.load(script).into_function().map(|_| ()).map_err(ScriptError::from)
+    lua.load(script).into_function().map(|_| ()).map_err(|e| {
+        tracing::error!(error = %e, "script validation failed");
+        ScriptError::from(e)
+    })
 }
 
 /// Register all SDK functions as Lua globals by dispatching to each primitive's
@@ -106,12 +117,13 @@ fn register_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<()> {
     sdk::control::register_control_sdk(lua, cx)?;
     sdk::report::register_report_sdk(lua, cx)?;
     pipeline::register_pipeline_sdk(lua, cx)?;
-    converge::register_converge_sdk(lua, &cx.scheduler, &cx.run_ctx, cx.handle.clone())?;
+    // converge::register_converge_sdk(lua, cx)?; // temporarily disabled
     Ok(())
 }
 
 /// Apply sandbox restrictions to the Lua VM (blocks I/O / OS / dynamic loading).
 fn apply_sandbox(lua: &Lua) -> Result<(), ScriptError> {
+    tracing::debug!("applying Lua sandbox restrictions");
     let globals = lua.globals();
     for name in ["io", "os", "debug", "package", "require", "loadfile", "dofile", "loadstring"] {
         let _ = globals.set(name, Value::Nil);
