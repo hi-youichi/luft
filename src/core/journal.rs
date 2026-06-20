@@ -67,8 +67,8 @@ impl AgentCacheKey {
     /// Uses blake3 with null separators to prevent field-concatenation collisions.
     pub fn new(prompt: &str, model: Option<&str>, phase_id: PhaseId) -> Self {
         let normalized = normalize_prompt(prompt);
-        let preview = if normalized.len() > 80 {
-            format!("{}...", &normalized[..80])
+        let preview = if normalized.chars().count() > 80 {
+            format!("{}...", normalized.chars().take(80).collect::<String>())
         } else {
             normalized.clone()
         };
