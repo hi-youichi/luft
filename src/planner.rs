@@ -162,10 +162,67 @@ fn output_to_text(output: &serde_json::Value) -> Option<String> {
     }
 }
 
-/// Return the first ```lua (or unlabelled) fenced block; otherwise the trimmed
-/// input. No regex dependency — a small hand-rolled fence scanner.
+/// Return the first ```lua (or unlabelled) fenced block; otherwise try to
+/// strip surrounding prose from the trimmed input.
 fn extract_lua_block(text: &str) -> String {
-    find_fenced_block(text).unwrap_or_else(|| text.trim().to_string())
+    if let Some(block) = find_fenced_block(text) {
+        return block;
+    }
+    let trimmed = text.trim();
+    if validate_script(trimmed).is_ok() {
+        return trimmed.to_string();
+    }
+    strip_prose(trimmed)
+}
+
+/// Heuristically strip leading/trailing prose lines that aren't valid Lua.
+/// Keeps lines from the first Lua-looking line to the last.
+fn strip_prose(text: &str) -> String {
+    let lines: Vec<&str> = text.lines().collect();
+    let lua_start = lines
+        .iter()
+        .position(|l| looks_like_lua(l))
+ .unwrap_or(0);
+    let lua_end = lines
+        .iter()
+        .rposition(|l| looks_like_lua(l))
+        .map(|i| i + 1)
+        .unwrap_or(lines.len());
+    lines[lua_start.min(lua_end.max(1))..lua_end.max(lines.len().min(lua_start + 1))]
+        .join("\n")
+        .trim()
+        .to_string()
+}
+
+/// Check if a line looks like it could be Lua code (not prose).
+fn looks_like_lua(line: &str) -> bool {
+    let t = line.trim();
+    if t.is_empty() {
+        return false;
+    }
+    if t.starts_with("--") {
+        return true;
+    }
+    const KEYWORDS: &[&str] = &[
+        "local", "phase", "report", "agent", "parallel", "pipeline", "for",
+        "if", "while", "function", "return", "log", "budget", "workflow",
+        "json", "do", "end", "else", "elseif", "then", "and", "or", "not",
+        "true", "false", "nil", "args", "ctx",
+    ];
+    let first_word = t.split(|c: char| !c.is_alphanumeric() && c != '_').next().unwrap_or("");
+    KEYWORDS.contains(&first_word)
+        || t.starts_with('{')
+        || t.starts_with('}')
+        || t.starts_with('(')
+        || t.starts_with(')')
+        || t.starts_with('"')
+        || t.starts_with('\'')
+        || t.starts_with('[')
+        || t.starts_with(']')
+        || t.starts_with('=')
+        || t.starts_with('.')
+        || t.starts_with(':')
+        || t.starts_with('#')
 }
 
 fn find_fenced_block(text: &str) -> Option<String> {
@@ -173,15 +230,26 @@ fn find_fenced_block(text: &str) -> Option<String> {
     while let Some(rel) = text[from..].find("```") {
         let fence = from + rel;
         let after = &text[fence + 3..];
-        let line_end = after.find('\n')?;
+        let line_end = match after.find('\n') {
+            Some(n) => n,
+            None => {
+                from = fence + 3;
+                continue;
+            }
+        };
         let lang = after[..line_end].trim();
         let body_start = fence + 3 + line_end + 1;
         let rest = &text[body_start..];
-        let close = rest.find("```")?;
+        let close = match rest.find("```") {
+            Some(c) => c,
+            None => {
+                from = body_start;
+                continue;
+            }
+        };
         if lang.eq_ignore_ascii_case("lua") || lang.is_empty() {
             return Some(rest[..close].trim_end().to_string());
         }
-        // Not a Lua block — keep scanning after this one.
         from = body_start + close + 3;
     }
     None
