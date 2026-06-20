@@ -11,6 +11,7 @@
 //!    - 定时心跳 ticker
 //!
 //! 连接断开时自动清理：abort 写任务、释放 semaphore permit。
+use crate::service::run::RunSpec;
 use crate::ws::protocol::{default_capabilities, ClientMsg, ErrorCode, ServerMsg};
 
 use super::Subscription;
@@ -52,7 +53,7 @@ pub(super) async fn handle_ws(socket: WebSocket, state: AppState) {
     });
 
     let mut subscriptions: HashMap<_, Subscription> = HashMap::new();
-    let mut pending_confirms: HashMap<_, (String, Instant)> = HashMap::new();
+    let mut pending_confirms: HashMap<_, (RunSpec, Instant)> = HashMap::new();
 
     let mut timeout_ticker = tokio::time::interval(Duration::from_secs(5));
 

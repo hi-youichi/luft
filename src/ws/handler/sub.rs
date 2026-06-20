@@ -22,6 +22,7 @@
 //!    │  Unsubscribe ────→  │  移除 Subscription
 //! `
 use crate::core::contract::ids::RunId;
+use crate::service::run::RunSpec;
 use crate::ws::protocol::{ErrorCode, ServerMsg};
 
 use super::Subscription;
@@ -76,7 +77,7 @@ pub async fn handle_unsubscribe(
 }
 
 pub async fn check_confirm_timeouts(
-    pending_confirms: &mut HashMap<RunId, (String, Instant)>,
+    pending_confirms: &mut HashMap<RunId, (RunSpec, Instant)>,
     out_tx: &mpsc::Sender<ServerMsg>,
 ) {
     let now = Instant::now();
@@ -151,7 +152,7 @@ mod tests {
         let mut pending = HashMap::new();
         let (tx, mut rx) = mpsc::channel(16);
         let run_id = RunId::now_v7();
-        pending.insert(run_id, ("script".into(), Instant::now()));
+        pending.insert(run_id, (RunSpec { run_id, script: "script".into(), task_label: String::new(), resuming: false, extra_args: serde_json::json!({}) }, Instant::now()));
         check_confirm_timeouts(&mut pending, &tx).await;
         assert!(pending.contains_key(&run_id));
         assert!(rx.try_recv().is_err());
@@ -162,7 +163,7 @@ mod tests {
         let mut pending = HashMap::new();
         let (tx, mut rx) = mpsc::channel(16);
         let run_id = RunId::now_v7();
-        pending.insert(run_id, ("script".into(), Instant::now() - Duration::from_secs(60)));
+        pending.insert(run_id, (RunSpec { run_id, script: "script".into(), task_label: String::new(), resuming: false, extra_args: serde_json::json!({}) }, Instant::now() - Duration::from_secs(60)));
         check_confirm_timeouts(&mut pending, &tx).await;
         assert!(!pending.contains_key(&run_id));
         let msg = rx.try_recv().unwrap();

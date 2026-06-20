@@ -24,6 +24,7 @@
 //! - out_tx 用于异步发送 ServerMsg 回客户端
 //! - handler 不返回值，错误通过 ServerMsg::Error 发送
 use crate::core::contract::ids::RunId;
+use crate::service::run::RunSpec;
 use crate::ws::protocol::{ClientMsg, ServerMsg};
 
 use super::sub;
@@ -41,7 +42,7 @@ pub async fn dispatch_client_msg(
     state: &AppState,
     out_tx: &mpsc::Sender<ServerMsg>,
     subscriptions: &mut HashMap<RunId, Subscription>,
-    pending_confirms: &mut HashMap<RunId, (String, Instant)>,
+    pending_confirms: &mut HashMap<RunId, (RunSpec, Instant)>,
 ) {
     match msg {
         ClientMsg::Ping { id } => {
@@ -70,7 +71,7 @@ pub async fn dispatch_client_msg(
         }
 
         ClientMsg::Run { id, payload } => {
-            run::handle_run(id, payload, state, out_tx, subscriptions, pending_confirms)
+            run::handle_run(id, payload, state, out_tx, pending_confirms)
                 .await;
         }
 

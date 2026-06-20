@@ -37,7 +37,6 @@ use crate::service::run::RunSpec;
 use crate::ws::protocol::{ErrorCode, ServerMsg};
 use crate::ws::registry::RunHandle;
 
-use super::Subscription;
 use super::AppState;
 
 use std::collections::HashMap;
@@ -82,14 +81,12 @@ fn spawn_prepared(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn handle_run(
     req_id: String,
     payload: crate::ws::protocol::RunPayload,
     state: &AppState,
     out_tx: &mpsc::Sender<ServerMsg>,
-    _subscriptions: &mut HashMap<RunId, Subscription>,
-    pending_confirms: &mut HashMap<RunId, (String, Instant)>,
+    pending_confirms: &mut HashMap<RunId, (crate::service::run::RunSpec, Instant)>,
 ) {
     use crate::service::run::{resolve_fresh, validate_source, RunInput, ScriptSource};
 
@@ -128,10 +125,13 @@ pub async fn handle_run(
     if payload.confirm {
         if let Some(nl) = payload.nl.as_deref() {
             match resolve_fresh(ScriptSource::Nl(nl), state.backend.clone()).await {
-                Ok(spec) => {
-                    pending_confirms.insert(spec.run_id, (spec.script.clone(), Instant::now()));
+                Ok(mut spec) => {
+                    spec.extra_args = payload.args;
+                    let run_id = spec.run_id;
+                    let script = spec.script.clone();
+                    pending_confirms.insert(run_id, (spec, Instant::now()));
                     let _ = out_tx
-                        .send(ServerMsg::ScriptPreview { req_id, run_id: spec.run_id, script: spec.script })
+                        .send(ServerMsg::ScriptPreview { req_id, run_id, script })
                         .await;
                 }
                 Err(e) => {
@@ -186,9 +186,9 @@ pub async fn handle_confirm_run(
     payload: crate::ws::protocol::ConfirmRunPayload,
     state: &AppState,
     out_tx: &mpsc::Sender<ServerMsg>,
-    pending_confirms: &mut HashMap<RunId, (String, Instant)>,
+    pending_confirms: &mut HashMap<RunId, (crate::service::run::RunSpec, Instant)>,
 ) {
-    let Some((script, _ts)) = pending_confirms.remove(&payload.run_id) else {
+    let Some((spec, _ts)) = pending_confirms.remove(&payload.run_id) else {
         let _ = out_tx
             .send(ServerMsg::Error {
                 req_id,
@@ -221,14 +221,6 @@ pub async fn handle_confirm_run(
         }
     };
 
-    // Reuse the preview's run id so client-facing ids stay stable.
-    let spec = RunSpec {
-        run_id: payload.run_id,
-        script,
-        task_label: "maestro workflow".to_string(),
-        resuming: false,
-        extra_args: serde_json::json!({}),
-    };
     let (events_tx, _events_rx) = tokio::sync::broadcast::channel(256);
     let cancel = tokio_util::sync::CancellationToken::new();
     if let Err(e) = spawn_prepared(state, spec, events_tx, cancel, permit) {
@@ -346,6 +338,7 @@ pub async fn handle_cancel(
 mod tests {
     use super::*;
     use crate::core::mock_backend::{MockBackend, MockBehavior};
+    use crate::service::run::RunSpec;
     use crate::ws::handler::AppState;
     use crate::ws::registry::RunRegistry;
     use std::sync::Arc;
@@ -449,7 +442,6 @@ mod tests {
         let dir = std::env::temp_dir().join("maestro_test_run_noop");
         let state = test_state(&dir);
         let (tx, mut rx) = mpsc::channel(16);
-        let mut subs = HashMap::new();
         let mut pending = HashMap::new();
         handle_run(
             "r1".into(),
@@ -457,7 +449,7 @@ mod tests {
                 nl: None, workflow: None, script: None,
                 args: serde_json::Value::Null, confirm: false,
             },
-            &state, &tx, &mut subs, &mut pending,
+            &state, &tx, &mut pending,
         ).await;
         match rx.try_recv().unwrap() {
             ServerMsg::Error { code, .. } => assert!(matches!(code, ErrorCode::BadRequest)),
@@ -470,7 +462,6 @@ mod tests {
         let dir = std::env::temp_dir().join("maestro_test_run_multi");
         let state = test_state(&dir);
         let (tx, mut rx) = mpsc::channel(16);
-        let mut subs = HashMap::new();
         let mut pending = HashMap::new();
         handle_run(
             "r2".into(),
@@ -478,7 +469,7 @@ mod tests {
                 nl: Some("hi".into()), script: Some("print(1)".into()),
                 workflow: None, args: serde_json::Value::Null, confirm: false,
             },
-            &state, &tx, &mut subs, &mut pending,
+            &state, &tx, &mut pending,
         ).await;
         match rx.try_recv().unwrap() {
             ServerMsg::Error { code, .. } => assert!(matches!(code, ErrorCode::BadRequest)),
@@ -497,7 +488,6 @@ mod tests {
             confirm_timeout: test_state(&dir).confirm_timeout,
         };
         let (tx, mut rx) = mpsc::channel(16);
-        let mut subs = HashMap::new();
         let mut pending = HashMap::new();
         handle_run(
             "r3".into(),
@@ -505,7 +495,7 @@ mod tests {
                 nl: Some("hello".into()), script: None, workflow: None,
                 args: serde_json::Value::Null, confirm: false,
             },
-            &state, &tx, &mut subs, &mut pending,
+            &state, &tx, &mut pending,
         ).await;
         match rx.try_recv().unwrap() {
             ServerMsg::Error { code, .. } => assert!(matches!(code, ErrorCode::Capacity)),
@@ -530,7 +520,6 @@ mod tests {
             confirm_timeout: test_state(&dir).confirm_timeout,
         };
         let (tx, mut rx) = mpsc::channel(16);
-        let mut subs = HashMap::new();
         let mut pending = HashMap::new();
         handle_run(
             "r4".into(),
@@ -538,7 +527,7 @@ mod tests {
                 nl: Some("test".into()), script: None, workflow: None,
                 args: serde_json::Value::Null, confirm: true,
             },
-            &state, &tx, &mut subs, &mut pending,
+            &state, &tx, &mut pending,
         ).await;
         match rx.try_recv().unwrap() {
             ServerMsg::ScriptPreview { req_id: _, run_id: _, script } => {
@@ -563,7 +552,6 @@ mod tests {
             confirm_timeout: test_state(&dir).confirm_timeout,
         };
         let (tx, mut rx) = mpsc::channel(16);
-        let mut subs = HashMap::new();
         let mut pending = HashMap::new();
         handle_run(
             "r5".into(),
@@ -571,7 +559,7 @@ mod tests {
                 nl: Some("bad".into()), script: None, workflow: None,
                 args: serde_json::Value::Null, confirm: true,
             },
-            &state, &tx, &mut subs, &mut pending,
+            &state, &tx, &mut pending,
         ).await;
         match rx.try_recv().unwrap() {
             ServerMsg::Error { code, .. } => assert!(matches!(code, ErrorCode::BackendError)),
@@ -594,7 +582,6 @@ mod tests {
             confirm_timeout: test_state(&dir).confirm_timeout,
         };
         let (tx, mut rx) = mpsc::channel(16);
-        let mut subs = HashMap::new();
         let mut pending = HashMap::new();
         handle_run(
             "r6".into(),
@@ -602,7 +589,7 @@ mod tests {
                 nl: Some("bad".into()), script: None, workflow: None,
                 args: serde_json::Value::Null, confirm: false,
             },
-            &state, &tx, &mut subs, &mut pending,
+            &state, &tx, &mut pending,
         ).await;
         match rx.try_recv().unwrap() {
             ServerMsg::Error { code, .. } => assert!(matches!(code, ErrorCode::BackendError)),
@@ -615,7 +602,6 @@ mod tests {
         let dir = std::env::temp_dir().join("maestro_test_run_workflow");
         let state = test_state(&dir);
         let (tx, mut rx) = mpsc::channel(16);
-        let mut subs = HashMap::new();
         let mut pending = HashMap::new();
         handle_run(
             "r7".into(),
@@ -623,7 +609,7 @@ mod tests {
                 nl: None, script: None, workflow: Some("/nonexistent/workflow.lua".into()),
                 args: serde_json::Value::Null, confirm: false,
             },
-            &state, &tx, &mut subs, &mut pending,
+            &state, &tx, &mut pending,
         ).await;
         match rx.try_recv().unwrap() {
             ServerMsg::Error { code, .. } => assert!(matches!(code, ErrorCode::BadRequest)),
@@ -638,7 +624,7 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(16);
         let run_id = RunId::now_v7();
         let mut pending = HashMap::new();
-        pending.insert(run_id, ("print('approved')".to_string(), std::time::Instant::now()));
+        pending.insert(run_id, (RunSpec { run_id, script: "print('approved')".to_string(), task_label: String::new(), resuming: false, extra_args: serde_json::json!({}) }, std::time::Instant::now()));
         handle_confirm_run(
             "ca1".into(),
             crate::ws::protocol::ConfirmRunPayload { run_id, approve: true },
@@ -663,7 +649,7 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(16);
         let run_id = RunId::now_v7();
         let mut pending = HashMap::new();
-        pending.insert(run_id, ("print('full')".to_string(), std::time::Instant::now()));
+        pending.insert(run_id, (RunSpec { run_id, script: "print('full')".to_string(), task_label: String::new(), resuming: false, extra_args: serde_json::json!({}) }, std::time::Instant::now()));
         handle_confirm_run(
             "ca2".into(),
             crate::ws::protocol::ConfirmRunPayload { run_id, approve: true },
@@ -682,7 +668,7 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(16);
         let run_id = RunId::now_v7();
         let mut pending = HashMap::new();
-        pending.insert(run_id, ("print('rejected')".to_string(), std::time::Instant::now()));
+        pending.insert(run_id, (RunSpec { run_id, script: "print('rejected')".to_string(), task_label: String::new(), resuming: false, extra_args: serde_json::json!({}) }, std::time::Instant::now()));
         handle_confirm_run(
             "cr1".into(),
             crate::ws::protocol::ConfirmRunPayload { run_id, approve: false },
