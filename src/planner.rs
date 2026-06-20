@@ -227,9 +227,14 @@ Generate a Lua script that orchestrates LLM subagents to accomplish the user's t
     - `output` is the agent's response parsed as JSON → Lua table. Access fields
       directly, e.g. `r.output.files`, `r.output.summary`.
     - If `ok` is false, `output` may be nil or an error object; check `status`.
-    - `schema` (optional): if provided, the agent is asked to return JSON matching
-      this shape. Use it to guarantee field names and simplify access.
-      Example: schema = { files = "array", summary = "string" }
+    - `schema` (optional): a JSON Schema (Draft 7) object describing the expected
+      output shape. When provided, the runtime validates the agent's output against
+      it and rejects mismatches. Express nested types properly:
+      Example: schema = { type = "object",
+                          properties = { files = { type = "array",
+                                                   items = { type = "string" } },
+                                         summary = { type = "string" } },
+                          required = { "files", "summary" } }
 
 - parallel(items, mapFn) -> array<result>
     items: an array (table). mapFn(item) must RETURN an agent opts table.
@@ -295,7 +300,16 @@ local topic = args.topic or "AI safety"
 -- Step 1: gather sources
 local gather = agent({
   prompt = "Research: " .. topic .. ". Return JSON {sources: [{title, url, summary}]}.",
-  schema = { sources = "array" }
+  schema = {
+    type = "object",
+    properties = {
+      sources = { type = "array", items = {
+        type = "object",
+        properties = { title = { type = "string" }, url = { type = "string" }, summary = { type = "string" } }
+      } }
+    },
+    required = { "sources" }
+  }
 })
 if not gather.ok then
   report({ error = "gather failed: " .. gather.status })
