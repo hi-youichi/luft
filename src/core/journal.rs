@@ -439,7 +439,7 @@ pub enum RunCreationMode {
     /// Start a fresh run.
     New { task: String },
     /// Resume from an existing checkpoint.
-    Resume { run_id: RunId },
+    Resume { run_id: RunId, run_dir_name: String },
     /// Auto-detect: resume if resumable run exists, else new.
     Auto { task: String },
 }
@@ -453,20 +453,26 @@ impl RunCreationMode {
                 let run_id = uuid::Uuid::now_v7();
                 Ok((run_id, None))
             }
-            RunCreationMode::Resume { run_id } => {
-                let store = JournalStore::new(&journal_dir.join(run_id.to_string()))?;
+            RunCreationMode::Resume { run_id, run_dir_name } => {
+                let store = JournalStore::new(&journal_dir.join(&run_dir_name))?;
                 let checkpoint = store.open(run_id)?;
                 Ok((run_id, Some(checkpoint)))
             }
             RunCreationMode::Auto { task: _ } => {
-                // List all runs, find the most recently updated Running one
-                let runs = crate::core::state::list_runs(journal_dir)?;
-                for run_id in runs.iter().rev() {
-                    let run_dir = journal_dir.join(run_id.to_string());
-                    if let Ok(store) = JournalStore::new(&run_dir) {
-                        if store.inner.can_resume() {
-                            if let Ok(Some(checkpoint)) = store.inner.open_run(*run_id) {
-                                return Ok((*run_id, Some(checkpoint)));
+                // List all run dirs, find the most recent Running checkpoint
+                let run_dirs = crate::core::state::list_runs(journal_dir)?;
+                for dir_name in run_dirs.iter().rev() {
+                    let checkpoint_path = journal_dir.join(dir_name).join("checkpoint.json");
+                    if let Ok(content) = std::fs::read_to_string(&checkpoint_path) {
+                        if let Ok(checkpoint) =
+                            serde_json::from_str::<RunCheckpoint>(&content)
+                        {
+                            if matches!(
+                                checkpoint.status,
+                                crate::core::state::CheckpointStatus::Running
+                            ) {
+                                let run_id = checkpoint.run_id;
+                                return Ok((run_id, Some(checkpoint)));
                             }
                         }
                     }
@@ -491,13 +497,13 @@ impl RunCreationMode {
 ///
 /// Returns the number of runs cleaned.
 pub fn gc_runs(journal_dir: &Path, older_than: Duration) -> Result<usize, JournalError> {
-    let runs = crate::core::state::list_runs(journal_dir)?;
+    let run_dirs = crate::core::state::list_runs(journal_dir)?;
     let cutoff = current_timestamp().saturating_sub(older_than.as_secs());
 
-    tracing::debug!("GC: scanning {} runs", runs.len());
+    tracing::debug!("GC: scanning {} runs", run_dirs.len());
     let mut cleaned = 0;
-    for run_id in &runs {
-        let run_dir = journal_dir.join(run_id.to_string());
+    for dir_name in &run_dirs {
+        let run_dir = journal_dir.join(dir_name);
         // Peek at checkpoint without full open
         let checkpoint_path = run_dir.join("checkpoint.json");
         if !checkpoint_path.exists() {
@@ -516,7 +522,7 @@ pub fn gc_runs(journal_dir: &Path, older_than: Duration) -> Result<usize, Journa
         );
 
         if is_old && is_terminal {
-            tracing::info!(%run_id, "GC: removing old terminal run");
+            tracing::info!(dir = %dir_name, "GC: removing old terminal run");
             std::fs::remove_dir_all(&run_dir)?;
             cleaned += 1;
         }

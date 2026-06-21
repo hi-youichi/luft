@@ -2,6 +2,7 @@
 use crate::core::contract::event::{AgentEvent, RunStatus};
 use crate::core::contract::ids::{RunId, TokenUsage};
 use crate::core::journal::JournalStore;
+use crate::core::run_dir::{compose, derive_slug, ensure_unique};
 use crate::core::scheduler::{BackendRegistry, Scheduler, SchedulerConfig};
 use crate::core::state::{list_runs, CheckpointStatus, RunCheckpoint};
 use crate::runtime::{ExecLimits, Runtime, ScriptError};
@@ -68,8 +69,8 @@ pub enum ResumeCheck {
     NotResumable(CheckpointStatus),
 }
 
-pub fn check_resumable(run_id: RunId, base_dir: &Path) -> ResumeCheck {
-    let run_dir = base_dir.join(run_id.to_string());
+pub fn check_resumable(run_dir_name: &str, base_dir: &Path) -> ResumeCheck {
+    let run_dir = base_dir.join(run_dir_name);
     if !run_dir.exists() {
         return ResumeCheck::NotFound;
     }
@@ -100,6 +101,8 @@ pub fn check_resumable(run_id: RunId, base_dir: &Path) -> ResumeCheck {
 /// how it was requested.
 pub struct RunSpec {
     pub run_id: RunId,
+    /// Human-readable on-disk directory name (e.g. `deep-research_1781980050`).
+    pub run_dir_name: String,
     pub script: String,
     pub task_label: String,
     pub resuming: bool,
@@ -120,32 +123,66 @@ pub async fn resolve_fresh(
         ScriptSource::Script(_) => "maestro workflow".to_string(),
     };
     let script = resolve_script(source, backend).await?;
+    let run_id = RunId::now_v7();
     Ok(RunSpec {
-        run_id: RunId::now_v7(),
+        run_id,
         script,
         task_label,
         resuming: false,
         extra_args: serde_json::json!({}),
+        run_dir_name: String::new(),
     })
+}
+
+/// Assign the final run directory name once the base dir is known.
+/// Called by the CLI after `resolve_fresh` so `ensure_unique` can scan the
+/// filesystem.
+pub fn assign_dir_name(spec: &mut RunSpec, base_dir: &Path) {
+    let (wf, nl) = slug_sources(spec);
+    let slug = derive_slug(wf, nl);
+    let ts = spec
+        .run_id
+        .get_timestamp()
+        .map(|t| t.to_unix().0)
+        .unwrap_or_else(|| {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0)
+        });
+    let dir_name = compose(&slug, ts);
+    spec.run_dir_name = ensure_unique(base_dir, &dir_name);
+}
+
+fn slug_sources(spec: &RunSpec) -> (Option<&Path>, Option<&str>) {
+    let label = &spec.task_label;
+    if label.contains('.') && !label.contains(' ') {
+        (Some(Path::new(label)), None)
+    } else if label == "maestro workflow" {
+        (None, None)
+    } else {
+        (None, Some(label))
+    }
 }
 
 /// Resolve a resume of a specific run by reading its checkpoint + persisted
 /// `workflow.lua`. Errors if the run is missing or has finished.
-pub fn resolve_resume(run_id: RunId, base_dir: &Path) -> Result<RunSpec> {
-    let run_dir = base_dir.join(run_id.to_string());
+pub fn resolve_resume(run_dir_name: &str, base_dir: &Path) -> Result<RunSpec> {
+    let run_dir = base_dir.join(run_dir_name);
     let content = std::fs::read_to_string(run_dir.join("checkpoint.json"))
-        .map_err(|_| anyhow::anyhow!("run {} not found", run_id))?;
+        .map_err(|_| anyhow::anyhow!("run {} not found", run_dir_name))?;
     let checkpoint: RunCheckpoint = serde_json::from_str(&content)?;
     if matches!(
         checkpoint.status,
         CheckpointStatus::Completed | CheckpointStatus::Cancelled | CheckpointStatus::Failed
     ) {
-        anyhow::bail!("run {} is not resumable (status: {:?})", run_id, checkpoint.status);
+        anyhow::bail!("run {} is not resumable (status: {:?})", run_dir_name, checkpoint.status);
     }
     let script = std::fs::read_to_string(run_dir.join("workflow.lua"))
         .map_err(|_| anyhow::anyhow!("workflow.lua not found in run directory {}", run_dir.display()))?;
     Ok(RunSpec {
-        run_id,
+        run_id: checkpoint.run_id,
+        run_dir_name: run_dir_name.to_string(),
         script,
         task_label: checkpoint.task,
         resuming: true,
@@ -155,13 +192,13 @@ pub fn resolve_resume(run_id: RunId, base_dir: &Path) -> Result<RunSpec> {
 
 /// Find the most recent run that has a resumable checkpoint (CLI `--resume`
 /// with no explicit run id). Status is validated later by [`resolve_resume`].
-pub fn latest_resumable(base_dir: &Path) -> Result<RunId> {
-    let run_ids = list_runs(base_dir)?;
-    run_ids
+pub fn latest_resumable(base_dir: &Path) -> Result<String> {
+    let run_dirs = list_runs(base_dir)?;
+    run_dirs
         .iter()
         .rev()
-        .copied()
-        .find(|&rid| base_dir.join(rid.to_string()).join("checkpoint.json").exists())
+        .find(|dir| base_dir.join(dir).join("checkpoint.json").exists())
+        .cloned()
         .ok_or_else(|| anyhow::anyhow!("no resumable run found"))
 }
 
@@ -185,7 +222,7 @@ pub fn prepare(
     base_dir: &Path,
     run_ctx: &RunContext,
 ) -> Result<PreparedRun> {
-    let run_dir = base_dir.join(spec.run_id.to_string());
+    let run_dir = base_dir.join(&spec.run_dir_name);
 
     // Journal: fresh runs init + persist the script (so they can be resumed);
     // resume runs open the journal to replay cached agents.
@@ -324,20 +361,19 @@ mod tests {
     #[test]
     fn resume_check_not_found() {
         let temp_dir = std::env::temp_dir().join("maestro_svc_test_resume_notfound");
-        let run_id = RunId::now_v7();
-        let result = check_resumable(run_id, &temp_dir);
+        let result = check_resumable("nonexistent_123", &temp_dir);
         assert!(matches!(result, ResumeCheck::NotFound));
     }
 
     #[test]
     fn resume_check_completed() {
         let temp_dir = std::env::temp_dir().join("maestro_svc_test_resume_completed");
-        let run_id = RunId::now_v7();
-        let run_dir = temp_dir.join(run_id.to_string());
+        let dir_name = "test_123";
+        let run_dir = temp_dir.join(dir_name);
         std::fs::create_dir_all(&run_dir).unwrap();
 
         let checkpoint = RunCheckpoint {
-            run_id,
+            run_id: RunId::now_v7(),
             task: "t".into(),
             status: CheckpointStatus::Completed,
             current_phase: 1,
@@ -353,7 +389,7 @@ mod tests {
             serde_json::to_string(&checkpoint).unwrap(),
         ).unwrap();
 
-        let result = check_resumable(run_id, &temp_dir);
+        let result = check_resumable(dir_name, &temp_dir);
         assert!(matches!(result, ResumeCheck::NotResumable(CheckpointStatus::Completed)));
 
         let _ = std::fs::remove_dir_all(&temp_dir);
@@ -362,12 +398,12 @@ mod tests {
     #[test]
     fn resume_check_running() {
         let temp_dir = std::env::temp_dir().join("maestro_svc_test_resume_running");
-        let run_id = RunId::now_v7();
-        let run_dir = temp_dir.join(run_id.to_string());
+        let dir_name = "test_123";
+        let run_dir = temp_dir.join(dir_name);
         std::fs::create_dir_all(&run_dir).unwrap();
 
         let checkpoint = RunCheckpoint {
-            run_id,
+            run_id: RunId::now_v7(),
             task: "t".into(),
             status: CheckpointStatus::Running,
             current_phase: 1,
@@ -383,7 +419,7 @@ mod tests {
             serde_json::to_string(&checkpoint).unwrap(),
         ).unwrap();
 
-        let result = check_resumable(run_id, &temp_dir);
+        let result = check_resumable(dir_name, &temp_dir);
         assert!(matches!(result, ResumeCheck::CanResume));
 
         let _ = std::fs::remove_dir_all(&temp_dir);
@@ -392,11 +428,11 @@ mod tests {
     #[test]
     fn resume_check_no_checkpoint() {
         let temp_dir = std::env::temp_dir().join("maestro_svc_test_resume_nockpt");
-        let run_id = RunId::now_v7();
-        let run_dir = temp_dir.join(run_id.to_string());
+        let dir_name = "test_123";
+        let run_dir = temp_dir.join(dir_name);
         std::fs::create_dir_all(&run_dir).unwrap();
 
-        let result = check_resumable(run_id, &temp_dir);
+        let result = check_resumable(dir_name, &temp_dir);
         assert!(matches!(result, ResumeCheck::CanResume));
 
         let _ = std::fs::remove_dir_all(&temp_dir);

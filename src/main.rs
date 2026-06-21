@@ -51,15 +51,15 @@ enum Commands {
     },
     /// Show status of a past run.
     Status {
-        #[arg(help = "Run ID to inspect")]
-        run_id: uuid::Uuid,
+        #[arg(help = "Run directory name to inspect")]
+        run_dir: String,
     },
     /// Show event log for a past run.
     Logs {
         #[arg(short, long, help = "Limit to N events")]
         limit: Option<usize>,
-        #[arg(help = "Run ID to inspect")]
-        run_id: uuid::Uuid,
+        #[arg(help = "Run directory name to inspect")]
+        run_dir: String,
     },
     /// MCP server subcommand for structured output injection (internal).
     #[command(hide = true)]
@@ -133,8 +133,8 @@ async fn main() -> Result<()> {
         Commands::Workflows => commands::workflows::list_workflows()?,
         Commands::Save { name, output } => commands::save::save_workflow(&name, &output)?,
         Commands::List { limit } => commands::list::list_runs_cmd(limit)?,
-        Commands::Status { run_id } => commands::status::status_run_cmd(run_id)?,
-        Commands::Logs { run_id, limit } => commands::logs::logs_run_cmd(run_id, limit)?,
+        Commands::Status { run_dir } => commands::status::status_run_cmd(run_dir)?,
+        Commands::Logs { run_dir, limit } => commands::logs::logs_run_cmd(run_dir, limit)?,
         Commands::McpStructuredOutput(args) => commands::mcp_server::run(args)?,
     }
 

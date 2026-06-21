@@ -6,6 +6,7 @@
 pub mod contract;
 pub mod journal;
 pub mod mock_backend;
+pub mod run_dir;
 pub mod scheduler;
 pub mod state;
 

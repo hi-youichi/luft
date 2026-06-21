@@ -352,48 +352,47 @@ fn current_timestamp() -> u64 {
 
 use std::sync::OnceLock;
 
-static RUN_STORES: OnceLock<dashmap::DashMap<RunId, Arc<RunStore>>> = OnceLock::new();
+static RUN_STORES: OnceLock<dashmap::DashMap<String, Arc<RunStore>>> = OnceLock::new();
 
 /// Get or create the global run stores.
-fn get_run_stores() -> &'static dashmap::DashMap<RunId, Arc<RunStore>> {
+fn get_run_stores() -> &'static dashmap::DashMap<String, Arc<RunStore>> {
     RUN_STORES.get_or_init(|| dashmap::DashMap::new())
 }
 
-/// Get or create a run store for a run.
-pub fn get_run_store(run_id: RunId, base_dir: &Path) -> Result<Arc<RunStore>, std::io::Error> {
+/// Get or create a run store for a run directory.
+pub fn get_run_store(run_dir_name: &str, base_dir: &Path) -> Result<Arc<RunStore>, std::io::Error> {
     let stores = get_run_stores();
 
-    if let Some(store) = stores.get(&run_id) {
+    if let Some(store) = stores.get(run_dir_name) {
         return Ok(store.clone());
     }
 
-    let run_dir = base_dir.join(run_id.to_string());
+    let run_dir = base_dir.join(run_dir_name);
     let store = RunStore::new(&run_dir)?;
-    stores.insert(run_id, store.clone());
+    stores.insert(run_dir_name.to_string(), store.clone());
 
     Ok(store)
 }
 
-/// List all run directories.
-pub fn list_runs(base_dir: &Path) -> Result<Vec<RunId>, std::io::Error> {
+/// List all run directory names (both new-format and legacy UUID).
+pub fn list_runs(base_dir: &Path) -> Result<Vec<String>, std::io::Error> {
     if !base_dir.exists() {
         return Ok(vec![]);
     }
 
-    let mut run_ids = Vec::new();
+    let mut run_dirs = Vec::new();
     for entry in fs::read_dir(base_dir)? {
         let entry = entry?;
         let path = entry.path();
         if path.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if let Ok(run_id) = uuid::Uuid::parse_str(name) {
-                    run_ids.push(run_id);
-                }
+                run_dirs.push(name.to_string());
             }
         }
     }
 
-    Ok(run_ids)
+    run_dirs.sort();
+    Ok(run_dirs)
 }
 
 #[cfg(test)]

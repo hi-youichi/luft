@@ -3,15 +3,14 @@
 use super::runs_base_dir;
 use anyhow::Result;
 
-pub fn status_run_cmd(run_id: uuid::Uuid) -> Result<()> {
+pub fn status_run_cmd(run_dir: String) -> Result<()> {
     let base_dir = runs_base_dir();
-    // Data access (existence-checked) lives in the query layer; this command
-    // owns only the presentation below.
-    let checkpoint = maestro::service::query::get_checkpoint(run_id, &base_dir)?
-        .ok_or_else(|| anyhow::anyhow!("run not found or has no checkpoint: {}", run_id))?;
+    let checkpoint = maestro::service::query::get_checkpoint(&run_dir, &base_dir)?
+        .ok_or_else(|| anyhow::anyhow!("run not found or has no checkpoint: {}", run_dir))?;
 
     println!("=== Run Status ===");
     println!("  Run ID:        {}", checkpoint.run_id);
+    println!("  Directory:     {}", run_dir);
     println!("  Task:          {}", checkpoint.task);
     println!("  Status:        {:?}", checkpoint.status);
     println!("  Current phase: {}", checkpoint.current_phase);

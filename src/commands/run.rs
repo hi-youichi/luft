@@ -39,8 +39,8 @@ pub async fn run_workflow(args: RunArgs) -> Result<()> {
     // workflow-file reads and script pass-through all live in the service; this
     // resolves exactly once (so `--confirm` shows the same script that runs).
     let mut spec = if args.resume {
-        let run_id = svc::latest_resumable(&base_dir)?;
-        svc::resolve_resume(run_id, &base_dir)?
+        let run_dir = svc::latest_resumable(&base_dir)?;
+        svc::resolve_resume(&run_dir, &base_dir)?
     } else {
         let source = if let Some(nl) = args.nl.as_deref() {
             svc::ScriptSource::Nl(nl)
@@ -52,7 +52,9 @@ pub async fn run_workflow(args: RunArgs) -> Result<()> {
         } else {
             anyhow::bail!("either a natural language prompt or --workflow <file> is required");
         };
-        svc::resolve_fresh(source, backend.clone()).await?
+        let mut s = svc::resolve_fresh(source, backend.clone()).await?;
+        svc::assign_dir_name(&mut s, &base_dir);
+        s
     };
     // `--args` takes precedence over the positional `extra_args`. A malformed
     // JSON value is a hard error rather than being silently dropped.

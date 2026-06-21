@@ -3,16 +3,14 @@
 use super::runs_base_dir;
 use anyhow::Result;
 
-pub fn logs_run_cmd(run_id: uuid::Uuid, limit: Option<usize>) -> Result<()> {
+pub fn logs_run_cmd(run_dir: String, limit: Option<usize>) -> Result<()> {
     let base_dir = runs_base_dir();
-    // Guard against unknown ids (the store would otherwise create the dir);
-    // data access lives in the query layer, slicing/formatting stays here.
-    if !base_dir.join(run_id.to_string()).exists() {
-        anyhow::bail!("run not found: {}", run_id);
+    if !base_dir.join(&run_dir).exists() {
+        anyhow::bail!("run not found: {}", run_dir);
     }
-    let events = maestro::service::query::get_events(run_id, &base_dir)?;
+    let events = maestro::service::query::get_events(&run_dir, &base_dir)?;
     if events.is_empty() {
-        println!("No events for run {}", run_id);
+        println!("No events for run {}", run_dir);
         return Ok(());
     }
 

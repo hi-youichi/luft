@@ -19,7 +19,7 @@ pub fn list_runs_cmd(limit: Option<usize>) -> Result<()> {
 
     println!("Past runs ({} total, showing {}):", total, shown.len());
     for run in shown {
-        println!("  {}  [{}]", run.run_id, run.status);
+        println!("  {}  [{}]", run.run_dir, run.status);
     }
 
     Ok(())
