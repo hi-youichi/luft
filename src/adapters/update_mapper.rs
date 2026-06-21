@@ -70,23 +70,32 @@ pub fn handle_update(
         }
         SessionUpdate::ToolCall(tc) => {
             let v = to_json(tc);
-            let name = find_str(&v, "title").filter(|s| !s.is_empty()).unwrap_or_else(|| "tool".to_string());
+            let title = find_str(&v, "title").filter(|s| !s.is_empty()).unwrap_or_else(|| "tool".to_string());
+            let kind = find_str(&v, "kind").unwrap_or_default();
 
-            if name == "structured_output" {
-                if let Some(args) = find_object(&v, "arguments")
-                    .or_else(|| find_object(&v, "input"))
-                    .or_else(|| find_object(&v, "rawInput"))
-                {
-                    *acc.structured_output.lock().unwrap() = Some(serde_json::Value::Object(args.clone()));
-                    tracing::debug!("captured structured_output tool call");
+            if title.contains("structured_output") {
+                if let Some(raw_input) = v.get("rawInput").cloned().or_else(|| v.get("raw_input").cloned()) {
+                    if !raw_input.is_null() && !raw_input.as_object().map(|o| o.is_empty()).unwrap_or(false) {
+                        tracing::debug!(title = %title, "captured structured_output rawInput from ToolCall");
+                        *acc.structured_output.lock().unwrap() = Some(raw_input);
+                    }
                 }
             }
 
-            let summary = find_str(&v, "kind").unwrap_or_default();
-            emit(events, run_id, agent_id, ProgressDelta::ToolCall { name, summary });
+            emit(events, run_id, agent_id, ProgressDelta::ToolCall { name: title, summary: kind });
         }
         SessionUpdate::ToolCallUpdate(u) => {
             let v = to_json(u);
+
+            if title_contains(&v, "structured_output") {
+                if let Some(raw_input) = v.get("rawInput").cloned().or_else(|| v.get("raw_input").cloned()) {
+                    if !raw_input.is_null() && !raw_input.as_object().map(|o| o.is_empty()).unwrap_or(false) {
+                        tracing::debug!("captured structured_output rawInput from ToolCallUpdate");
+                        *acc.structured_output.lock().unwrap() = Some(raw_input);
+                    }
+                }
+            }
+
             if let Some(path) = find_str(&v, "path") {
                 emit(
                     events,
@@ -127,9 +136,17 @@ fn to_json<T: Serialize>(t: &T) -> serde_json::Value {
     serde_json::to_value(t).unwrap_or(serde_json::Value::Null)
 }
 
-/// Find the first `"text"` string value anywhere in a serializable value.
+/// Find the first `\"text\"` string value anywhere in a serializable value.
 fn json_find_text<T: Serialize>(t: &T) -> Option<String> {
     find_str(&to_json(t), "text")
+}
+
+/// Check if the `title` field in a JSON value contains a substring.
+fn title_contains(v: &serde_json::Value, needle: &str) -> bool {
+    v.get("title")
+        .and_then(|t| t.as_str())
+        .map(|s| s.contains(needle))
+        .unwrap_or(false)
 }
 
 fn find_str(v: &serde_json::Value, key: &str) -> Option<String> {
