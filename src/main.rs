@@ -54,6 +54,11 @@ enum Commands {
         #[arg(help = "Run directory name to inspect")]
         run_dir: String,
     },
+    /// Watch a past or running run in TUI mode.
+    Watch {
+        #[arg(help = "Run directory name to watch")]
+        run_dir: String,
+    },
     /// Show event log for a past run.
     Logs {
         #[arg(short, long, help = "Limit to N events")]
@@ -119,6 +124,10 @@ struct RunArgs {
 
     #[arg(help = "Extra arguments passed to the workflow as JSON (positional; prefer --args)")]
     extra_args: Option<String>,
+
+    /// Run in TUI mode (interactive dashboard). Default is headless (JSONL streaming).
+    #[arg(long, help = "Run in interactive TUI mode instead of headless")]
+    tui: bool,
 }
 
 #[tokio::main]
@@ -134,6 +143,7 @@ async fn main() -> Result<()> {
         Commands::Save { name, output } => commands::save::save_workflow(&name, &output)?,
         Commands::List { limit } => commands::list::list_runs_cmd(limit)?,
         Commands::Status { run_dir } => commands::status::status_run_cmd(run_dir)?,
+        Commands::Watch { run_dir } => commands::watch::watch_run(run_dir).await?,
         Commands::Logs { run_dir, limit } => commands::logs::logs_run_cmd(run_dir, limit)?,
         Commands::McpStructuredOutput(args) => commands::mcp_server::run(args)?,
     }

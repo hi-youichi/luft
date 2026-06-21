@@ -9,6 +9,7 @@ pub mod logs;
 pub mod run;
 pub mod save;
 pub mod status;
+pub mod watch;
 pub mod workflows;
 
 /// Runs are stored in `.maestro/runs` relative to the current working directory.
