@@ -194,17 +194,19 @@ async fn run_headless(
         skipped
     });
 
-    let result = svc::execute(&run_ctx, rt, script).await?;
+    let exec_result = svc::execute(&run_ctx, rt, script).await;
 
     // RunDone is emitted inside execute() before it returns, so the printer
     // sees it and stops; the timeout only guards against a dropped RunDone.
-    // Joining before the report print keeps stdout ordered (events, then report).
+    // Always drain before propagating errors, otherwise the printer task is
+    // dropped before it can process the terminal RunDone event.
     if let Ok(Ok(skipped)) = tokio::time::timeout(Duration::from_secs(2), printer).await {
         if skipped > 0 {
             eprintln!("⚠ event stream lagged, skipped {skipped} events");
         }
     }
 
+    let result = exec_result?;
     match result {
         Ok(report) => {
             if let Some(path) = &output {

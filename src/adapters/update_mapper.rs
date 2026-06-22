@@ -52,12 +52,14 @@ pub fn handle_update(
     match update {
         SessionUpdate::AgentMessageChunk(chunk) => {
             if let Some(text) = json_find_text(chunk) {
+                tracing::debug!(text_len = text.len(), "ACP agent_message_chunk");
                 acc.message.lock().unwrap().push_str(&text);
                 emit(events, run_id, agent_id, ProgressDelta::Message { text });
             }
         }
         SessionUpdate::AgentThoughtChunk(chunk) => {
             if let Some(text) = json_find_text(chunk) {
+                tracing::debug!(text_len = text.len(), "ACP agent_thought_chunk");
                 emit(
                     events,
                     run_id,
@@ -73,6 +75,8 @@ pub fn handle_update(
             let title = find_str(&v, "title").filter(|s| !s.is_empty()).unwrap_or_else(|| "tool".to_string());
             let kind = find_str(&v, "kind").unwrap_or_default();
 
+            tracing::debug!(title = %title, kind = %kind, "ACP tool_call");
+
             if title.contains("structured_output") {
                 if let Some(raw_input) = v.get("rawInput").cloned().or_else(|| v.get("raw_input").cloned()) {
                     if !raw_input.is_null() && !raw_input.as_object().map(|o| o.is_empty()).unwrap_or(false) {
@@ -86,6 +90,8 @@ pub fn handle_update(
         }
         SessionUpdate::ToolCallUpdate(u) => {
             let v = to_json(u);
+
+            tracing::debug!(title = %find_str(&v, "title").unwrap_or_default(), path = ?find_str(&v, "path"), "ACP tool_call_update");
 
             if title_contains(&v, "structured_output") {
                 if let Some(raw_input) = v.get("rawInput").cloned().or_else(|| v.get("raw_input").cloned()) {
@@ -106,19 +112,25 @@ pub fn handle_update(
             }
         }
         SessionUpdate::UsageUpdate(u) => {
-            tracing::trace!(
+            tracing::debug!(
                 used = u.used,
                 size = u.size,
                 cost = ?u.cost,
                 "ACP usage_update"
             );
         }
-        _ => {}
+        other => {
+            let kind = serde_json::to_value(&other)
+                .ok()
+                .and_then(|v| v.get("sessionUpdate").and_then(|v| v.as_str()).map(String::from))
+                .unwrap_or_else(|| "unknown".to_string());
+            tracing::debug!(%kind, "ACP unhandled session/update");
+        }
     }
 
     // Best-effort: any update carrying a `usage` object updates token totals.
     if let Some(usage) = extract_usage(update) {
-        tracing::trace!(input = usage.input, output = usage.output, "token usage update");
+        tracing::debug!(input = usage.input, output = usage.output, "token usage update");
         *acc.tokens.lock().unwrap() = usage;
         emit(events, run_id, agent_id, ProgressDelta::Tokens { usage });
     }
@@ -163,13 +175,19 @@ fn find_str(v: &serde_json::Value, key: &str) -> Option<String> {
 }
 
 /// Extract a `TokenUsage` from a `usage` object embedded in the update, if any.
+/// Handles both snake_case (`input_tokens`) and camelCase (`inputTokens`) keys,
+/// since ACP uses camelCase serialization but some agents may use snake_case.
 fn extract_usage(update: &SessionUpdate) -> Option<TokenUsage> {
     let v = to_json(update);
     let usage = find_object(&v, "usage")?;
-    let get = |k: &str| usage.get(k).and_then(|n| n.as_u64()).unwrap_or(0);
+    let get = |snake: &str, camel: &str| {
+        usage.get(snake).or_else(|| usage.get(camel))
+            .and_then(|n| n.as_u64())
+            .unwrap_or(0)
+    };
     let (input, output) = (
-        get("input_tokens").max(get("input")),
-        get("output_tokens").max(get("output")),
+        get("input_tokens", "inputTokens").max(get("input", "input")),
+        get("output_tokens", "outputTokens").max(get("output", "output")),
     );
     if input == 0 && output == 0 {
         return None;
@@ -177,8 +195,8 @@ fn extract_usage(update: &SessionUpdate) -> Option<TokenUsage> {
     Some(TokenUsage {
         input,
         output,
-        cache_read: get("cache_read_tokens").max(get("cache_read")),
-        cache_write: get("cache_write_tokens").max(get("cache_write")),
+        cache_read: get("cache_read_tokens", "cachedReadTokens").max(get("cache_read", "cached_read")),
+        cache_write: get("cache_write_tokens", "cachedWriteTokens").max(get("cache_write", "cached_write")),
     })
 }
 

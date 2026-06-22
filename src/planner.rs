@@ -295,14 +295,29 @@ Generate a Lua script that orchestrates LLM subagents to accomplish the user's t
     - `output` is the agent's response parsed as JSON → Lua table. Access fields
       directly, e.g. `r.output.files`, `r.output.summary`.
     - If `ok` is false, `output` may be nil or an error object; check `status`.
-    - `schema` (optional): a JSON Schema (Draft 7) object describing the expected
-      output shape. When provided, the runtime validates the agent's output against
-      it and rejects mismatches. Express nested types properly:
-      Example: schema = { type = "object",
-                          properties = { files = { type = "array",
-                                                   items = { type = "string" } },
-                                         summary = { type = "string" } },
-                          required = { "files", "summary" } }
+    - `schema` (STRONGLY RECOMMENDED): a JSON Schema (Draft 7) object. When provided,
+      the runtime forces the agent to submit its result via a structured_output tool
+      call, validates it, and retries on mismatch. WITHOUT a schema the agent's
+      output is free-form text that may or may not be valid JSON — accessing
+      `r.output.xxx` on malformed output will yield nil and silently break downstream
+      code. ALWAYS provide a schema when you intend to access specific fields in
+      `r.output`. Define named schema tables at the top of the script and reuse them:
+        local FINDINGS = {
+          type = "object",
+          properties = {
+            files = { type = "array",
+                      items = { type = "object",
+                                properties = { path = { type = "string" },
+                                               purpose = { type = "string" } },
+                                required = { "path", "purpose" } } },
+            summary = { type = "string" }
+          },
+          required = { "files", "summary" }
+        }
+      Then: agent({ prompt = "...", schema = FINDINGS })
+      This applies to parallel() and pipeline() stage functions too — the opts table
+      they return should include `schema` whenever you read structured fields from
+      the result.
 
 - parallel(items, mapFn) -> array<result>
     items: an array (table). mapFn(item) must RETURN an agent opts table.
@@ -355,9 +370,16 @@ task genuinely requires cross-checking; skip it for simple tasks.
 4. Prefer pipeline() for streaming work; parallel() only when you need every result at
    once. For verification / audit / research, implement the adversarial pattern in Lua
    using agent() and parallel() — do NOT call converge().
-5. Always check result.ok before using result.output.
-6. Use phase() / log() to make progress legible.
-7. Output ONLY a single ```lua code block — no explanation.
+5. ALWAYS check result.ok before using result.output.
+6. ALWAYS provide a `schema` for every agent() / parallel() / pipeline() call whose
+   result output you access by field name (e.g. `r.output.files`). Without a schema,
+   output is unvalidated free-form text and field access will silently yield nil.
+   Define schema tables as locals at the top of the script and reuse them.
+7. Always `return` after an error report() so execution does not fall through to
+   code that dereferences nil.
+8. Call report() exactly ONCE — the first call wins; later calls are ignored.
+9. Use phase() / log() to make progress legible.
+10. Output ONLY a single ```lua code block — no explanation.
 
 # Example: simple research workflow
 ```lua
@@ -365,27 +387,41 @@ phase("research", 1)
 
 local topic = args.topic or "AI safety"
 
--- Step 1: gather sources
+local SOURCES_SCHEMA = {
+  type = "object",
+  properties = {
+    sources = { type = "array", items = {
+      type = "object",
+      properties = { title = { type = "string" }, url = { type = "string" }, summary = { type = "string" } },
+      required = { "title", "summary" }
+    } }
+  },
+  required = { "sources" }
+}
+
+local ANALYSIS_SCHEMA = {
+  type = "object",
+  properties = {
+    insights = { type = "array", items = { type = "string" } },
+    credibility = { type = "string" }
+  },
+  required = { "insights" }
+}
+
 local gather = agent({
-  prompt = "Research: " .. topic .. ". Return JSON {sources: [{title, url, summary}]}.",
-  schema = {
-    type = "object",
-    properties = {
-      sources = { type = "array", items = {
-        type = "object",
-        properties = { title = { type = "string" }, url = { type = "string" }, summary = { type = "string" } }
-      } }
-    },
-    required = { "sources" }
-  }
+  prompt = "Research: " .. topic,
+  schema = SOURCES_SCHEMA
 })
 if not gather.ok then
   report({ error = "gather failed: " .. gather.status })
+  return
 end
 
--- Step 2: analyze each source in parallel
 local results = parallel(gather.output.sources or {}, function(src)
-  return { prompt = "Analyze this source and extract key insights.\n" .. json.encode(src) }
+  return {
+    prompt = "Analyze this source and extract key insights.\n" .. json.encode(src),
+    schema = ANALYSIS_SCHEMA
+  }
 end)
 
 report({ topic = topic, sources = #results, results = results })
@@ -398,11 +434,19 @@ local items = gather.output.findings or {}
 local max_rounds = 3
 local threshold = 0.7
 
+local VOTE_SCHEMA = {
+  type = "object",
+  properties = { approve = { type = "boolean" } },
+  required = { "approve" }
+}
+
 for round = 1, max_rounds do
   log("adversarial round " .. round)
   local votes = parallel(items, function(finding)
-    return { prompt = "Evaluate this finding for accuracy. Return JSON {approve: true|false}.\n"
-                   .. json.encode(finding) }
+    return {
+      prompt = "Evaluate this finding for accuracy.\n" .. json.encode(finding),
+      schema = VOTE_SCHEMA
+    }
   end)
   local survivors = {}
   for i, finding in ipairs(items) do

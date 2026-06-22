@@ -145,6 +145,13 @@ impl Scheduler {
         let used = quota_used.fetch_add(1, Ordering::Relaxed) + 1;
         if used > self.config.quota_per_run {
             tracing::warn!(used, limit = self.config.quota_per_run, "run quota exceeded");
+            let _ = events.send(AgentEvent::AgentDone {
+                run_id,
+                agent_id: task.agent_id,
+                status: AgentStatus::Error,
+                tokens: TokenUsage::default(),
+                elapsed_ms: 0,
+            });
             return Err(SchedulerError::QuotaExceeded {
                 limit: self.config.quota_per_run,
                 used,
@@ -162,6 +169,13 @@ impl Scheduler {
         let permit = tokio::select! {
             p = self.semaphore.clone().acquire_owned() => p.expect("semaphore never closed"),
             _ = agent_token.cancelled() => {
+                let _ = events.send(AgentEvent::AgentDone {
+                    run_id,
+                    agent_id: task.agent_id,
+                    status: AgentStatus::Cancelled,
+                    tokens: TokenUsage::default(),
+                    elapsed_ms: 0,
+                });
                 self.cleanup_agent(run_id, task.agent_id);
                 return Err(cancel_kind(&run_cancel));
             }

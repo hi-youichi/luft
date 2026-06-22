@@ -292,12 +292,28 @@ pub async fn execute(
     script: String,
 ) -> Result<std::result::Result<serde_json::Value, ScriptError>> {
     let run_id = run_ctx.run_id;
+    tracing::debug!(%run_id, "execute: spawning Lua script on blocking thread");
     // mlua is not Send-safe to drive from an async worker thread, and the SDK
     // primitives call Handle::block_on internally — both require a blocking
     // thread outside the async runtime.
-    let result = tokio::task::spawn_blocking(move || runtime.execute(&script))
+    let result = match tokio::task::spawn_blocking(move || runtime.execute(&script))
         .await
-        .map_err(|e| anyhow::anyhow!("execution task panicked: {}", e))?;
+    {
+        Ok(r) => {
+            tracing::debug!(%run_id, "execute: blocking thread returned");
+            r
+        }
+        Err(e) => {
+            tracing::error!(%run_id, error = %e, "execution task panicked");
+            let _ = run_ctx.events.send(AgentEvent::RunDone {
+                run_id,
+                status: RunStatus::Failed,
+                total_tokens: TokenUsage::default(),
+                report: serde_json::Value::Null,
+            });
+            return Err(anyhow::anyhow!("execution task panicked: {}", e));
+        }
+    };
 
     let status = if result.is_ok() { RunStatus::Completed } else { RunStatus::Failed };
     if let Err(ref e) = result {

@@ -17,6 +17,26 @@ pub struct McpStructuredOutputArgs {
 }
 
 pub fn run(args: McpStructuredOutputArgs) -> Result<()> {
+    let log_path = std::env::var("MAESTRO_MCP_LOG")
+        .unwrap_or_else(|_| {
+            let dir = std::env::temp_dir();
+            dir.join(format!("maestro-mcp-{}.log", std::process::id()))
+                .to_string_lossy()
+                .into_owned()
+        });
+    let log_file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)?;
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("debug")),
+        )
+        .with_writer(log_file)
+        .try_init();
+
+    tracing::info!(schema_file = %args.schema_file.display(), log = %log_path, "MCP structured-output server starting");
     let schema: Value = serde_json::from_str(&std::fs::read_to_string(&args.schema_file)?)?;
     serve_mcp(&schema)
 }
@@ -32,9 +52,14 @@ fn serve_mcp(schema: &Value) -> Result<()> {
             continue;
         }
 
+        tracing::debug!(line = %line, "MCP recv");
+
         let msg: JsonRpcMessage = match serde_json::from_str(&line) {
             Ok(m) => m,
-            Err(_) => continue,
+            Err(e) => {
+                tracing::warn!(error = %e, line = %line, "MCP parse error");
+                continue;
+            }
         };
 
         let method = msg.method.as_deref();
@@ -68,7 +93,9 @@ fn serve_mcp(schema: &Value) -> Result<()> {
                 write_response(&mut stdout, id, &result)?;
             }
             (Some("tools/call"), Some(id)) => {
+                tracing::info!(params = ?msg.params, "MCP tools/call");
                 let result = handle_tool_call(&msg.params, schema);
+                tracing::info!(is_error = result.get("isError").and_then(|v| v.as_bool()).unwrap_or(false), "MCP tools/call response");
                 write_response(&mut stdout, id, &result)?;
             }
             (_, Some(id)) => {
@@ -136,6 +163,7 @@ fn validate_against_schema(input: &Value, schema: &Value) -> std::result::Result
 
 fn write_response(stdout: &mut impl Write, id: Value, result: &Value) -> Result<()> {
     let resp = serde_json::json!({ "jsonrpc": "2.0", "id": id, "result": result });
+    tracing::debug!(response = %resp, "MCP send");
     writeln!(stdout, "{}", resp)?;
     stdout.flush()?;
     Ok(())

@@ -15,7 +15,7 @@ use crate::core::contract::backend::{
     AgentBackend, AgentCapabilities, AgentResult, AgentTask, BackendError, RunContext,
 };
 use crate::core::contract::event::EventSender;
-use crate::core::contract::ids::{AgentId, RunId};
+use crate::core::contract::ids::{AgentId, RunId, TokenUsage};
 use async_trait::async_trait;
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -180,6 +180,7 @@ async fn run_acp_session(
     // 3. Build + drive the ACP client connection.
     let conn_fut = {
         let acc_h = acc.clone();
+        let acc_prompt = acc.clone();
         let events_h = events.clone();
         let stop_holder = stop_holder.clone();
         async move {
@@ -191,7 +192,15 @@ async fn run_acp_session(
                         let acc_h = acc_h.clone();
                         let events_h = events_h.clone();
                         async move {
-                            tracing::trace!("ACP session/update received");
+                            let kind = serde_json::to_value(&n.update)
+                                .ok()
+                                .and_then(|v| {
+                                    v.get("sessionUpdate")
+                                        .and_then(|v| v.as_str())
+                                        .map(String::from)
+                                })
+                                .unwrap_or_else(|| "unknown".to_string());
+                            tracing::debug!(%kind, "ACP session/update");
                             update_mapper::handle_update(
                                 &n.update, run_id, agent_id, &acc_h, &events_h, emit_raw,
                             );
@@ -223,7 +232,10 @@ async fn run_acp_session(
                     },
                     agent_client_protocol::on_receive_request!(),
                 )
-                .connect_with(transport, move |conn: ConnectionTo<Agent>| async move {
+                .connect_with(transport, {
+                    move |conn: ConnectionTo<Agent>| {
+                    let acc_prompt = acc_prompt.clone();
+                    async move {
                     tracing::debug!("ACP handshake: initialize");
                     conn.send_request(InitializeRequest::new(ProtocolVersion::V1))
                         .block_task()
@@ -259,8 +271,22 @@ async fn run_acp_session(
                         .await?;
                     tracing::debug!(stop_reason = ?pr.stop_reason, "ACP prompt complete");
                     *stop_holder.lock().unwrap() = Some(format!("{:?}", pr.stop_reason));
+                    if let Some(ref u) = pr.usage {
+                        tracing::debug!(
+                            input = u.input_tokens,
+                            output = u.output_tokens,
+                            total = u.total_tokens,
+                            "ACP prompt usage"
+                        );
+                        *acc_prompt.tokens.lock().unwrap() = TokenUsage {
+                            input: u.input_tokens,
+                            output: u.output_tokens,
+                            cache_read: u.cached_read_tokens.unwrap_or(0),
+                            cache_write: u.cached_write_tokens.unwrap_or(0),
+                        };
+                    }
                     Ok::<(), agent_client_protocol::Error>(())
-                })
+                }}})
                 .await
         }
     };

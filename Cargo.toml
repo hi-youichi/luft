@@ -34,7 +34,7 @@ uuid = { version = "1", features = ["v7", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 tokio-util = { version = "0.7", features = ["compat"] }
 dashmap = "6"
-agent-client-protocol = "0.14"
+agent-client-protocol = { version = "0.14", features = ["unstable_end_turn_token_usage"] }
 blake3 = "1"
 unicode-normalization = "0.1"
 mlua = { version = "0.10", features = ["lua54", "vendored", "async", "serialize", "send"] }
