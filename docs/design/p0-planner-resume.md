@@ -1,6 +1,6 @@
 # P0-B/C: Planner agent 化 & Resume — 实现设计
 
-> **路线图引用**: [`roadmap.md`](../roadmap.md) §P0-B / §P0-C
+> **路线图引用**: roadmap.md §P0-B / §P0-C
 > **状态**: 已实现（2026-06-03）
 
 ---
@@ -57,7 +57,7 @@ DSL 规范中的关键编排准则：脚本只编排、禁碰 FS/shell；默认 
 
 原计划给 `RunCheckpoint` 加 `workflow_path` 字段。**实际无必要**：
 
-- [`cli.rs`](../../src/cli.rs) 的 `--resume` 已从 `run_dir/workflow.lua` 读脚本，**不依赖 `--workflow`**。
+- `cli.rs` 的 `--resume` 已从 `run_dir/workflow.lua` 读脚本，**不依赖 `--workflow`**。
 - journal 已实现缓存式 resume（[`sandbox.rs`](../../src/runtime/sandbox.rs) 中 `agent()`/`parallel()` 命中 `get_cached` 即跳过已完成 agent）。
 
 这正是 Claude DW 的 resume 模型：**缓存已完成 agent 的结果**，而非确定性重新生成 plan。因此 `workflow_path` 字段计划取消，仅保留"`init_run` 写入真实任务名"这一项收尾（让 `list`/`status` 可辨识）。

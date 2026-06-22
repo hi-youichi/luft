@@ -2,7 +2,7 @@
 
 > **命令行入口 + 运行编排 + 输出模式。** clap 解析命令，编排一次 run 的完整生命周期（脚本解析 → journal → scheduler → runtime → 事件落盘 → 报告），并以 headless 形式输出。
 
-源码：[`src/main.rs`](../../src/main.rs)（二进制入口）+ [`src/cli.rs`](../../src/cli.rs)（运行逻辑）
+源码：[`src/main.rs`](../../src/main.rs)（二进制入口）+ `src/cli.rs`（运行逻辑）
 
 ---
 
@@ -31,7 +31,7 @@
 
 | 命令 | 处理 | 状态 |
 |------|------|------|
-| `run <NL>` / `run -w <file>` | `run_workflow` → `cli::run` | ✅（NL 经 [planner](./planner.md)） |
+| `run <NL>` / `run -w <file>` | `run_workflow` → `cli::run` | ✅（NL 经 planner） |
 | `run --resume` | 复用最近可恢复 run 的 `workflow.lua` | ✅ |
 | `run --headless` | JSONL 事件流输出 | ✅ |
 | `run --approve` | 跳过审批提示 | ✅ |
@@ -116,5 +116,5 @@
 ## 8. 相关文档
 
 - 总览：[../architecture.md](../architecture.md)
-- 装配的模块：[planner.md](./planner.md)（NL→脚本）、[runtime.md](./runtime.md)（执行）、[core.md](./core.md)（scheduler/journal/state）、[adapters.md](./adapters.md)（backend 工厂）
-- 旧版设计稿：[../archive/cli.md](../archive/cli.md)
+- 装配的模块：planner.md（NL→脚本）、[runtime.md](./runtime.md)（执行）、core.md（scheduler/journal/state）、[adapters.md](./adapters.md)（backend 工厂）
+- 旧版设计稿：cli.md（已归档）

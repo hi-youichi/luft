@@ -1,6 +1,8 @@
 # core 模块架构
 
-> **冻结合约 + 调度器 + 状态持久化。** Maestro 的地基层，定义所有上层模块共享的类型、并发执行逻辑与断点续跑能力。
+> **状态**: 待完善 — 骨架文档，需补充详细内容。
+
+> 冻结合约 + 调度器 + 状态持久化 — 无上游依赖的地基层。
 
 源码：[`src/core/`](../../src/core/) ｜ 公开 API：[`src/core/mod.rs`](../../src/core/mod.rs)
 
@@ -8,212 +10,272 @@
 
 ## 1. 职责与边界
 
-`core` 是**唯一没有上游依赖**的模块（除第三方 crate 外不依赖 Maestro 任何其他模块）。它只定义：
-
-- **合约（contract）**——traits、数据类型、事件枚举、缓存键、Schema 校验。一经评审应极少改动，是 `runtime` / `adapters` / `mcp` / `cli` 的共同基底。
-- **调度（scheduler）**——把一个 `AgentTask` 安全地跑成 `AgentResult`：并发上限、配额、重试、取消、事件广播、Schema 校验。
-- **持久化（state / journal）**——把运行进度落盘成 `checkpoint.json` + `events.jsonl`，并以 cache key 索引支持 `--resume`。
-- **测试后端（mock_backend）**——确定性的 `AgentBackend` 实现，供单测与集成测试复用。
+`core` 是 Maestro 的**地基**。它定义了其他所有模块依赖的共享合约（trait、事件、ID），实现了并发调度逻辑，并负责运行状态的持久化与恢复。`core` 不依赖 `runtime`/`adapters`/`planner`/`mcp`/`cli` 中的任何一个。
 
 ```
-        ┌─────────────────────────────────────────────┐
-        │  runtime · adapters · mcp · planner · cli    │  上层模块
-        └───────────────────────┬─────────────────────┘
-                                │ 依赖
-        ┌───────────────────────▼─────────────────────┐
-        │                    core                      │
-        │  contract  ◀── scheduler ──▶ journal ──▶ state│
-        │     ▲                              mock_backend│
-        └─────┴────────────────────────────────────────┘
-                （core 内部依赖：scheduler/journal/state 依赖 contract）
+                  cli ──► planner ──► runtime ──► core ◄── adapters
+                   └────────────────────────────► core ◄── mcp
 ```
 
-**关键边界约定**：`AgentBackend` trait 是 `core` 与 `adapters` 的接缝；`AgentEvent` 广播通道是 `core` 与 `cli`/持久化的接缝；`AgentCacheKey` 是 `core` 与 `runtime`（resume）的接缝。
+### 1.1 子模块总览
+
+| 子模块 | 路径 | 职责 |
+|--------|------|------|
+| `contract` | `contract/` | 冻结合约 — 共享类型、trait、事件枚举、缓存键 |
+| `scheduler` | `scheduler/` | 并发调度 — 信号量、配额、重试、取消、事件广播 |
+| `journal` | `journal.rs` | JournalStore — cache key 索引、O(1) 查询、ResumeContext |
+| `state` | `state.rs` | RunStore / RunCheckpoint — JSONL 事件日志 + checkpoint 落盘 |
+| `mock_backend` | `mock_backend.rs` | MockBackend — 确定性测试后端 |
 
 ---
 
-## 2. 内部结构
+## 2. contract — 冻结合约
 
-| 文件 | 职责 |
-|------|------|
-| [`contract/ids.rs`](../../src/core/contract/ids.rs) | `RunId`/`AgentId`（uuid v7）、`PhaseId`（u32）、`TokenUsage`（含 `Add`/`AddAssign`） |
-| [`contract/backend.rs`](../../src/core/contract/backend.rs) | `AgentBackend` trait、`AgentTask`、`AgentResult`、`AgentStatus`、`RunContext`、`ToolPolicy`、`McpEndpoint`、`BackendError`、`AgentCapabilities`、`Artifact`、`LogRef` |
-| [`contract/event.rs`](../../src/core/contract/event.rs) | `AgentEvent`（带标签枚举，~12 个变体）、`ProgressDelta`、`RunStatus`、`LogLevel`、`EventSender = broadcast::Sender<AgentEvent>` |
-| [`contract/finding.rs`](../../src/core/contract/finding.rs) | `Finding`、`Severity`、`Location`——数据面输出契约 |
-| [`contract/cache.rs`](../../src/core/contract/cache.rs) | `agent_cache_key()`——§1.5 冻结契约版缓存键（blake3 + NFC 归一化） |
-| [`contract/schema.rs`](../../src/core/contract/schema.rs) | `validate_output()`——基于 `jsonschema` Draft7 的结构化输出校验 |
-| [`scheduler/mod.rs`](../../src/core/scheduler/mod.rs) | `Scheduler`、`run_agent`/`run_parallel`/`cancel_*`、`JournalCallback` trait |
-| [`scheduler/config.rs`](../../src/core/scheduler/config.rs) | `SchedulerConfig`、`RetryPolicy`（指数退避） |
-| [`scheduler/registry.rs`](../../src/core/scheduler/registry.rs) | `BackendRegistry`——`id → Arc<dyn AgentBackend>` |
-| [`scheduler/error.rs`](../../src/core/scheduler/error.rs) | `SchedulerError` |
-| [`journal.rs`](../../src/core/journal.rs) | `JournalStore`（cache key 索引）、`AgentCacheKey`、`ResumeContext`、`RunCreationMode`、`gc_runs()` |
-| [`state.rs`](../../src/core/state.rs) | `RunStore`、`RunCheckpoint`、`AgentResultCache`、`CheckpointStatus`、`PhaseSummary`、全局 `RUN_STORES` |
-| [`mock_backend.rs`](../../src/core/mock_backend.rs) | `MockBackend`、`MockBehavior`、`FailKind`——确定性测试后端 |
+`contract` 是 `core` 的**合约层**（frozen contracts）。所有模块依赖的类型都定义在此，一旦冻结应极少修改。
 
----
+```
+contract/
+├── mod.rs          # 公开 re-export
+├── backend.rs      # AgentBackend trait · AgentTask · AgentResult · BackendError
+├── event.rs        # AgentEvent 枚举 · EventSender 广播总线
+├── cache.rs        # agent_cache_key() 确定性哈希
+├── finding.rs      # Finding 结构化输出
+├── ids.rs          # RunId · AgentId · PhaseId · TokenUsage
+└── schema.rs       # JSON Schema 校验 (validate_output)
+```
 
-## 3. 核心抽象
+### 2.1 AgentBackend Trait — `core` ↔ `adapters` 接缝
 
-### 3.1 AgentBackend trait
-
-所有 LLM 后端的统一接口——**prompt 进，结构化 `AgentResult` 出**。
+所有 LLM 后端的统一接口。Prompt 进，结构化 `AgentResult` 出。
 
 ```rust
 #[async_trait]
 pub trait AgentBackend: Send + Sync {
-    fn id(&self) -> &'static str;                 // 稳定后端 id，如 "opencode"
-    fn capabilities(&self) -> AgentCapabilities;  // 能力声明（v0.1 仅记录，路由在 v0.2）
-    async fn run(&self, task: AgentTask, ctx: RunContext)
-        -> Result<AgentResult, BackendError>;
+    fn id(&self) -> &'static str;
+    fn capabilities(&self) -> AgentCapabilities;
+    async fn run(&self, task: AgentTask, ctx: RunContext) -> Result<AgentResult, BackendError>;
 }
 ```
 
-- `AgentTask`：`prompt`（必填）、`model`、`allowlist: ToolPolicy`、`workdir`、`mcp_endpoint`、`timeout`、`output_schema`。
-- `AgentResult`：`status`、`output: serde_json::Value`、`findings`、`tokens_used`、`artifacts`、`logs`。
-- `RunContext`：`run_id` + `cancel: CancellationToken` + `events: EventSender`。实现方**应观察 `ctx.cancel`**，触发时尽快返回 `BackendError::Cancelled`。
-- `BackendError::is_retryable()`：仅 `Timeout` 与 `Spawn(_)` 可重试，其余（`Protocol`/`Parse`/…）不可重试。
+- **实现方**: `MockBackend`（`core/mock_backend.rs`，测试用）、`AcpAdapter`（`adapters/`，opencode ACP 后端）
+- **RunContext**: 携带 `run_id`、`CancellationToken`、`EventSender`，后端应观察 `ctx.cancel` 并在触发时返回 `BackendError::Cancelled`
+- **BackendError**: 区分可重试（`Timeout` / `Spawn`）与非可重试错误；`is_retryable()` 方法供 scheduler 决策
 
-### 3.2 事件总线（AgentEvent）
+> 待补充: 详细字段说明、能力声明机制、McpEndpoint 注入方式。
 
-`AgentEvent` 是**唯一的可观测性数据源**：headless 把每条事件序列化为一行 JSONL，TUI 把同一条流投影成 phase→agent 视图，state 把它持久化。变体覆盖运行生命周期：`RunStarted` / `PhaseStarted` / `AgentStarted` / `AgentProgress` / `AgentDone` / `PhaseDone` / `RunDone` / `Log`，以及 pipeline 专用的 `PipelineStarted` / `PipelineStageStarted` / `PipelineItemDone` / `PipelineDone`。
+### 2.2 AgentEvent 广播总线 — 唯一可观测性数据源
 
-传输用 `tokio::sync::broadcast`——多消费者（持久化任务、TUI、headless drain）各自 `subscribe()`/`resubscribe()`，互不阻塞。
-
-### 3.3 缓存键（两套实现，注意区分）
-
-| 实现 | 输入 | 归一化 | 实际使用方 |
-|------|------|--------|-----------|
-| `contract::cache::agent_cache_key()` | backend_id + model + prompt + phase | NFC + 折叠空白 | §1.5 冻结契约，当前 runtime 未直接调用 |
-| `journal::AgentCacheKey::new()` | prompt + model + phase | 折叠空白（无 NFC） | **runtime resume 路径实际使用** |
-
-两者都用 blake3 + `\0` 分隔符防字段拼接碰撞。**`runtime` 的 `agent()`/`parallel()` 用的是 `journal::AgentCacheKey`**——这是 resume 命中的真正依据。两套实现的存在是历史演进残留，统一到单一实现是后续清理项。
-
----
-
-## 4. Scheduler：从 task 到 result 的安全路径
-
-`Scheduler` 以 `Arc<Scheduler>` 形式被编排协程共享，内部状态：
+`tokio::sync::broadcast<AgentEvent>` 是整个运行时**唯一的可观测性数据源**。同一条流被持久化（`RunStore.append_event`）、headless 输出（JSONL）同时消费。
 
 ```rust
-struct Scheduler {
-    config: SchedulerConfig,
-    semaphore: Arc<Semaphore>,              // 全局并发闸
-    registry: BackendRegistry,
-    runs: DashMap<RunId, RunState>,         // per-run 状态
-    journal_callback: Option<Arc<dyn JournalCallback>>,
-}
-struct RunState {
-    quota_used: Arc<AtomicU32>,             // per-run 配额计数
-    run_cancel: CancellationToken,          // run 级取消（父）
-    events: EventSender,
-    agent_cancels: DashMap<AgentId, CancellationToken>,  // agent 级取消（子）
-}
+pub type EventSender = tokio::sync::broadcast::Sender<AgentEvent>;
 ```
 
-### `run_agent` 执行流水线
+事件枚举（21 个变体）覆盖完整生命周期：
 
-```
-backend 查找(registry) → 快照 per-run 句柄(不跨 await 持锁)
-  → 配额检查(AtomicU32 fetch_add，超限 → QuotaExceeded)
-  → 建立 agent 取消令牌(run_cancel 的子令牌)
-  → 获取信号量 permit(等待期间可被取消)
-  → emit AgentStarted
-  → ┌── 重试循环 ──────────────────────────────┐
-    │  backend.run() 包 tokio::timeout(可选)    │
-    │  Ok  → 若有 output_schema 则校验 → break  │
-    │  Err → 取消? → 不可重试? → 超过 max? →    │
-    │        退避 sleep(可被取消) → 重试         │
-    └──────────────────────────────────────────┘
-  → emit AgentDone(status, tokens, elapsed)
-  → journal_callback.on_agent_done()(若配置)
-  → drop permit + 清理 agent 令牌
-```
-
-| 能力 | 实现 |
+| 类别 | 事件 |
 |------|------|
-| 全局并发上限 | `Semaphore`，默认 `2×CPU` clamp 到 `[4,16]` |
-| Per-run 配额 | `AtomicU32`，默认 1000，防 fan-out 失控 |
-| Per-agent / per-run 取消 | `CancellationToken` 树：agent 令牌是 run 令牌的子令牌，任一触发都生效 |
-| 重试 | 指数退避：默认 `max_attempts=2`、`initial=500ms`、`×2`、`cap=10s`；退避 sleep 可被取消打断 |
-| Schema 校验 | `output_schema` 存在时对 `AgentResult.output` 跑 `validate_output()` |
-| 事件广播 | 所有状态变化 emit 到 per-run 的 `EventSender` |
+| Run | `RunStarted` · `RunDone` |
+| Phase | `PhaseStarted` · `PhaseDone` |
+| Agent | `AgentStarted` · `AgentProgress` · `AgentDone` |
+| SDK 原语 | `ReportEmitted` · `BudgetSet` · `ParallelStarted/Done` · `WorkflowStarted/Done` · `ConvergeStarted/Done` |
+| Pipeline | `PipelineStarted` · `PipelineStageStarted` · `PipelineItemDone` · `PipelineDone` |
+| 基础设施 | `Log` · `AcpRaw` |
 
-**设计注记（§9.2 C1）**：`run_agent` 返回 `Result<AgentResult, SchedulerError>` 而非设计稿里的 `(result, TaskHandle)` 元组——取消通过 `cancel_agent(run_id, agent_id)` 按 id 寻址，因此不需要句柄。
+> 待补充: 事件大小限制、背压处理、消费者准入策略。
 
-`run_parallel` 用 `futures::join_all` 并发跑一批，**不短路失败**、**结果保持输入顺序**——这是 `parallel()` 原语的栅栏语义基础。
+### 2.3 AgentCacheKey — `core` ↔ `runtime`（resume）接缝
+
+**确定性去重键**，用于 `--resume` 时跳过已完成的 agent 调用。
+
+- **函数** `agent_cache_key(backend_id, model, prompt, phase) → blake3 hex`:
+  - 使用 `\0` 分隔符防止字段拼接冲突
+  - prompt 经过 NFC 归一化 + 空白折叠 + 换行统一
+- **结构体** `AgentCacheKey`（定义于 `journal.rs`）:
+  - `hash`: blake3 hex digest
+  - `prompt_preview`: 前 80 字符（人类可读）
+  - `model` / `phase_id`: 辅助字段
+
+> 待补充: 冲突概率分析、缓存粒度选择依据。
 
 ---
 
-## 5. 持久化：state + journal 两层
+## 3. scheduler — 并发调度器
 
-### 5.1 RunStore（state.rs）——落盘引擎
-
-每个 run 一个目录，两个文件：
-
-| 文件 | 写入方式 | 内容 |
-|------|---------|------|
-| `events.jsonl` | append + `flush()` | 每事件一行，仅追加 |
-| `checkpoint.json` | `fs::write` **全量重写** | 当前快照：状态、phase、`agent_results`、token 累计 |
-
-`append_event()` 同时做两件事：追加事件行，并 `update_from_event()` 把派生状态写回 checkpoint——`AgentDone` 累加 `total_tokens` 并更新 `agent_results`，`PhaseDone` 推进 `current_phase`，`RunDone` 落定终态。
-
-> ⚠️ **准确说明**：checkpoint 当前是 `fs::write` 全量重写，**不是 temp 文件 + rename 的原子交换**；崩溃恰好发生在重写中途存在损坏风险。`events.jsonl` 是追加 + flush，相对更安全。原子化是后续加固项。
-
-全局 `RUN_STORES`（`OnceLock<DashMap<RunId, Arc<RunStore>>>`）让同一进程内多处共享同一 run 的 store，避免 split-brain。
-
-### 5.2 JournalStore（journal.rs）——续跑语义层
-
-`JournalStore` 在 `RunStore` 之上叠加一个 **cache key 索引**（`RwLock<HashMap<String, AgentResultCache>>`），把"已完成 agent 的 O(1) 查询"与"落盘"解耦：
-
-- `open(run_id)`：从 checkpoint 重建索引（同时按 `agent_id` 和 `cache_key_hash` 双重索引），并**拒绝恢复已 Completed/Cancelled 的 run**。
-- `record_result()`：runtime 在 agent 完成后调用——**只 upsert checkpoint + 刷新索引，不追加 `AgentDone` 事件**，从而不会与事件驱动的 token 累计重复计数。
-- `cache_agent()`：完整持久化 + 追加事件 + 广播（另一条更"重"的路径）。
-- `has_completed()` / `get_cached()`：runtime 的 `agent()` 在提交调度前查询，命中则直接复用、跳过执行。
-- 作为 `JournalCallback` 实现：scheduler 回调路径按 `agent_id` 落盘（无 cache_key、无 findings）。
-
-`RunCreationMode`（`New`/`Resume`/`Auto`）封装"新建 or 续跑"的解析；`gc_runs()` 清理超期的终态 run。
-
-### 5.3 续跑数据流
+`scheduler` 是 agent 调度的**中央控制器**，统一处理并发限制、配额、重试、取消和事件报告。
 
 ```
-首跑:  init_run → [agent 完成 → record_result(写索引+checkpoint)]* → RunDone
-        磁盘: checkpoint.json(agent_results 带 cache_key_hash) + events.jsonl + workflow.lua
-
-续跑:  open(run_id) → 重建 cache_index
-        → 重放同一脚本 → agent() 查 has_completed() → 命中则跳过、未命中才执行
+scheduler/
+├── mod.rs          # Scheduler 结构体 + JournalCallback trait
+├── config.rs       # SchedulerConfig · RetryPolicy
+├── error.rs        # SchedulerError 枚举
+└── registry.rs     # BackendRegistry — 后端注册中心
 ```
 
+### 3.1 Scheduler 核心流程
+
+`run_agent` 的完整路径：
+
+1. **Backend 解析** — 根据 id 查找 `BackendRegistry`，或使用默认后端
+2. **配额检查** — 检查 `quota_per_run` 上限
+3. **并发控制** — 等待 `Semaphore`（可取消等待）
+4. **取消注册** — 创建 `CancellationToken`（run 级 + agent 级）
+5. **重试循环** — 对 `Timeout`/`Spawn` 做指数退避重试
+6. **Schema 校验重试** — `output_schema` 不匹配时注入错误信息重试
+7. **事件报告** — 广播 `AgentStarted` → `AgentDone`
+8. **Journal 回调** — 调用 `JournalCallback::on_agent_done` 透明落盘
+
+### 3.2 JournalCallback
+
+```rust
+#[async_trait]
+pub trait JournalCallback: Send + Sync {
+    async fn on_agent_done(
+        &self,
+        agent_id: AgentId,
+        phase_id: PhaseId,
+        status: AgentStatus,
+        output: serde_json::Value,
+        tokens: TokenUsage,
+    );
+}
+```
+
+Scheduler 持有一个可选的 `JournalCallback`（装配为 `JournalStore`），在每个 agent 完成后自动调用。`JournalStore` 同时实现 `on_agent_done` 并通过 `CompositeJournalCallback` 支持链式组合。
+
+### 3.3 配置
+
+```rust
+pub struct SchedulerConfig {
+    pub max_concurrency: usize,   // 默认 2×cpu，钳制 [4, 16]
+    pub quota_per_run: u32,       // 默认 1000
+    pub retry: RetryPolicy,
+}
+
+pub struct RetryPolicy {
+    pub max_attempts: u32,          // 默认 2
+    pub initial_backoff: Duration,  // 默认 500ms
+    pub backoff_multiplier: f64,    // 默认 2.0
+    pub max_backoff: Duration,      // 默认 10s
+    pub schema_retry_max: u32,      // 默认 1
+}
+```
+
+> 待补充: 详细错误处理策略、`run_parallel` 实现、配额回收时机。
+
 ---
 
-## 6. 并发与线程模型
+## 4. state — 状态持久化
 
-- `Scheduler` / `JournalStore` / `RunStore` 全部**内部可变 + `&self`**：`Semaphore` / `AtomicU32` / `DashMap` / `RwLock`，可被多个编排协程并发共享。
-- 取消是**令牌树**：run 令牌 → agent 子令牌。父取消则所有子取消；agent 单独取消不影响兄弟。
-- 跨 `await` **不持有 `DashMap` 守卫**——`run_agent` 先快照句柄再 await，避免死锁。
-- `RunState.events` 既给 scheduler（`AgentStarted`/`AgentDone`）也给 backend（经 `RunContext`），通过 `init_run_with` 注入同一总线，保证事件不分裂。
+状态持久化由两层组成：底层 `RunStore` 负责磁盘 I/O，上层 `JournalStore` 增加 cache key 索引。
+
+### 4.1 RunStore
+
+```
+run_dir/
+├── checkpoint.json    ← RunCheckpoint（全量状态快照）
+└── events.jsonl       ← JSONL 事件日志（追加写）
+```
+
+```rust
+pub struct RunCheckpoint {
+    pub run_id: RunId,
+    pub task: String,
+    pub status: CheckpointStatus,   // Running | Completed | Failed | Cancelled
+    pub current_phase: u32,
+    pub completed_phases: Vec<PhaseSummary>,
+    pub agent_results: HashMap<AgentId, AgentResultCache>,
+    pub findings: Vec<Finding>,
+    pub total_tokens: u64,
+    pub created_at: u64,
+    pub updated_at: u64,
+}
+```
+
+**关键方法**:
+- `init_run(run_id, task)` — 创建 run 目录 + 初始化 checkpoint
+- `append_event(event)` — 追加写到 `events.jsonl`
+- `save_checkpoint(checkpoint)` — 全量重写 `checkpoint.json`（当前非原子写入）
+- `open_run(run_id)` — 从磁盘恢复 `RunCheckpoint`
+- `get_event_log()` — 回放全部事件
+
+### 4.2 JournalStore
+
+`JournalStore` 包装 `RunStore`，在其上增加了 cache key 索引：
+
+```
+JournalStore
+├── inner: Arc<RunStore>
+├── cache_index: RwLock<HashMap<String, AgentResultCache>>   // hash → cache
+└── event_tx: Option<EventSender>
+```
+
+**关键方法**:
+- `cache_agent(key, ...)` — 写入 `RunStore.upsert_agent_result` + 更新内存索引
+- `record_result(...)` — `cache_agent` 别名，同时广播事件
+- `get_cached(key)` — O(1) 查询 cache 索引
+- `has_completed(key)` — 判断是否可跳过
+- `new(run_dir)` / `open(run_id)` — 初始化或恢复已有 run
+
+### 4.3 恢复流程（Resume）
+
+```rust
+pub struct ResumeContext {
+    pub run_id: RunId,
+    pub checkpoint: RunCheckpoint,
+    pub journal: Arc<JournalStore>,
+    pub scheduler_config: SchedulerConfig,
+    pub backend_registry: BackendRegistry,
+}
+```
+
+运行时通过 `RunCreationMode` 决定新建还是恢复：检查 `checkpoint.json` 是否存在且状态为 `Running`/不完整，若是则从存档点接续执行，否则从头开始。
+
+> 待补充: 原子写入（fs::write vs temp+rename）、事件回放弃重逻辑、垃圾回收策略。
 
 ---
 
-## 7. 设计决策与权衡
+## 5. MockBackend — 确定性测试后端
 
-- **contract 无上游依赖、改动极慎**：作为"冻结合约"，任何字段变更都会波及全模块；新增能力优先用 `Option`/`#[serde(default)]` 向后兼容（如 `AgentResultCache.cache_key_hash`）。
-- **调度集中、后端可插拔**：并发/配额/重试/取消的策略统一在 scheduler，后端只管"一次 prompt→result"，复杂度不外溢。
-- **事件总线作为单一事实源**：持久化、TUI、headless 都消费同一条 `AgentEvent` 流，避免多套状态。
-- **journal 与 state 分层**：state 负责"怎么落盘"，journal 负责"续跑语义"，cache key 索引只活在内存、由 checkpoint 重建。
+```rust
+pub enum MockBehavior {
+    Success { output: Value, tokens: TokenUsage, delay: Duration },
+    Fail { kind: FailKind, delay: Duration },
+    Hang,
+}
+
+pub struct MockBackend {
+    id: &'static str,
+    behaviors: Vec<MockBehavior>,
+    calls: AtomicU32,
+}
+```
+
+按顺序消费 `behaviors` 列表，支持注入成功/失败/挂起行为，用于 scheduler 和 runtime 的确定性单元测试。
 
 ---
 
-## 8. 当前状态与局限（v0.1）
+## 6. 已冻结内容
 
-- checkpoint 写入**非原子**（见 §5.1）。
-- 存在**两套缓存键实现**（见 §3.3），尚未统一。
-- `AgentCapabilities` 仅被记录/校验，**能力路由（按 model/能力选后端）留待 v0.2**——当前 `default_backend()` 取注册表第一个。
-- `JournalCallback` 回调路径落盘的 `AgentResultCache` **不含 findings 与 cache_key_hash**；runtime 的 `record_result` 路径才是完整的。
+以下类型/接口在 `contract/` 中定义，应视为**已冻结**（修改需跨模块协调）：
+
+| 类型 | 文件 | 冻结范围 |
+|------|------|---------|
+| `AgentBackend` trait | `contract/backend.rs` | 签名与语义 |
+| `AgentEvent` 枚举 | `contract/event.rs` | 变体集合与字段 |
+| `agent_cache_key()` | `contract/cache.rs` | 算法输出（hash 值） |
+| `Finding` | `contract/finding.rs` | 字段结构 |
+| `TokenUsage` | `contract/ids.rs` | 字段与 `Add` 语义 |
+| `EventSender` | `contract/event.rs` | 类型别名（`broadcast::Sender`） |
 
 ---
 
-## 9. 相关文档
+## 7. 已知现状与局限
 
-- 总览：[../architecture.md](../architecture.md)
-- 上层消费者：[runtime.md](./runtime.md)（SDK 如何调用 scheduler/journal）、[adapters.md](./adapters.md)（如何实现 `AgentBackend`）、[cli.md](./cli.md)（如何编排 run 生命周期）
-- 旧版设计稿（实现动机）：[../archive/contracts.md](../archive/contracts.md)、[../archive/scheduler.md](../archive/scheduler.md)、[../archive/state.md](../archive/state.md)
+- **checkpoint 非原子写入** — `RunStore.save_checkpoint` 使用 `fs::write` 全量重写，非 temp+rename，崩溃时可能产生部分写入
+- **Semaphore 动态调整** — `max_concurrency` 在构建后不可变；运行中无法调整
+- **cache key 无版本号** — 算法变更会导致已有缓存失效，当前无迁移机制
+- **事件通道无背压** — `broadcast::Sender` 的 `lagged` 行为需消费端自行处理
+- **gc_runs 仅基于修改时间** — 未考虑仍活跃的 run
+
+> 参见: `architecture.md` §"已知现状与局限" 中的全局要点。

@@ -41,7 +41,6 @@ function main()
             .. "  - 'runtime'    = files under src/runtime/\n"
             .. "  - 'adapters'   = files under src/adapters/\n"
             .. "  - 'planner'    = files under src/planner/\n"
-            .. "  - 'tui'        = files under src/tui/\n"
             .. "  - 'cli'        = src/cli.rs, src/main.rs\n"
             .. "  - 'lib'        = src/lib.rs\n"
             .. "  - 'mcp'        = src/mcp.rs\n"

@@ -49,7 +49,7 @@
 1. **`block_on` 不能在 async worker 线程上调用**（会 panic）。
 2. **mlua VM 不是 Send-safe 的异步驱动对象**。
 
-因此 `Runtime::execute` **必须从阻塞上下文调用**——见 [`cli::execute_runtime`](../../src/cli.rs) 用 `tokio::task::spawn_blocking` 包裹。Handle 在构造时（async 上下文中）捕获，留给阻塞线程使用。
+因此 `Runtime::execute` **必须从阻塞上下文调用**——见 `cli::execute_runtime` 用 `tokio::task::spawn_blocking` 包裹。Handle 在构造时（async 上下文中）捕获，留给阻塞线程使用。
 
 ```
 async 上下文 (cli::run)                       阻塞线程 (spawn_blocking)
@@ -185,7 +185,7 @@ converge 的 phase_id 固定为 2，agent 直接走 `scheduler.run_parallel`/`ru
 ## 11. 相关文档
 
 - 总览：[../architecture.md](../architecture.md)
-- 依赖：[core.md](./core.md)（Scheduler、JournalStore、AgentEvent、AgentCacheKey）
-- 上游：[planner.md](./planner.md)（如何生成被本模块执行的脚本）、[cli.md](./cli.md)（如何在阻塞线程驱动 `execute`）
+- 依赖：core.md（Scheduler、JournalStore、AgentEvent、AgentCacheKey）
+- 上游：planner.md（如何生成被本模块执行的脚本）、[cli.md](./cli.md)（如何在阻塞线程驱动 `execute`）
 - Lua SDK 用法参考：[../sdk-reference.md](../sdk-reference.md)
-- 旧版设计稿：[../archive/runtime.md](../archive/runtime.md)
+- 旧版设计稿：runtime.md（已归档）

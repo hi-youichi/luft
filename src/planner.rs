@@ -65,6 +65,10 @@ pub async fn plan_workflow(
     let mut last_error = String::new();
 
     for attempt in 0..attempts {
+        if attempt > 0 {
+            tracing::warn!(attempt, total = attempts, "retrying script generation after validation failure");
+        }
+
         let prompt = build_prompt(task, (attempt > 0).then_some(last_error.as_str()));
 
         let output = run_planner_agent(&*backend, &prompt, cfg.planner_model.clone())
@@ -74,6 +78,7 @@ pub async fn plan_workflow(
         let script = match extract_script(&output) {
             Some(s) => s,
             None => {
+                tracing::warn!(attempt, "agent output contained no lua code block");
                 last_error = "no ```lua code block (or text) found in agent output".to_string();
                 continue;
             }
@@ -81,7 +86,10 @@ pub async fn plan_workflow(
 
         match validate_generated(&script) {
             Ok(()) => return Ok(PlannedWorkflow { script }),
-            Err(e) => last_error = e,
+            Err(e) => {
+                tracing::warn!(attempt, error = %e, "generated script failed validation");
+                last_error = e;
+            }
         }
     }
 
@@ -380,6 +388,11 @@ task genuinely requires cross-checking; skip it for simple tasks.
 8. Call report() exactly ONCE — the first call wins; later calls are ignored.
 9. Use phase() / log() to make progress legible.
 10. Output ONLY a single ```lua code block — no explanation.
+11. ALWAYS enclose string values in double quotes — especially non-ASCII text
+   (Chinese, Japanese, etc.). Lua identifiers are ASCII-only; bare CJK characters
+   outside a quoted string are a syntax error. Write `prompt = "整理文档"`, NEVER
+   `prompt = 整理文档`. This applies to table fields, function arguments, and
+   string concatenation operands alike.
 
 # Example: simple research workflow
 ```lua

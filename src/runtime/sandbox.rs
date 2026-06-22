@@ -104,7 +104,7 @@ pub fn validate_script(script: &str) -> Result<(), ScriptError> {
     tracing::debug!(bytes = script.len(), "validating script syntax");
     let lua = Lua::new();
     lua.load(script).into_function().map(|_| ()).map_err(|e| {
-        tracing::error!(error = %e, "script validation failed");
+        tracing::debug!(error = %e, "script validation failed");
         ScriptError::from(e)
     })
 }

@@ -6,7 +6,7 @@
 
 | 模块 | 一句话职责 | 详细架构 |
 |------|-----------|---------|
-| **core** | 冻结合约 + 调度器 + 状态持久化（无上游依赖的地基层） | [architecture/core.md](./architecture/core.md) |
+| **core** | 冻结合约 + 调度器 + 状态持久化（无上游依赖的地基层） | core.md |
 | **runtime** | mlua 编排运行时：沙箱 + 10 个 SDK 原语 + pipeline + converge | [architecture/runtime.md](./architecture/runtime.md) |
 | **adapters** | OpenCode ACP 真实后端（`AgentBackend` 实现） | [architecture/adapters.md](./architecture/adapters.md) |
 | **planner** | 自然语言 → Lua 脚本（agent 写脚本 + 校验重试） | [architecture/planner.md](./architecture/planner.md) |
@@ -55,15 +55,15 @@ trait AgentBackend: Send + Sync {
 }
 ```
 
-实现方：[`MockBackend`](./architecture/core.md)（测试）、[`AcpAdapter`](./architecture/adapters.md)（opencode）。详见 [core.md §3.1](./architecture/core.md)。
+实现方：`MockBackend`（测试）、[`AcpAdapter`](./architecture/adapters.md)（opencode）。详见 core.md §3.1。
 
 ### AgentEvent 广播总线 — 唯一可观测性数据源
 
-`tokio::sync::broadcast<AgentEvent>`。同一条流被持久化（[state](./architecture/core.md)）、headless（JSONL）同时消费。详见 [core.md §3.2](./architecture/core.md)。
+`tokio::sync::broadcast<AgentEvent>`。同一条流被持久化（state）、headless（JSONL）同时消费。详见 core.md §3.2。
 
 ### AgentCacheKey — `core` ↔ `runtime`（resume）接缝
 
-blake3(prompt + model + phase) 确定性去重键。runtime 的 `agent()` 在提交调度前查 journal，命中则跳过执行。详见 [core.md §3.3](./architecture/core.md)。
+blake3(prompt + model + phase) 确定性去重键。runtime 的 `agent()` 在提交调度前查 journal，命中则跳过执行。详见 core.md §3.3。
 
 ## 数据流：一次 Workflow 执行的完整路径
 
@@ -121,7 +121,7 @@ producer 生成 findings → adversary 投票 → 存活 finding 进入下一轮
 
 各模块专篇的"当前状态与局限"小节有完整清单，全局要点：
 
-- **checkpoint 非原子写入**（`fs::write` 全量重写，非 temp+rename）——见 [core.md §5.1](./architecture/core.md)。
+- **checkpoint 非原子写入**（`fs::write` 全量重写，非 temp+rename）——见 core.md §5.1。
 - **ExecLimits 已定义未强制**——见 [runtime.md §5](./architecture/runtime.md)。
 - **pipeline 非真流式**——见 [runtime.md §6](./architecture/runtime.md)。
 - **MCP 数据面已建未联**：agent 尚未连接 MCP server，findings 走文本回退——见 [mcp.md §6](./architecture/mcp.md)。
@@ -132,7 +132,7 @@ producer 生成 findings → adversary 投票 → 存活 finding 进入下一轮
 - [Dynamic Workflow 指南](./dynamic-workflow-guide.md) — 范式直觉、运转机制、Claude Code vs Maestro 对比
 - [Lua SDK 参考](./sdk-reference.md) — 10 个原语的参数与示例
 - [路线图](./roadmap.md) · [P1/P2 路线图](./roadmap-p1-p2.md) — 实施计划
-- [设计文档（design/）](./design/) — P0 实现设计（[p0-acp-backend](./design/p0-acp-backend.md) / [p0-planner-resume](./design/p0-planner-resume.md)）+ [集成测试](./design/integration-testing.md)
+- [设计文档（design/）](./design/) — P0 实现设计（[p0-acp-backend](./design/p0-acp-backend.md) / [p0-planner-resume](./design/p0-planner-resume.md)）+ 集成测试
 - [归档（archive/）](./archive/) — v0.1 各模块代码设计稿 + technical-guide（均已被 architecture/ 取代，仅存历史动机）
 
 > 注：逐模块技术详解的唯一权威源是 [architecture/](./architecture/)；原 `technical-guide.md` 与 v0.1 `design/` 代码设计稿已归档至 [archive/](./archive/)。

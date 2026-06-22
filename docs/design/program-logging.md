@@ -1,7 +1,7 @@
 # 程序日志（tracing）— 实现设计
 
 > **状态**: ✅ P1 全部已实现（2026-06-11）— P1a subscriber + P1b 错误埋点 + P1c `agent`/`backend` span + info 生命周期 + P1d ACP 握手/stop_reason/permission(debug) + session/update(trace)；失败可复盘已手验通过，全 215 测试通过。
-> **交叉参考**: [`event-logging.md`](./event-logging.md) — 事件日志（互补的另一平面，本文是其 §4 的展开）
+> **交叉参考**: `event-logging.md` — 事件日志（互补的另一平面，本文是其 §4 的展开）
 > **相关代码**: [`src/core/scheduler/mod.rs`](../../src/core/scheduler/mod.rs)、[`src/adapters/acp_adapter.rs`](../../src/adapters/acp_adapter.rs)、[`src/service/run.rs`](../../src/service/run.rs)
 
 ---
@@ -17,7 +17,7 @@
 ## 1. 设计理念
 
 - **用 spans 表达执行层级**，而非孤立日志行。每个工作单元开一个有生命周期、可嵌套的 span；span 内所有日志自动继承其字段（`run_id`/`agent_id`/`attempt`…）。日志因此天然呈现"谁在干什么、嵌套在谁下、为什么"。
-- **`run_id` 作连接键**：程序日志每行带 `run_id`，与事件日志 [`events.jsonl`](./event-logging.md) 同键 → 两平面可对照。
+- **`run_id` 作连接键**：程序日志每行带 `run_id`，与事件日志 `events.jsonl` 同键 → 两平面可对照。
 - **不重复**：领域结果走事件；程序日志只补**因果/决策/错因**（事件里没有的：`BackendError` 链、重试轨迹）。
 
 ---
@@ -80,7 +80,7 @@ tracing::error!(agent_id = %id, attempts, error = %e, "agent exhausted retries")
 | 5 | [`acp_adapter.rs:118-243`](../../src/adapters/acp_adapter.rs#L118-L243) | `backend` span；**spawn 失败(error)**；握手 initialize/new/prompt(debug)；**超时/取消/连接关闭(warn/error)**；stop_reason(info)；session/update(trace)；permission 决策(debug) ← **补回现在丢掉的全部错因** | 见括号 |
 | 6 | sdk `phase/parallel/converge/workflow` | 各开对应 span（仅上下文，内部少日志，避免和事件重复） | debug |
 | 7 | [`planner.rs`](../../src/planner.rs) | 规划起、LLM 调用、解析成功/失败 | info/warn |
-| 8 | [`ws/*`](../../src/ws/) | 现有 5 处规范化：连接 accept/close、subscribe、序列化错误 | info/debug/warn |
+| 8 | `ws/*` | 现有 5 处规范化：连接 accept/close、subscribe、序列化错误 | info/debug/warn |
 
 > 同时把这些点上现在 `map_err(...)?` / `let _ =` **丢掉的错误**（adapters 5、service 9、runtime 6、scheduler 2…）补成对应 `tracing::*`。这是"失败可复盘"的实质。
 

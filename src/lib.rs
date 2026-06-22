@@ -18,5 +18,4 @@ pub mod mcp;
 pub mod planner;
 pub mod runtime;
 pub mod service;
-pub mod tui;
 

@@ -1,7 +1,7 @@
 # SDK 函数事件机制（`sdk_*` 事件）— 实现设计
 
 > **状态**: ✅ 已实现（2026-06-11）— 全 207 lib 测试 + 5 个 e2e（含 2 个新增 SDK 事件测试）通过
-> **交叉参考**: [`acp-raw-events.md`](./acp-raw-events.md) — 同源思路（事件走现有总线 + WS 过滤 + headless JSONL）；[`websocket-server.md`](./websocket-server.md) — WS 订阅/事件流
+> **交叉参考**: acp-raw-events.md — 同源思路（事件走现有总线 + WS 过滤 + headless JSONL）；`websocket-server.md` — WS 订阅/事件流
 > **相关代码**: [`src/runtime/sdk/`](../../src/runtime/sdk/)、[`src/runtime/converge.rs`](../../src/runtime/converge.rs)、[`src/core/contract/event.rs`](../../src/core/contract/event.rs)
 
 ---
@@ -10,7 +10,7 @@
 
 让**每个 SDK 原语**在被调用时抛出事件，使整条编排脚本在事件流里是 DSL 粒度可观测的——补齐当前"哑"函数（`budget`/`parallel` 边界/`converge`/`workflow`/`report`）的事件断片，与已有的 scheduler 级（`AgentStarted`/`AgentDone`）、ACP 级（`acp_raw`）事件并存。
 
-与 [`acp-raw-events.md`](./acp-raw-events.md) 同源：事件走现有 broadcast 总线，WS `subscribe` 过滤，headless JSONL 自动带上。区别见 §6（落盘、默认订阅、无开关）。
+与 acp-raw-events.md 同源：事件走现有 broadcast 总线，WS `subscribe` 过滤，headless JSONL 自动带上。区别见 §6（落盘、默认订阅、无开关）。
 
 ---
 
@@ -127,7 +127,7 @@ forwarder 现在只跳过 `AcpRaw`（[`service/run.rs:221`](../../src/service/ru
 
 ### 5.4 默认订阅（D）—— 无需改动
 
-`passes_filter(None)` 现在只排除 `acp_raw`（[`subscription.rs:59`](../../src/ws/handler/subscription.rs#L59)），sdk 事件默认通过；接收端嫌多自己 `filter`。
+`passes_filter(None)` 现在只排除 `acp_raw`（`subscription.rs:59`），sdk 事件默认通过；接收端嫌多自己 `filter`。
 
 ### 5.5 `converge` 的特殊性（实现：统一为 `cx`）
 
@@ -161,8 +161,8 @@ forwarder 现在只跳过 `AcpRaw`（[`service/run.rs:221`](../../src/service/ru
 | [`workflow.rs`](../../src/runtime/sdk/workflow.rs) | `WorkflowStarted/Done` + span + guard |
 | [`converge.rs`](../../src/runtime/converge.rs) | `ConvergeStarted/Done` + span + guard + `span_counter` 参数 |
 | [`sandbox.rs`](../../src/runtime/sandbox.rs#L109) | `register_converge_sdk` 调用点传 `span_counter` |
-| [`protocol.rs`](../../src/ws/protocol.rs) | `event_type_name` 加 8 臂（+ 可选 `sdk_events` capability） |
-| [`subscription.rs`](../../src/ws/handler/subscription.rs) | `event_run_id` 加 8 臂 |
+| `protocol.rs` | `event_type_name` 加 8 臂（+ 可选 `sdk_events` capability） |
+| `subscription.rs` | `event_run_id` 加 8 臂 |
 
 **必然报错（编译器兜底）**：`event_type_name`、`event_run_id` 两处穷尽匹配。
 **无需改动**：`service/run.rs`（落盘自然 fall-through）、`subscription.rs` 的 `passes_filter`（默认通过）、`pipeline.rs`（已有事件，③ 范围外）。

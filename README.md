@@ -2,7 +2,15 @@
 
 基于 Lua 的多智能体编排运行时。用 Lua 脚本调用 `agent()`/`parallel()`/`pipeline()`/`converge()` 等 SDK 原语，确定性编排多个 LLM agent 协作完成复杂任务。
 
-对标 [Claude Code Dynamic Workflows](https://code.claude.com/docs/en/workflows)，核心能力相当，并在 pipeline（多阶段流式）和 converge（对抗性验证）上有所超越。
+## Installation
+
+```bash
+# 从源码构建（需要 Rust 1.75+）
+cargo build --release
+# 二进制位于 target/release/maestro
+```
+
+真实 LLM 后端需要本机已安装并配置好 `opencode`（`opencode auth login`）。`--backend mock` 仅用于零成本验证编排流程。
 
 ## Quick Start
 
@@ -14,10 +22,10 @@ cargo run --bin maestro -- run --workflow examples/hello.lua --backend mock
 cargo run --bin maestro -- run "审计仓库安全问题" -o report.md
 
 # 列出历史运行
-cargo run --bin maestro -- run list   # 或: cargo run --bin maestro -- list
+cargo run --bin maestro -- list
 
 # 查看运行状态
-cargo run --bin maestro -- status <run_id>
+cargo run --bin maestro -- status <run_dir>
 ```
 
 ## Deep Research（深度研究）
@@ -46,7 +54,7 @@ cargo run --bin maestro -- run \
 执行期间进度（phase / agent / log）实时打到 **stderr**；`-o <file>` 写出报告：
 若 `report()` 的返回值含 `markdown` 字段，则直接写出该 Markdown，否则写 pretty JSON。
 一次真实运行产出的示例报告见
-[docs/research/claude-code-dynamic-workflows-deep-research.md](docs/research/claude-code-dynamic-workflows-deep-research.md)。
+docs/research/claude-code-dynamic-workflows-deep-research.md。
 
 > 需要本机已安装并配置好 `opencode`（`opencode auth login`）。`--backend mock`
 > 只产出占位输出，仅用于验证编排流程，不做真实研究。
@@ -62,71 +70,23 @@ cargo run --bin maestro -- run \
 
 ## 命令一览
 
-| 命令 | 状态 | 说明 |
-|------|------|------|
-| `maestro run --workflow <file>` | ✅ | 执行 Lua 工作流 |
-| `maestro run --headless` | ✅ | JSONL 事件流输出 |
-| `maestro run --resume` | ✅ | 从断点恢复 |
-| `maestro run --confirm` | ✅ | 执行前展示生成脚本并等待确认（默认自动执行） |
-| `maestro run -o <file>` | ✅ | 把最终报告写到文件（含 `markdown` 字段则写干净 Markdown，否则 pretty JSON） |
-| `maestro run --args <JSON>` | ✅ | 以 JSON 对象向工作流传参（`args.*`），如 `--args '{"topic":"..."}'` |
-| `maestro run "<NL>"` | ✅ | 自然语言 → Lua（agent 驱动的 planner），用法示例：`maestro run "审计仓库安全问题" -o report.md` |
-| `maestro list` | ✅ | 列出历史运行 |
-| `maestro status <id>` | ✅ | 运行状态 + token 用量 |
-| `maestro logs <id>` | ✅ | 事件流日志 |
-| `maestro watch <id>` | ❌ | TUI 实时监控（未实现） |
-
-## 文档
-
-### 活跃文档（日常维护）
-
-| 文档 | 内容 |
+| 命令 | 说明 |
 |------|------|
-| [**Dynamic Workflow 指南**](docs/dynamic-workflow-guide.md) | **由浅入深：范式直觉、运转机制、设计权衡、Claude Code vs Maestro 对比、未解决的挑战** |
-| [技术指南](docs/technical-guide.md) | 各模块的技术设计动机、关键算法、数据结构、实现细节 |
-| [架构设计](docs/architecture.md) | 架构总览 + 模块索引：核心抽象、数据流、依赖关系 |
-| [Lua SDK 参考](docs/sdk-reference.md) | 10 个原语的参数、返回值、代码示例 |
-| [路线图](docs/roadmap.md) | v0.1 → v0.2 实施计划、技术选型 |
-
-### 模块架构（按模块拆分，对齐当前代码）
-
-| 文档 | 内容 |
-|------|------|
-| [core](docs/architecture/core.md) | 冻结合约 + 调度器 + 状态持久化 + journal/resume |
-| [runtime](docs/architecture/runtime.md) | mlua 沙箱、block_on 执行模型、pipeline、converge |
-| [adapters](docs/architecture/adapters.md) | AcpAdapter、!Send 线程桥接、ACP 会话、权限决策 |
-| [planner](docs/architecture/planner.md) | NL → Lua、生成-校验回环、DSL 规范 |
-| [mcp](docs/architecture/mcp.md) | MCP 数据面 server、上报工具、已建未联现状 |
-| [cli](docs/architecture/cli.md) | run 生命周期编排、TUI/headless、只读命令 |
-
-### 设计文档（按模块拆分，来自 v0.1 代码设计）
-
-| 文档 | 内容 |
-|------|------|
-| [冻结合约](docs/design/contracts.md) | 核心类型、AgentBackend trait、事件枚举 |
-| [调度器](docs/design/scheduler.md) | Scheduler 并发/配额/重试/取消 |
-| [状态落盘](docs/design/state.md) | StateStore、blake3 缓存键、恢复时序 |
-| [运行时](docs/design/runtime.md) | mlua 沙箱、协程驱动、SDK 桥接 |
-| [MCP 数据平面](docs/design/mcp-server.md) | MCP server、ResultCollector、工具定义 |
-| [后端适配器](docs/design/backends.md) | AcpAdapter、ACP 协议流程、权限控制 |
-| [规划器](docs/design/planner.md) | NL → Lua、LLM 重试回路 |
-| [CLI](docs/design/cli.md) | clap 参数、TUI、headless、工作流管理 |
-| [集成与测试](docs/design/integration-testing.md) | 跨模块接缝、测试分层、CI 策略 |
-
-### 研究
-
-| 文档 | 内容 |
-|------|------|
-| [Claude 对标研究](docs/research/claude-dynamic-workflow-analysis.md) | Claude Code Dynamic Workflows 特性分析 |
-
-### 归档（冻结只读）
-
-| 文档 | 内容 |
-|------|------|
-| [v0.1 产品技术设计](docs/archive/v0.1-product-tech-design.md) | 早期设计文档 |
-| [v0.1 开发计划](docs/archive/v0.1-dev-plan.md) | 开发阶段产物 |
-| [v0.1 审计快照](docs/archive/v0.1-status-snapshot.md) | 完成度快照 |
-| [Claude DW 参考](docs/archive/claude-dw-reference.md) | Claude Code 研究笔记 |
+| `maestro run --workflow <file>` | 执行 Lua 工作流 |
+| `maestro run --resume` | 从断点恢复 |
+| `maestro run --confirm` | 执行前展示生成脚本并等待确认（默认自动执行） |
+| `maestro run -o <file>` | 把最终报告写到文件（含 `markdown` 字段则写干净 Markdown，否则 pretty JSON） |
+| `maestro run --args <JSON>` | 以 JSON 对象向工作流传参（`args.*`），如 `--args '{"topic":"..."}'` |
+| `maestro run --log <file>` | 将事件日志额外写入指定文件 |
+| `maestro run --log-format <fmt>` | 事件日志格式（pretty / jsonl） |
+| `maestro run --no-acp-raw` | 禁用原始 ACP session/update 透传（acp_raw 事件） |
+| `maestro run "<NL>"` | 自然语言 → Lua（agent 驱动的 planner），用法示例：`maestro run "审计仓库安全问题" -o report.md` |
+| `maestro generate "<NL>"` | 从自然语言生成 Lua 脚本（不执行），`-o` 写入文件 |
+| `maestro workflows` | 列出可用工作流 |
+| `maestro save <name> <output>` | 将工作流保存到文件 |
+| `maestro list [--limit N]` | 列出历史运行 |
+| `maestro status <run_dir>` | 运行状态 + token 用量 |
+| `maestro logs <run_dir> [--limit N]` | 事件流日志 |
 
 ## Natural Language → Lua（自然语言编排）
 

@@ -8,7 +8,7 @@
 
 ## 1. 职责与边界
 
-`adapters` 是 `core` 的 `AgentBackend` trait 的**真实实现**（与之相对的是 [core](./core.md) 里的 `MockBackend` 测试实现）。它把 Maestro 的 `AgentTask` 翻译成一次完整的 [ACP](https://agentclientprotocol.com)（Agent Client Protocol）会话，再把会话结果翻译回 `AgentResult`。
+`adapters` 是 `core` 的 `AgentBackend` trait 的**真实实现**（与之相对的是 core 里的 `MockBackend` 测试实现）。它把 Maestro 的 `AgentTask` 翻译成一次完整的 [ACP](https://agentclientprotocol.com)（Agent Client Protocol）会话，再把会话结果翻译回 `AgentResult`。
 
 ```
    Scheduler ──run(task, ctx)──► AcpAdapter ──spawn──► `opencode acp` 子进程
@@ -150,6 +150,6 @@ output = findings 非空 ? findings 的 JSON : { "text": message }
 ## 8. 相关文档
 
 - 总览：[../architecture.md](../architecture.md)
-- 依赖：[core.md](./core.md)（`AgentBackend` trait、`AgentTask`/`AgentResult`/`ToolPolicy`/`ProgressDelta`）
+- 依赖：core.md（`AgentBackend` trait、`AgentTask`/`AgentResult`/`ToolPolicy`/`ProgressDelta`）
 - 协作：[mcp.md](./mcp.md)（P1 结构化上报路径）、[runtime.md](./runtime.md)（converge 如何消费 findings）
-- 旧版设计稿：[../archive/backends.md](../archive/backends.md)、[../design/p0-acp-backend.md](../design/p0-acp-backend.md)
+- 旧版设计稿：backends.md（已归档）、[../design/p0-acp-backend.md](../design/p0-acp-backend.md)

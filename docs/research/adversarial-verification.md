@@ -1,7 +1,7 @@
 # Claude Dynamic Workflow — Adversarial Verification
 
 > 搜索时间：2026-06-03 | 最后更新：2026-06-03
-> 相关文档：[Claude DW 差异分析](claude-dynamic-workflow-analysis.md) · [DW 深度研究](claude-code-dynamic-workflows-deep-research.md)
+> 相关文档：Claude DW 差异分析 · DW 深度研究
 
 ---
 

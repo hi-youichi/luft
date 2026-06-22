@@ -1,8 +1,8 @@
 # P0-A: OpenCode ACP 真实后端 — 实现设计
 
-> **路线图引用**: [`roadmap.md`](../roadmap.md) §P0-A
+> **路线图引用**: `roadmap.md` §P0-A
 > **状态**: ✅ 已实现（2026-06-03，live 验证通过）
-> **交叉参考**: [`backends.md`](../archive/backends.md) — 原始后端设计（部分已过时，以本文档为准）
+> **交叉参考**: `backends.md（已归档）` — 原始后端设计（部分已过时，以本文档为准）
 
 > **实现与本设计的偏差（以代码为准）**：实际实现比下文的 7 模块方案精简。
 > 关键发现：① `agent-client-protocol` 0.11.1 的 `Client.builder().connect_with(transport, |conn| async {…})`

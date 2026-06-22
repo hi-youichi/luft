@@ -48,7 +48,7 @@ MCP（Model Context Protocol）数据面是 Maestro 的**结构化上报通道**
 | `report_status` | status（+ progress/message 选填） | `statuses` | 上报进度/完成状态 |
 | `request_next_task` | — | — | converge 队列取下一任务（当前恒返回"队列为空"） |
 
-`report_finding` 是与 [core](./core.md) 的 `Finding` 类型对齐的结构化通道——severity 字符串映射到 `Severity` 枚举，location 映射到 `Location`。
+`report_finding` 是与 core.md 的 `Finding` 类型对齐的结构化通道——severity 字符串映射到 `Severity` 枚举，location 映射到 `Location`。
 
 ---
 
@@ -96,6 +96,6 @@ run_mcp_server: stdin 逐行 →
 ## 7. 相关文档
 
 - 总览：[../architecture.md](../architecture.md)
-- 依赖：[core.md](./core.md)（`Finding`/`Severity`/`Location`）
+- 依赖：core.md（`Finding`/`Severity`/`Location`）
 - 协作（P1 联动）：[adapters.md](./adapters.md)（端点注入 + 控制面）、[runtime.md](./runtime.md)（converge 如何消费 findings）
-- 旧版设计稿：[../archive/mcp-server.md](../archive/mcp-server.md)
+- 旧版设计稿：mcp-server.md（已归档）

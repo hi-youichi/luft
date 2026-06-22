@@ -102,11 +102,7 @@ pub async fn run_workflow(args: RunArgs) -> Result<()> {
         None => None,
     };
 
-    if args.tui {
-        run_tui(run_ctx, prepared.runtime, spec.script, args.output, logger).await
-    } else {
-        run_headless(run_ctx, prepared.runtime, spec.script, args.output, logger).await
-    }
+    run_headless(run_ctx, prepared.runtime, spec.script, args.output, logger).await
 }
 
 /// Persist the final report value to `path`.
@@ -221,79 +217,6 @@ async fn run_headless(
                     "report": report,
                 }))?
             )
-        }
-        Err(e) => {
-            tracing::error!(error = %e, "workflow execution failed");
-            eprintln!("Execution error: {}", e);
-        }
-    }
-    Ok(())
-}
-
-/// TUI 模式：与 run_headless 类似但以 TUI 替代 JSONL 打印。同时保留 event-log
-/// sink 写入。
-async fn run_tui(
-    run_ctx: RunContext,
-    rt: Runtime,
-    script: String,
-    output: Option<PathBuf>,
-    mut logger: Option<EventLogger>,
-) -> Result<()> {
-    let run_id = run_ctx.run_id;
-
-    // event-log sink 在独立 task 中写入
-    let log_rx = run_ctx.events.subscribe();
-    let log_task = tokio::spawn(async move {
-        drain_events(log_rx, |evt| {
-            if let Some(l) = logger.as_mut() {
-                let _ = l.write(evt);
-            }
-        })
-        .await;
-        if let Some(l) = logger.as_mut() {
-            let _ = l.flush();
-        }
-    });
-
-    // TUI 订阅 broadcast
-    let tui_rx = run_ctx.events.subscribe();
-    let cancel = run_ctx.cancel.clone();
-
-    // 并行：TUI 消费 + 执行
-    let tui_task = maestro::tui::run_with_events(tui_rx);
-    let exec_task = svc::execute(&run_ctx, rt, script);
-    tokio::pin!(tui_task, exec_task);
-
-    // TUI 先退出（Ctrl+C / q）→ 取消执行；执行先完成 → TUI 可继续浏览
-    let (tui_result, exec_result) = tokio::select! {
-        r = &mut tui_task => {
-            cancel.cancel();
-            let er = (&mut exec_task).await;
-            (r, er)
-        }
-        r = &mut exec_task => {
-            let tr = (&mut tui_task).await;
-            (tr, r)
-        }
-    };
-    let _ = log_task.await;
-
-    // TUI 退出后打印最终报告
-    tui_result?;
-    match exec_result? {
-        Ok(report) => {
-            if let Some(path) = &output {
-                write_report(path, &report)?;
-                eprintln!("Report written to {}", path.display());
-            }
-            println!(
-                "{}",
-                serde_json::to_string(&serde_json::json!({
-                    "type": "report",
-                    "run_id": run_id.to_string(),
-                    "report": report,
-                }))?
-            );
         }
         Err(e) => {
             tracing::error!(error = %e, "workflow execution failed");
