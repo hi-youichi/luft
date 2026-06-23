@@ -30,7 +30,9 @@ use agent_client_protocol::schema::{
 };
 use agent_client_protocol::{Agent, ByteStreams, Client, ConnectionTo, Responder};
 
-const DEFAULT_TIMEOUT: Duration = Duration::from_secs(14400);
+/// Default idle timeout: if the ACP agent sends no protocol notification
+/// for this duration, the session is killed.
+const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// ACP backend configuration.
 #[derive(Debug, Clone)]
@@ -161,6 +163,11 @@ async fn run_acp_session(
     let policy = task.allowlist.clone();
     let emit_raw = config.emit_raw_events;
 
+    // Activity channel: the notification handler sends a tick on every ACP
+    // protocol message so the idle watchdog can distinguish a live (but slow)
+    // agent from a hung one.
+    let (activity_tx, mut activity_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+
     // 2a. Prepare MCP server for structured output (if schema present).
     let _schema_guard = if let Some(ref schema) = task.output_schema {
         let schema_json = serde_json::to_string(schema)
@@ -183,6 +190,7 @@ async fn run_acp_session(
         let acc_prompt = acc.clone();
         let events_h = events.clone();
         let stop_holder = stop_holder.clone();
+        let activity_tx = activity_tx.clone();
         async move {
             Client
                 .builder()
@@ -191,7 +199,9 @@ async fn run_acp_session(
                     move |n: SessionNotification, _cx: ConnectionTo<Agent>| {
                         let acc_h = acc_h.clone();
                         let events_h = events_h.clone();
+                        let activity_tx = activity_tx.clone();
                         async move {
+                            let _ = activity_tx.send(());
                             let kind = serde_json::to_value(&n.update)
                                 .ok()
                                 .and_then(|v| {
@@ -291,8 +301,11 @@ async fn run_acp_session(
         }
     };
 
-    // 4. Race the session against cancellation + wall-clock timeout.
-    let timeout = task.timeout.unwrap_or(DEFAULT_TIMEOUT);
+    // 4. Race the session against cancellation + idle timeout.
+    //    The idle timeout resets on every ACP notification, so a long-running
+    //    tool execution (with streaming updates) won't be killed — only a
+    //    truly silent/hung agent will time out.
+    let idle_timeout = task.timeout.unwrap_or(DEFAULT_IDLE_TIMEOUT);
     let outcome = tokio::select! {
         r = conn_fut => r,
         _ = cancel.cancelled() => {
@@ -300,8 +313,11 @@ async fn run_acp_session(
             let _ = child.start_kill();
             return Err(BackendError::Cancelled);
         }
-        _ = tokio::time::sleep(timeout) => {
-            tracing::warn!(timeout_ms = timeout.as_millis() as u64, "ACP session timed out");
+        _ = idle_watchdog(idle_timeout, &mut activity_rx) => {
+            tracing::warn!(
+                idle_timeout_ms = idle_timeout.as_millis() as u64,
+                "ACP session idle timeout (no protocol activity)"
+            );
             let _ = child.start_kill();
             return Err(BackendError::Timeout);
         }
@@ -327,6 +343,30 @@ async fn run_acp_session(
     Ok(result_collector::collect(&task, &stop, message, tokens, structured))
 }
 
+/// Completes after `idle` elapses with **no** signal on `rx`.
+///
+/// Each ACP `session/update` notification sends a `()` to `rx`, resetting
+/// the idle timer. This lets a slow-but-alive agent (e.g. a long tool call
+/// with periodic `ToolCallUpdate` events) run indefinitely while a truly
+/// hung agent (no notifications at all) is killed after `idle`.
+async fn idle_watchdog(
+    idle: Duration,
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<()>,
+) {
+    loop {
+        tokio::select! {
+            biased;
+            msg = rx.recv() => match msg {
+                Some(()) => {
+                    while rx.try_recv().is_ok() {}
+                }
+                None => return,
+            },
+            _ = tokio::time::sleep(idle) => return,
+        }
+    }
+}
+
 struct SchemaFileGuard(tempfile::NamedTempFile);
 
 fn is_connection_closed(s: &str) -> bool {
@@ -340,15 +380,344 @@ fn is_connection_closed(s: &str) -> bool {
 mod tests {
     use super::*;
 
+    // ------------------------------------------------------------------
+    // AcpConfig
+    // ------------------------------------------------------------------
+
     #[test]
     fn config_default_is_opencode() {
         let c = AcpConfig::default();
         assert_eq!(c.binary, PathBuf::from("opencode"));
         assert_eq!(c.connect_timeout, Duration::from_secs(10));
+        assert!(c.emit_raw_events);
+        assert!(c.log_level.is_none());
     }
+
+    #[test]
+    fn config_clone_and_debug() {
+        let c = AcpConfig::default();
+        let _cloned = c.clone();
+        let _debug = format!("{c:?}");
+    }
+
+    // ------------------------------------------------------------------
+    // AcpAdapter
+    // ------------------------------------------------------------------
 
     #[test]
     fn id_is_opencode() {
         assert_eq!(AcpAdapter::default_opencode().id(), "opencode");
+    }
+
+    #[test]
+    fn capabilities_are_correct() {
+        let adapter = AcpAdapter::default_opencode();
+        let caps = adapter.capabilities();
+        assert!(caps.streaming);
+        assert!(caps.mcp_injection);
+        assert!(caps.structured_output);
+        assert!(caps.models.is_empty());
+    }
+
+    #[test]
+    fn new_adapter_accepts_custom_config() {
+        let config = AcpConfig {
+            binary: PathBuf::from("custom-agent"),
+            log_level: Some("debug".into()),
+            connect_timeout: Duration::from_secs(30),
+            emit_raw_events: false,
+        };
+        let adapter = AcpAdapter::new(config);
+        assert_eq!(adapter.id(), "opencode");
+        assert!(adapter.capabilities().streaming);
+    }
+
+    #[test]
+    fn default_opencode_creates_adapter() {
+        let adapter = AcpAdapter::default_opencode();
+        assert_eq!(adapter.id(), "opencode");
+        assert!(adapter.capabilities().streaming);
+    }
+
+    // ------------------------------------------------------------------
+    // is_connection_closed
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn is_connection_closed_true_for_receiver_dropped() {
+        assert!(is_connection_closed("receiver dropped"));
+        assert!(is_connection_closed("error: receiver dropped"));
+    }
+
+    #[test]
+    fn is_connection_closed_true_for_broken_pipe() {
+        assert!(is_connection_closed("broken pipe"));
+        assert!(is_connection_closed("broken pipe: write error"));
+    }
+
+    #[test]
+    fn is_connection_closed_true_for_unexpected_eof() {
+        assert!(is_connection_closed("unexpected eof"));
+        assert!(is_connection_closed("io error: unexpected eof"));
+    }
+
+    #[test]
+    fn is_connection_closed_true_for_connection_closed_phrase() {
+        assert!(is_connection_closed("connection closed"));
+        assert!(is_connection_closed("error: connection closed"));
+    }
+
+    #[test]
+    fn is_connection_closed_false_for_other_strings() {
+        assert!(!is_connection_closed(""));
+        assert!(!is_connection_closed("some random error"));
+        assert!(!is_connection_closed("receiver"));
+        assert!(!is_connection_closed("pipe"));
+        assert!(!is_connection_closed("unexpected"));
+        assert!(!is_connection_closed("closed"));
+        assert!(!is_connection_closed("timed out"));
+        assert!(!is_connection_closed("protocol error"));
+    }
+
+    // ------------------------------------------------------------------
+    // Helpers for AgentBackend::run tests
+    // ------------------------------------------------------------------
+
+    fn test_task(timeout_secs: u64, output_schema: Option<serde_json::Value>) -> AgentTask {
+        AgentTask {
+            agent_id: uuid::Uuid::now_v7(),
+            phase_id: 0,
+            prompt: "hello".into(),
+            model: None,
+            allowlist: None,
+            workdir: PathBuf::from("/tmp"),
+            mcp_endpoint: None,
+            timeout: Some(Duration::from_secs(timeout_secs)),
+            output_schema,
+        }
+    }
+
+    fn test_context(cancel: Option<tokio_util::sync::CancellationToken>) -> RunContext {
+        let (tx, _rx) = tokio::sync::broadcast::channel(16);
+        let cancel = cancel.unwrap_or_else(tokio_util::sync::CancellationToken::new);
+        RunContext {
+            run_id: uuid::Uuid::now_v7(),
+            cancel,
+            events: tx,
+        }
+    }
+
+    /// Create a temporary shell script that sleeps for `secs` and ignores all
+    /// arguments (the ACP adapter always passes `acp` as the first argument).
+    /// The script lives inside the returned `TempDir` so it is automatically
+    /// cleaned up when the directory is dropped.
+    fn blocking_script(secs: u64) -> (std::path::PathBuf, tempfile::TempDir) {
+        use std::io::Write;
+        #[allow(unused_imports)]
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("sleep_script.sh");
+        let mut f = std::fs::File::create(&path).expect("create script");
+        writeln!(f, "#!/bin/sh").expect("write shebang");
+        writeln!(f, "sleep {secs}").expect("write sleep");
+        drop(f);
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
+            .expect("chmod +x");
+        (path, dir)
+    }
+
+    // ------------------------------------------------------------------
+    // AgentBackend::run  –  integration-level tests
+    // ------------------------------------------------------------------
+
+    // ── Spawn error (binary not found) ──────────────────────────────
+
+    #[tokio::test]
+    async fn run_with_nonexistent_binary_returns_spawn_error() {
+        let config = AcpConfig {
+            binary: PathBuf::from("/nonexistent-binary-for-testing"),
+            log_level: Some("debug".into()),
+            ..Default::default()
+        };
+        let adapter = AcpAdapter::new(config);
+        let task = test_task(5, None);
+        let ctx = test_context(None);
+        let result = adapter.run(task, ctx).await;
+        assert!(
+            matches!(&result, Err(BackendError::Spawn(_))),
+            "expected Spawn error, got: {result:?}"
+        );
+    }
+
+    // ── Non-ACP binary that produces output → error (Protocol or Timeout) ──
+    //
+    // `/bin/echo acp` prints "acp\n" to stdout then exits. The ACP client
+    // either fails to parse the output (Protocol) or hits the connection-closed
+    // path (Timeout), depending on timing. Both are valid error outcomes.
+
+    #[tokio::test]
+    async fn run_with_non_acp_binary_returns_error() {
+        let config = AcpConfig {
+            binary: PathBuf::from("/bin/echo"),
+            ..Default::default()
+        };
+        let adapter = AcpAdapter::new(config);
+        let task = test_task(5, None);
+        let ctx = test_context(None);
+        let result = adapter.run(task, ctx).await;
+        assert!(
+            matches!(&result, Err(BackendError::Protocol(_)) | Err(BackendError::Timeout)),
+            "expected Protocol or Timeout error, got: {result:?}"
+        );
+    }
+
+    // ── Pre-cancelled token → Cancelled ────────────────────────────
+
+    #[tokio::test]
+    async fn run_with_precancelled_token_returns_cancelled() {
+        let config = AcpConfig {
+            binary: PathBuf::from("/usr/bin/true"),
+            ..Default::default()
+        };
+        let adapter = AcpAdapter::new(config);
+        let task = test_task(60, None);
+        let cancel = tokio_util::sync::CancellationToken::new();
+        cancel.cancel();
+        let ctx = test_context(Some(cancel));
+        let result = adapter.run(task, ctx).await;
+        assert!(
+            matches!(&result, Err(BackendError::Cancelled)),
+            "expected Cancelled, got: {result:?}"
+        );
+    }
+
+    // ── Cancellation during the session ────────────────────────────
+
+    #[tokio::test]
+    async fn run_cancellation_during_session() {
+        let (script_path, _dir) = blocking_script(120);
+        let config = AcpConfig {
+            binary: script_path,
+            ..Default::default()
+        };
+        let adapter = AcpAdapter::new(config);
+        let task = test_task(120, None);
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let ctx = test_context(Some(cancel.clone()));
+
+        let handle = tokio::spawn(async move { adapter.run(task, ctx).await });
+
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        cancel.cancel();
+
+        let result = tokio::time::timeout(Duration::from_secs(15), handle)
+            .await
+            .expect("test timed out waiting for cancellation")
+            .expect("join error");
+        assert!(
+            matches!(&result, Err(BackendError::Cancelled)),
+            "expected Cancelled during session, got: {result:?}"
+        );
+    }
+
+    // ── Timeout ────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn run_with_timeout() {
+        let (script_path, _dir) = blocking_script(120);
+        let config = AcpConfig {
+            binary: script_path,
+            ..Default::default()
+        };
+        let adapter = AcpAdapter::new(config);
+        let task = test_task(120, None);
+        // Override with an extremely short timeout.
+        let task = AgentTask {
+            timeout: Some(Duration::from_millis(100)),
+            ..task
+        };
+        let ctx = test_context(None);
+
+        let handle = tokio::spawn(async move { adapter.run(task, ctx).await });
+
+        let result = tokio::time::timeout(Duration::from_secs(15), handle)
+            .await
+            .expect("test timed out")
+            .expect("join error");
+        assert!(
+            matches!(&result, Err(BackendError::Timeout)),
+            "expected Timeout, got: {result:?}"
+        );
+    }
+
+    // ── Output-schema guard ────────────────────────────────────────
+    //
+    // Using /bin/echo (non-ACP binary) with an output schema. The result is
+    // either Protocol or Timeout depending on timing (see note above).
+
+    #[tokio::test]
+    async fn run_with_output_schema_creates_guard() {
+        let config = AcpConfig {
+            binary: PathBuf::from("/bin/echo"),
+            ..Default::default()
+        };
+        let adapter = AcpAdapter::new(config);
+        let task = test_task(5, Some(serde_json::json!({"type": "object"})));
+        let ctx = test_context(None);
+        let result = adapter.run(task, ctx).await;
+        assert!(
+            matches!(&result, Err(BackendError::Protocol(_)) | Err(BackendError::Timeout)),
+            "expected Protocol or Timeout with schema, got: {result:?}"
+        );
+    }
+
+    // ── idle_watchdog ──────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn idle_watchdog_fires_after_idle_period() {
+        let (_tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+        let r = tokio::time::timeout(
+            Duration::from_millis(500),
+            idle_watchdog(Duration::from_millis(50), &mut rx),
+        )
+        .await;
+        assert!(r.is_ok(), "should fire after idle period");
+    }
+
+    #[tokio::test]
+    async fn idle_watchdog_does_not_fire_with_activity() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+
+        tokio::spawn(async move {
+            for _ in 0..5 {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+                let _ = tx.send(());
+            }
+        });
+
+        let r = tokio::time::timeout(
+            Duration::from_millis(80),
+            idle_watchdog(Duration::from_millis(50), &mut rx),
+        )
+        .await;
+        assert!(
+            r.is_err(),
+            "should not fire while activity is within idle window"
+        );
+    }
+
+    #[tokio::test]
+    async fn idle_watchdog_fires_after_activity_stops() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+        let _ = tx.send(());
+        drop(tx);
+
+        let r = tokio::time::timeout(
+            Duration::from_millis(30),
+            idle_watchdog(Duration::from_millis(80), &mut rx),
+        )
+        .await;
+        assert!(r.is_ok(), "should return immediately when channel closes");
     }
 }

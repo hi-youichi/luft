@@ -15,7 +15,8 @@ use std::time::Duration;
 
 /// Build an [`AgentTask`] (+ cache key + optional backend id) from a Lua opts
 /// table. Recognised keys: `prompt` (required), `model`, `schema`, `backend`,
-/// `timeout_ms`.
+/// `timeout_ms` (idle timeout: max silence from the agent before the session
+/// is killed).
 pub(crate) fn build_task(
     opts: &Table,
     phase_id: PhaseId,

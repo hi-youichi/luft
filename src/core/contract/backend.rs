@@ -43,6 +43,8 @@ pub struct AgentTask {
     pub workdir: PathBuf,
     /// Data-plane injection point (Maestro MCP endpoint).
     pub mcp_endpoint: Option<McpEndpoint>,
+    /// Idle timeout: maximum silence (no ACP notifications) before the backend
+    /// kills the session. `None` = backend default (5 min).
     pub timeout: Option<Duration>,
     /// Optional JSON Schema (M4) for validating agent output.
     /// When set, the runtime validates the agent's output against this schema
