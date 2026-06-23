@@ -78,3 +78,196 @@ impl From<serde_json::Error> for ScriptError {
         ScriptError::SerdeError(e.to_string())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -----------------------------------------------------------------------
+    // ExecLimits
+    // -----------------------------------------------------------------------
+    #[test]
+    fn exec_limits_default() {
+        let limits = ExecLimits::default();
+        assert_eq!(limits.instruction_limit, 1_000_000);
+        assert_eq!(limits.wall_clock_ms, Some(300_000));
+        assert_eq!(limits.memory_limit_bytes, 128 * 1024 * 1024);
+    }
+
+    #[test]
+    fn exec_limits_debug_and_clone() {
+        let a = ExecLimits::default();
+        let b = a.clone();
+        assert_eq!(a.instruction_limit, b.instruction_limit);
+        let _ = format!("{:?}", a); // Debug
+    }
+
+    // -----------------------------------------------------------------------
+    // ScriptError – Display formatting for every variant
+    // -----------------------------------------------------------------------
+    #[test]
+    fn display_syntax() {
+        let err = ScriptError::Syntax("unexpected symbol".into());
+        assert_eq!(err.to_string(), "syntax error: unexpected symbol");
+    }
+
+    #[test]
+    fn display_sandbox_violation() {
+        let err = ScriptError::SandboxViolation { name: "os".into() };
+        assert_eq!(
+            err.to_string(),
+            "sandbox violation: attempted to access forbidden global `os`"
+        );
+    }
+
+    #[test]
+    fn display_instruction_limit() {
+        let err = ScriptError::InstructionLimitExceeded(50_000);
+        assert_eq!(err.to_string(), "instruction limit exceeded (limit: 50000)");
+    }
+
+    #[test]
+    fn display_wall_clock_timeout() {
+        let err = ScriptError::WallClockTimeout(300_000);
+        assert_eq!(err.to_string(), "wall-clock timeout (300000ms)");
+    }
+
+    #[test]
+    fn display_memory_limit() {
+        let err = ScriptError::MemoryLimitExceeded(134_217_728);
+        assert_eq!(err.to_string(), "memory limit exceeded (134217728 bytes)");
+    }
+
+    #[test]
+    fn display_agent_error() {
+        let err = ScriptError::AgentError("something went wrong".into());
+        assert_eq!(err.to_string(), "agent error: something went wrong");
+    }
+
+    #[test]
+    fn display_serde_error() {
+        let err = ScriptError::SerdeError("invalid type".into());
+        assert_eq!(err.to_string(), "serialization error: invalid type");
+    }
+
+    #[test]
+    fn display_internal() {
+        let err = ScriptError::Internal("unexpected state".into());
+        assert_eq!(err.to_string(), "internal error: unexpected state");
+    }
+
+    // -----------------------------------------------------------------------
+    // ScriptError – Debug derives (smoke-check that all variants are Debug)
+    // -----------------------------------------------------------------------
+    #[test]
+    fn debug_format() {
+        let variants: Vec<ScriptError> = vec![
+            ScriptError::Syntax("x".into()),
+            ScriptError::SandboxViolation { name: "x".into() },
+            ScriptError::InstructionLimitExceeded(1),
+            ScriptError::WallClockTimeout(1),
+            ScriptError::MemoryLimitExceeded(1),
+            ScriptError::AgentError("x".into()),
+            ScriptError::SerdeError("x".into()),
+            ScriptError::Internal("x".into()),
+        ];
+        for v in &variants {
+            let _ = format!("{:?}", v);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // From<mlua::Error>
+    // -----------------------------------------------------------------------
+    #[test]
+    fn from_mlua_syntax_error() {
+        let e = mlua::Error::SyntaxError {
+            message: "unexpected symbol near ')'".into(),
+            incomplete_input: false,
+        };
+        match ScriptError::from(e) {
+            ScriptError::Syntax(msg) => assert_eq!(msg, "unexpected symbol near ')'"),
+            other => panic!("expected Syntax, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn from_mlua_runtime_forbidden() {
+        let e = mlua::Error::RuntimeError("forbidden global 'os'".into());
+        match ScriptError::from(e) {
+            ScriptError::SandboxViolation { name } => {
+                assert_eq!(name, "forbidden global 'os'");
+            }
+            other => panic!("expected SandboxViolation, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn from_mlua_runtime_not_allowed() {
+        let e = mlua::Error::RuntimeError("this function is not allowed".into());
+        match ScriptError::from(e) {
+            ScriptError::SandboxViolation { name } => {
+                assert_eq!(name, "this function is not allowed");
+            }
+            other => panic!("expected SandboxViolation, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn from_mlua_runtime_instruction_limit() {
+        let e = mlua::Error::RuntimeError("instruction limit exceeded".into());
+        match ScriptError::from(e) {
+            ScriptError::InstructionLimitExceeded(limit) => assert_eq!(limit, 0),
+            other => panic!("expected InstructionLimitExceeded, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn from_mlua_runtime_timeout() {
+        let e = mlua::Error::RuntimeError("timeout reached".into());
+        match ScriptError::from(e) {
+            ScriptError::WallClockTimeout(ms) => assert_eq!(ms, 0),
+            other => panic!("expected WallClockTimeout, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn from_mlua_runtime_generic_agent_error() {
+        let e = mlua::Error::RuntimeError("some random Lua error".into());
+        match ScriptError::from(e) {
+            ScriptError::AgentError(msg) => assert_eq!(msg, "some random Lua error"),
+            other => panic!("expected AgentError, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn from_mlua_non_runtime_internal() {
+        // MemoryError is not SyntaxError or RuntimeError, so it hits the catch-all
+        let e = mlua::Error::MemoryError("OOM".into());
+        match ScriptError::from(e) {
+            ScriptError::Internal(msg) => assert!(msg.contains("memory error")),
+            other => panic!("expected Internal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn from_mlua_safety_error_internal() {
+        let e = mlua::Error::SafetyError("unsafe operation".into());
+        match ScriptError::from(e) {
+            ScriptError::Internal(msg) => assert!(msg.contains("safety error")),
+            other => panic!("expected Internal, got {other:?}"),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // From<serde_json::Error>
+    // -----------------------------------------------------------------------
+    #[test]
+    fn from_serde_json_error() {
+        let invalid: serde_json::Error = serde_json::from_str::<()>("!").unwrap_err();
+        match ScriptError::from(invalid) {
+            ScriptError::SerdeError(msg) => assert!(!msg.is_empty()),
+            other => panic!("expected SerdeError, got {other:?}"),
+        }
+    }
+}

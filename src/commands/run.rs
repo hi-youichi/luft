@@ -229,8 +229,13 @@ async fn run_headless(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commands::event_log::LogFormat;
     use maestro::core::contract::event::{ProgressDelta, RunStatus};
     use maestro::core::contract::ids::{RunId, TokenUsage};
+    use maestro::core::{BackendRegistry, Scheduler, SchedulerConfig};
+    use maestro::runtime::{ExecLimits, Runtime};
+    use tempfile::TempDir;
+    use tokio_util::sync::CancellationToken;
 
     fn progress(run_id: RunId, text: &str) -> AgentEvent {
         AgentEvent::AgentProgress {
@@ -248,6 +253,27 @@ mod tests {
             report: serde_json::json!({ "ok": true }),
         }
     }
+
+    /// Build a Runtime suitable for passing to `run_headless` with an empty
+    /// script (no SDK primitives called, so an empty backend registry is fine).
+    async fn empty_script_runtime(run_ctx: &RunContext) -> Runtime {
+        let registry = BackendRegistry::new();
+        let scheduler = Scheduler::new(SchedulerConfig::default(), registry, None);
+        scheduler.init_run_with(run_ctx.run_id, run_ctx.events.clone());
+
+        let handle = tokio::runtime::Handle::current();
+        Runtime::new(
+            scheduler,
+            run_ctx.clone(),
+            serde_json::json!({}),
+            ExecLimits::default(),
+            None,
+            handle,
+        )
+        .expect("runtime init")
+    }
+
+    // ── drain_events ───────────────────────────────────────────
 
     #[tokio::test]
     async fn drain_stops_on_run_done_and_ignores_later_events() {
@@ -301,5 +327,191 @@ mod tests {
 
         assert!(skipped > 0, "expected lagged events, got {skipped}");
         assert!(lines.last().unwrap().contains("\"type\":\"run_done\""));
+    }
+
+    #[tokio::test]
+    async fn drain_stops_when_channel_closes() {
+        let (tx, rx) = tokio::sync::broadcast::channel(16);
+        let run_id = RunId::now_v7();
+        tx.send(progress(run_id, "m1")).unwrap();
+        tx.send(progress(run_id, "m2")).unwrap();
+        drop(tx); // close the channel so the next recv() returns Closed
+
+        let mut lines = Vec::new();
+        let skipped = drain_events(rx, |evt| lines.push(serde_json::to_string(evt).unwrap())).await;
+
+        assert_eq!(skipped, 0);
+        assert_eq!(lines.len(), 2);
+    }
+
+    // ── write_report ──────────────────────────────────────────
+
+    #[test]
+    fn write_report_string_verbatim() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("out.txt");
+        write_report(&path, &serde_json::json!("hello world")).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "hello world");
+    }
+
+    #[test]
+    fn write_report_markdown_field() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("out.md");
+        write_report(&path, &serde_json::json!({"markdown": "# Title\nbody"})).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "# Title\nbody");
+    }
+
+    #[test]
+    fn write_report_markdown_not_string() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("out.txt");
+        write_report(&path, &serde_json::json!({"markdown": 42, "other": "val"})).unwrap();
+        let content = std::fs::read_to_string(&path).unwrap();
+        // "markdown" is not a string → falls back to pretty-printed JSON of the whole object
+        assert!(content.contains("\"markdown\""));
+        assert!(content.contains("42"));
+        assert!(content.contains("\"other\""));
+    }
+
+    #[test]
+    fn write_report_object_without_markdown() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("out.txt");
+        write_report(&path, &serde_json::json!({"a": 1, "b": 2})).unwrap();
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.contains("\"a\""));
+        assert!(content.contains("1"));
+    }
+
+    #[test]
+    fn write_report_array() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("out.txt");
+        write_report(&path, &serde_json::json!([10, 20, 30])).unwrap();
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.contains("["));
+        assert!(content.contains("10"));
+    }
+
+    #[test]
+    fn write_report_primitives() {
+        let dir = TempDir::new().unwrap();
+        for (label, val, expected) in [
+            ("number", serde_json::json!(42), "42"),
+            ("bool", serde_json::json!(true), "true"),
+            ("null", serde_json::json!(null), "null"),
+        ] {
+            let path = dir.path().join(format!("out_{label}.txt"));
+            write_report(&path, &val).unwrap();
+            assert_eq!(std::fs::read_to_string(&path).unwrap().trim(), expected);
+        }
+    }
+
+    #[test]
+    fn write_report_creates_parent_dir() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("nested/sub/dir/report.txt");
+        write_report(&path, &serde_json::json!("deeply nested")).unwrap();
+        assert!(path.exists());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "deeply nested");
+    }
+
+    #[test]
+    fn write_report_existing_parent_dir() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("direct.txt");
+        write_report(&path, &serde_json::json!("direct")).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "direct");
+    }
+
+    #[test]
+    fn write_report_flat_filename_empty_parent() {
+        let id = RunId::now_v7();
+        let name = format!("__maestro_test_write_report_{id}.tmp");
+        let path = Path::new(&name);
+        write_report(path, &serde_json::json!("flat")).unwrap();
+        assert_eq!(std::fs::read_to_string(path).unwrap(), "flat");
+        std::fs::remove_file(path).ok();
+    }
+
+    // ── run_headless ──────────────────────────────────────────
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn run_headless_empty_script_with_output() {
+        let tmp = TempDir::new().unwrap();
+        let output = tmp.path().join("report.md");
+        let run_id = RunId::now_v7();
+        let (tx, _rx) = tokio::sync::broadcast::channel(256);
+        let run_ctx = RunContext {
+            run_id,
+            cancel: CancellationToken::new(),
+            events: tx,
+        };
+        let rt = empty_script_runtime(&run_ctx).await;
+
+        run_headless(run_ctx, rt, "".to_string(), Some(output.clone()), None)
+            .await
+            .unwrap();
+
+        assert!(output.exists());
+        let content = std::fs::read_to_string(&output).unwrap();
+        assert_eq!(content.trim(), "null");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn run_headless_empty_script_no_output() {
+        let run_id = RunId::now_v7();
+        let (tx, _rx) = tokio::sync::broadcast::channel(256);
+        let run_ctx = RunContext {
+            run_id,
+            cancel: CancellationToken::new(),
+            events: tx,
+        };
+        let rt = empty_script_runtime(&run_ctx).await;
+
+        run_headless(run_ctx, rt, "".to_string(), None, None)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn run_headless_script_error_path() {
+        let run_id = RunId::now_v7();
+        let (tx, _rx) = tokio::sync::broadcast::channel(256);
+        let run_ctx = RunContext {
+            run_id,
+            cancel: CancellationToken::new(),
+            events: tx,
+        };
+        let rt = empty_script_runtime(&run_ctx).await;
+
+        run_headless(run_ctx, rt, "not valid lua <<<>>>".to_string(), None, None)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn run_headless_with_event_logger() {
+        let tmp = TempDir::new().unwrap();
+        let log_path = tmp.path().join("events.jsonl");
+        let logger = EventLogger::new(Some(&log_path), LogFormat::Jsonl).unwrap();
+
+        let run_id = RunId::now_v7();
+        let (tx, _rx) = tokio::sync::broadcast::channel(256);
+        let run_ctx = RunContext {
+            run_id,
+            cancel: CancellationToken::new(),
+            events: tx,
+        };
+        let rt = empty_script_runtime(&run_ctx).await;
+
+        run_headless(run_ctx, rt, "".to_string(), None, Some(logger))
+            .await
+            .unwrap();
+
+        let content = std::fs::read_to_string(&log_path).unwrap();
+        assert!(!content.is_empty(), "logger should have written events");
+        assert!(content.contains("\"type\":\"run_done\""));
     }
 }

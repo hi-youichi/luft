@@ -78,3 +78,220 @@ pub(crate) fn register_workflow_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::contract::RunContext;
+    use crate::core::{BackendRegistry, Scheduler, SchedulerConfig};
+    use std::sync::Arc;
+    use std::sync::Mutex;
+    use tokio::sync::broadcast;
+    use tokio::runtime::Handle;
+    use tokio_util::sync::CancellationToken;
+
+    /// Build a minimal SdkContext and return it with an event receiver.
+    fn make_cx() -> (SdkContext, broadcast::Receiver<AgentEvent>) {
+        let registry = BackendRegistry::new();
+        let scheduler = Scheduler::new(SchedulerConfig::default(), registry, None);
+        let run_id = uuid::Uuid::now_v7();
+        let (tx, rx) = broadcast::channel(256);
+        let run_ctx = RunContext {
+            run_id,
+            cancel: CancellationToken::new(),
+            events: tx,
+        };
+        scheduler.init_run_with(run_id, run_ctx.events.clone());
+        let cx = SdkContext::new(
+            run_ctx,
+            scheduler,
+            Arc::new(Mutex::new(None)),
+            None,
+            Handle::current(),
+        );
+        (cx, rx)
+    }
+
+    #[tokio::test]
+    async fn register_creates_workflow_global() {
+        let lua = Lua::new();
+        let (cx, _rx) = make_cx();
+        register_workflow_sdk(&lua, &cx).unwrap();
+        assert!(lua.globals().get::<mlua::Function>("workflow").is_ok());
+    }
+
+    #[tokio::test]
+    async fn workflow_none_args_uses_empty_object() {
+        let dir = tempfile::tempdir().unwrap();
+        let sub_path = dir.path().join("sub.lua");
+        std::fs::write(
+            &sub_path,
+            "report({ args_type = type(args) })",
+        )
+        .unwrap();
+
+        let lua = Lua::new();
+        let (cx, _rx) = make_cx();
+        register_workflow_sdk(&lua, &cx).unwrap();
+
+        let path = sub_path.to_string_lossy().to_string();
+        let script = format!("return workflow(\"{}\", nil)", path);
+
+        let args_type: String = tokio::task::spawn_blocking(move || {
+            let result: mlua::Value = lua.load(script).eval()?;
+            let t = result.as_table().cloned().ok_or_else(|| {
+                mlua::Error::RuntimeError("expected table result".into())
+            })?;
+            t.get::<String>("args_type")
+        })
+        .await
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(args_type, "table");
+    }
+
+    #[tokio::test]
+    async fn workflow_file_not_found_returns_error() {
+        let lua = Lua::new();
+        let (cx, _rx) = make_cx();
+        register_workflow_sdk(&lua, &cx).unwrap();
+
+        let script = r#"return workflow("/__maestro_nonexistent_test__", {})"#;
+
+        let err = tokio::task::spawn_blocking(move || {
+            lua.load(script).eval::<mlua::Value>()
+        })
+        .await
+        .unwrap()
+        .unwrap_err();
+
+        let msg = err.to_string();
+        assert!(
+            msg.contains("cannot read"),
+            "expected 'cannot read' error, got: {}",
+            msg
+        );
+    }
+
+    #[tokio::test]
+    async fn workflow_sub_script_runtime_error_propagates() {
+        let dir = tempfile::tempdir().unwrap();
+        let sub_path = dir.path().join("bad.lua");
+        std::fs::write(&sub_path, "error('sub-workflow crashed')").unwrap();
+
+        let lua = Lua::new();
+        let (cx, _rx) = make_cx();
+        register_workflow_sdk(&lua, &cx).unwrap();
+
+        let path = sub_path.to_string_lossy().to_string();
+        let script = format!("return workflow(\"{}\", {{}})", path);
+
+        let err = tokio::task::spawn_blocking(move || {
+            lua.load(script).eval::<mlua::Value>()
+        })
+        .await
+        .unwrap()
+        .unwrap_err();
+
+        let msg = err.to_string();
+        assert!(
+            msg.contains("sub-workflow crashed"),
+            "expected execution error, got: {}",
+            msg
+        );
+    }
+
+    #[tokio::test]
+    async fn workflow_successful_execution_returns_report() {
+        let dir = tempfile::tempdir().unwrap();
+        let sub_path = dir.path().join("ok.lua");
+        std::fs::write(&sub_path, "report({ value = 99 })").unwrap();
+
+        let lua = Lua::new();
+        let (cx, _rx) = make_cx();
+        register_workflow_sdk(&lua, &cx).unwrap();
+
+        let path = sub_path.to_string_lossy().to_string();
+        let script = format!("return workflow(\"{}\", {{}})", path);
+
+        let value: i64 = tokio::task::spawn_blocking(move || {
+            let result: mlua::Value = lua.load(&script).eval()?;
+            let t = result.as_table().cloned().ok_or_else(|| {
+                mlua::Error::RuntimeError("expected table result".into())
+            })?;
+            t.get::<i64>("value")
+        })
+        .await
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(value, 99);
+    }
+
+    #[tokio::test]
+    async fn workflow_passes_args_to_sub_workflow() {
+        let dir = tempfile::tempdir().unwrap();
+        let sub_path = dir.path().join("args.lua");
+        std::fs::write(
+            &sub_path,
+            "report({ name = args.name, count = args.count })",
+        )
+        .unwrap();
+
+        let lua = Lua::new();
+        let (cx, _rx) = make_cx();
+        register_workflow_sdk(&lua, &cx).unwrap();
+
+        let path = sub_path.to_string_lossy().to_string();
+        let script =
+            format!("return workflow(\"{}\", {{ name = \"hello\", count = 7 }})", path);
+
+        let (name, count): (String, i64) = tokio::task::spawn_blocking(move || {
+            let result: mlua::Value = lua.load(&script).eval()?;
+            let t = result.as_table().cloned().ok_or_else(|| {
+                mlua::Error::RuntimeError("expected table result".into())
+            })?;
+            Ok::<_, mlua::Error>((t.get::<String>("name")?, t.get::<i64>("count")?))
+        })
+        .await
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(name, "hello");
+        assert_eq!(count, 7);
+    }
+
+    #[tokio::test]
+    async fn workflow_emits_started_and_done_events() {
+        let dir = tempfile::tempdir().unwrap();
+        let sub_path = dir.path().join("events.lua");
+        std::fs::write(&sub_path, "report({ ok = true })").unwrap();
+
+        let lua = Lua::new();
+        let (cx, mut rx) = make_cx();
+        register_workflow_sdk(&lua, &cx).unwrap();
+
+        let path = sub_path.to_string_lossy().to_string();
+        let script = format!("workflow(\"{}\", {{}})", path);
+
+        tokio::task::spawn_blocking(move || {
+            lua.load(&script).eval::<mlua::Value>()
+        })
+        .await
+        .unwrap()
+        .unwrap();
+
+        let mut found_started = false;
+        let mut found_done = false;
+        while let Ok(event) = rx.try_recv() {
+            match event {
+                AgentEvent::WorkflowStarted { .. } => found_started = true,
+                AgentEvent::WorkflowDone { .. } => found_done = true,
+                _ => {}
+            }
+        }
+        assert!(found_started, "expected WorkflowStarted event");
+        assert!(found_done, "expected WorkflowDone event");
+    }
+}

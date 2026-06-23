@@ -476,7 +476,7 @@ end
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::{MockBackend, MockBehavior, TokenUsage};
+    use crate::core::{FailKind, MockBackend, MockBehavior, TokenUsage};
     use std::time::Duration;
 
     fn mock_returning(output: serde_json::Value) -> Arc<dyn AgentBackend> {
@@ -554,5 +554,152 @@ mod tests {
     fn test_extract_skips_non_lua_block() {
         let v = serde_json::json!("```text\nnot code\n```\n```lua\nreport({})\n```");
         assert_eq!(extract_script(&v).unwrap().trim(), "report({})");
+    }
+
+    // ── Additional coverage: backend error path ──────────────────────────
+
+    #[tokio::test]
+    async fn test_plan_backend_error() {
+        let backend: Arc<dyn AgentBackend> = Arc::new(MockBackend::new(
+            "mock",
+            vec![MockBehavior::fail(FailKind::Protocol)],
+        ));
+        let err = plan_workflow("x", backend, &PlannerConfig::default())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, PlannerError::Backend(_)));
+    }
+
+    // ── Coverage: agent output with no lua block (extract_script → None) ─
+
+    #[tokio::test]
+    async fn test_plan_no_lua_block_retries() {
+        let backend = mock_returning(serde_json::Value::Null);
+        let cfg = PlannerConfig {
+            max_retries: 2,
+            ..Default::default()
+        };
+        let err = plan_workflow("x", backend, &cfg).await.unwrap_err();
+        assert!(matches!(err, PlannerError::ExhaustedRetries { .. }));
+    }
+
+    // ── Coverage: validation failure followed by successful retry ────────
+
+    #[tokio::test]
+    async fn test_plan_retry_then_succeeds() {
+        let valid = "```lua\nlocal r = agent({prompt='hi'})\nreport({ok=true})\n```";
+        let backend: Arc<dyn AgentBackend> = Arc::new(MockBackend::new(
+            "mock",
+            vec![
+                MockBehavior::Success {
+                    output: serde_json::json!("this is pure garbage"),
+                    tokens: TokenUsage::default(),
+                    delay: Duration::ZERO,
+                },
+                MockBehavior::Success {
+                    output: serde_json::json!(valid),
+                    tokens: TokenUsage::default(),
+                    delay: Duration::ZERO,
+                },
+            ],
+        ));
+        let planned = plan_workflow("x", backend, &PlannerConfig::default())
+            .await
+            .unwrap();
+        assert!(planned.script.contains("report({ok=true})"));
+    }
+
+    // ── Coverage: strip_prose edge cases (lines 191, 195, 201) ──────────
+
+    #[test]
+    fn test_strip_prose_edge_cases() {
+        // No lines look like Lua → lua_start = 0, lua_end = lines.len()
+        let s = strip_prose("hello world\nsome prose");
+        assert_eq!(s, "hello world\nsome prose");
+
+        // Lua in middle, prose before/after → slices correctly
+        let s = strip_prose("intro\nlocal x = 1\noutro");
+        assert_eq!(s, "local x = 1");
+
+        // Only Lua lines
+        let s = strip_prose("local x = 1\nreport({})");
+        assert_eq!(s, "local x = 1\nreport({})");
+
+        // Lines with leading/trailing whitespace → trim exercised
+        let s = strip_prose("  local x = 1  ");
+        assert_eq!(s, "local x = 1");
+    }
+
+    // ── Coverage: looks_like_lua branches ────────────────────────────────
+
+    #[test]
+    fn test_looks_like_lua_variants() {
+        assert!(!looks_like_lua(""));
+        assert!(!looks_like_lua("   "));
+        assert!(looks_like_lua("-- comment"));
+        assert!(looks_like_lua("local x = 1"));
+        assert!(looks_like_lua("{hello}"));
+        assert!(looks_like_lua("}"));
+        assert!(looks_like_lua("(arg)"));
+        assert!(looks_like_lua(")"));
+        assert!(looks_like_lua("\"string\""));
+        assert!(looks_like_lua("'string'"));
+        assert!(looks_like_lua("[1, 2]"));
+        assert!(looks_like_lua("]"));
+        assert!(looks_like_lua("= value"));
+        assert!(looks_like_lua(".method"));
+        assert!(looks_like_lua(":method"));
+        assert!(looks_like_lua("#list"));
+        assert!(!looks_like_lua("plain prose text"));
+        assert!(!looks_like_lua("1234 number line"));
+    }
+
+    // ── Coverage: find_fenced_block edge cases ──────────────────────────
+
+    #[test]
+    fn test_find_fenced_block_edge_cases() {
+        // Non-lua fence skipped, lua fence found
+        let s = find_fenced_block("```text\nstuff\n```\n```lua\nreport({})\n```");
+        assert_eq!(s.unwrap().trim(), "report({})");
+
+        // Missing closing fence → None
+        assert!(find_fenced_block("```lua\nreport({})").is_none());
+
+        // No fence at all
+        assert!(find_fenced_block("just text").is_none());
+    }
+
+    // ── Coverage: output_to_text remaining match arms ───────────────────
+
+    #[test]
+    fn test_output_to_text_variants() {
+        // Object with no recognized key → fallback to_string
+        let obj = serde_json::json!({"unknown": "value"});
+        assert!(output_to_text(&obj).is_some());
+
+        // Array → `other` arm
+        assert_eq!(output_to_text(&serde_json::json!([1, 2, 3])).unwrap(), "[1,2,3]");
+
+        // Number → `other` arm
+        assert_eq!(output_to_text(&serde_json::json!(42)).unwrap(), "42");
+    }
+
+    // ── Coverage: build_prompt fix_error branch ─────────────────────────
+
+    #[test]
+    fn test_build_prompt_with_fix_error() {
+        let p = build_prompt("do task", Some("script had syntax error"));
+        assert!(p.contains("do task"));
+        assert!(p.contains("previous attempt was rejected"));
+        assert!(p.contains("script had syntax error"));
+        assert!(p.contains("Output ONLY"));
+    }
+
+    #[test]
+    fn test_build_prompt_without_fix_error() {
+        let p = build_prompt("do task", None);
+        assert!(p.contains("do task"));
+        assert!(!p.contains("previous attempt was rejected"));
+        assert!(p.contains("Output ONLY"));
     }
 }

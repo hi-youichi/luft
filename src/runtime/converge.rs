@@ -623,24 +623,933 @@ fn json_to_lua_value(lua: &Lua, json: serde_json::Value) -> Result<Value, mlua::
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::contract::backend::{
+        AgentBackend, AgentCapabilities, AgentResult, BackendError, LogRef,
+    };
+    use crate::core::contract::finding::{Location, Severity};
+    use crate::core::contract::ids::TokenUsage;
+    use crate::core::scheduler::{BackendRegistry, RetryPolicy, SchedulerConfig};
+    use crate::core::{AgentTask, MockBackend, MockBehavior};
+    use crate::runtime::sdk::ReportSink;
+    use async_trait::async_trait;
+    use std::sync::Arc;
+    use std::time::Duration;
+    use tokio::sync::broadcast;
+    use tokio_util::sync::CancellationToken;
+    use uuid::Uuid;
+
+    // ── Helper: create a sample Finding ──────────────────────────
+
+    fn sample_finding(title: &str) -> Finding {
+        Finding {
+            kind: "test".into(),
+            severity: Severity::Info,
+            title: title.into(),
+            detail: "A detailed description".into(),
+            location: Some(Location {
+                file: "src/main.rs".into(),
+                line: Some(42),
+            }),
+            evidence: vec!["line 42: suspect code".into()],
+            data: serde_json::json!({"extra": "info"}),
+        }
+    }
+
+    fn default_finding() -> Finding {
+        sample_finding("Test Finding")
+    }
+
+    // ── Helper: create a quick scheduler for converge tests ──────
+
+    fn converge_scheduler(
+        backend: Arc<dyn AgentBackend>,
+    ) -> Arc<Scheduler> {
+        let config = SchedulerConfig {
+            max_concurrency: 4,
+            quota_per_run: 1000,
+            retry: RetryPolicy::default(),
+        };
+        let registry = BackendRegistry::new().with(backend);
+        Scheduler::new(config, registry, None)
+    }
+
+    fn test_run_ctx(scheduler: &Arc<Scheduler>) -> (RunContext, broadcast::Receiver<AgentEvent>) {
+        let run_id = Uuid::now_v7();
+        let rx = scheduler.init_run(run_id, 64);
+        let (tx, _rx2) = broadcast::channel(64);
+        let ctx = RunContext {
+            run_id,
+            cancel: CancellationToken::new(),
+            events: tx,
+        };
+        (ctx, rx)
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // ConvergeConfig
+    // ═══════════════════════════════════════════════════════════════
 
     #[test]
     fn test_default_config() {
-        let config = ConvergeConfig::default();
-        assert!(config.adversarial);
-        assert_eq!(config.vote_threshold, 0.7);
-        assert_eq!(config.max_rounds, 3);
+        let c = ConvergeConfig::default();
+        assert!(c.adversarial);
+        assert!((c.vote_threshold - 0.7).abs() < f32::EPSILON);
+        assert_eq!(c.max_rounds, 3);
+        assert_eq!(c.producers_per_item, 1);
+        assert_eq!(c.adversaries_per_finding, 1);
+        assert!(c.model.is_none());
     }
 
     #[test]
-    fn test_lua_value_conversion() {
+    fn test_converge_config_debug_clone_serialize() {
+        let c = ConvergeConfig::default();
+        let _ = format!("{:?}", c);
+        let _ = c.clone();
+        let json = serde_json::to_string(&c).unwrap();
+        let back: ConvergeConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(c.max_rounds, back.max_rounds);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // parse_converge_options
+    // ═══════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_parse_options_defaults() {
         let lua = Lua::new();
-        let json = serde_json::json!({
-            "name": "test",
-            "count": 42,
-            "active": true
+        let t = lua.create_table().unwrap();
+        let cfg = parse_converge_options(&t);
+        assert!(cfg.adversarial);
+        assert!((cfg.vote_threshold - 0.7).abs() < f32::EPSILON);
+        assert_eq!(cfg.max_rounds, 3);
+        assert_eq!(cfg.producers_per_item, 1);
+        assert_eq!(cfg.adversaries_per_finding, 1);
+        assert!(cfg.model.is_none());
+    }
+
+    #[test]
+    fn test_parse_options_all_fields() {
+        let lua = Lua::new();
+        let t = lua.create_table().unwrap();
+        t.set("adversarial", "false").unwrap();
+        t.set("vote_threshold", 0.5).unwrap();
+        t.set("max_rounds", 5u32).unwrap();
+        t.set("producers", 2u32).unwrap();
+        t.set("adversaries", 3u32).unwrap();
+        t.set("model", "gpt-4").unwrap();
+        let cfg = parse_converge_options(&t);
+        assert!(!cfg.adversarial);
+        assert!((cfg.vote_threshold - 0.5).abs() < f32::EPSILON);
+        assert_eq!(cfg.max_rounds, 5);
+        assert_eq!(cfg.producers_per_item, 2);
+        assert_eq!(cfg.adversaries_per_finding, 3);
+        assert_eq!(cfg.model.as_deref(), Some("gpt-4"));
+    }
+
+    #[test]
+    fn test_parse_options_adversarial_true_string() {
+        let lua = Lua::new();
+        let t = lua.create_table().unwrap();
+        t.set("adversarial", "true").unwrap();
+        assert!(parse_converge_options(&t).adversarial);
+    }
+
+    #[test]
+    fn test_parse_options_empty_model() {
+        let lua = Lua::new();
+        let t = lua.create_table().unwrap();
+        t.set("model", "").unwrap();
+        assert!(parse_converge_options(&t).model.is_none());
+    }
+
+    #[test]
+    fn test_parse_options_model_some() {
+        let lua = Lua::new();
+        let t = lua.create_table().unwrap();
+        t.set("model", "claude").unwrap();
+        assert_eq!(
+            parse_converge_options(&t).model.as_deref(),
+            Some("claude")
+        );
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // extract_string
+    // ═══════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_extract_string_valid() {
+        let lua = Lua::new();
+        assert_eq!(
+            extract_string(lua.create_string("hello").unwrap()),
+            Some("hello".into())
+        );
+    }
+
+    #[test]
+    fn test_extract_string_empty() {
+        let lua = Lua::new();
+        assert_eq!(
+            extract_string(lua.create_string("").unwrap()),
+            Some("".into())
+        );
+    }
+
+    #[test]
+    fn test_extract_string_invalid_utf8() {
+        let lua = Lua::new();
+        let s = lua.create_string(&[0xFF, 0xFE, 0x00]).unwrap();
+        assert_eq!(extract_string(s), None);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // lua_value_to_json — every match arm
+    // ═══════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_lua_value_to_json_nil() {
+        assert_eq!(
+            lua_value_to_json(&Value::Nil).unwrap(),
+            serde_json::Value::Null
+        );
+    }
+
+    #[test]
+    fn test_lua_value_to_json_boolean() {
+        assert_eq!(
+            lua_value_to_json(&Value::Boolean(true)).unwrap(),
+            serde_json::Value::Bool(true)
+        );
+        assert_eq!(
+            lua_value_to_json(&Value::Boolean(false)).unwrap(),
+            serde_json::Value::Bool(false)
+        );
+    }
+
+    #[test]
+    fn test_lua_value_to_json_integer() {
+        assert_eq!(
+            lua_value_to_json(&Value::Integer(42)).unwrap(),
+            serde_json::json!(42)
+        );
+        assert_eq!(
+            lua_value_to_json(&Value::Integer(-5)).unwrap(),
+            serde_json::json!(-5)
+        );
+    }
+
+    #[test]
+    fn test_lua_value_to_json_number() {
+        assert_eq!(
+            lua_value_to_json(&Value::Number(3.14)).unwrap(),
+            serde_json::json!(3.14)
+        );
+    }
+
+    #[test]
+    fn test_lua_value_to_json_number_nan() {
+        assert_eq!(
+            lua_value_to_json(&Value::Number(f64::NAN)).unwrap(),
+            serde_json::Value::Null
+        );
+    }
+
+    #[test]
+    fn test_lua_value_to_json_number_infinity() {
+        assert_eq!(
+            lua_value_to_json(&Value::Number(f64::INFINITY)).unwrap(),
+            serde_json::Value::Null
+        );
+        assert_eq!(
+            lua_value_to_json(&Value::Number(f64::NEG_INFINITY)).unwrap(),
+            serde_json::Value::Null
+        );
+    }
+
+    #[test]
+    fn test_lua_value_to_json_string_valid() {
+        let lua = Lua::new();
+        let s = lua.create_string("hello world").unwrap();
+        assert_eq!(
+            lua_value_to_json(&Value::String(s)).unwrap(),
+            serde_json::json!("hello world")
+        );
+    }
+
+    #[test]
+    fn test_lua_value_to_json_string_invalid_utf8() {
+        let lua = Lua::new();
+        let s = lua.create_string(&[0xFF, 0xFE]).unwrap();
+        assert_eq!(
+            lua_value_to_json(&Value::String(s)).unwrap(),
+            serde_json::Value::Null
+        );
+    }
+
+    #[test]
+    fn test_lua_value_to_json_table_as_array() {
+        let lua = Lua::new();
+        let t = lua.create_table().unwrap();
+        t.set(1, "a").unwrap();
+        t.set(2, "b").unwrap();
+        t.set(3, "c").unwrap();
+        assert_eq!(
+            lua_value_to_json(&Value::Table(t)).unwrap(),
+            serde_json::json!(["a", "b", "c"])
+        );
+    }
+
+    #[test]
+    fn test_lua_value_to_json_table_as_object() {
+        let lua = Lua::new();
+        let t = lua.create_table().unwrap();
+        t.set("name", "test").unwrap();
+        t.set("count", 42).unwrap();
+        let val = lua_value_to_json(&Value::Table(t)).unwrap();
+        let obj = val.as_object().unwrap();
+        assert_eq!(obj["name"], "test");
+        assert_eq!(obj["count"], 42);
+    }
+
+    #[test]
+    fn test_lua_value_to_json_table_empty() {
+        let lua = Lua::new();
+        let t = lua.create_table().unwrap();
+        assert_eq!(
+            lua_value_to_json(&Value::Table(t)).unwrap(),
+            serde_json::json!({})
+        );
+    }
+
+    #[test]
+    fn test_lua_value_to_json_table_nested() {
+        let lua = Lua::new();
+        let inner = lua.create_table().unwrap();
+        inner.set("key", "val").unwrap();
+        let outer = lua.create_table().unwrap();
+        outer.set("nested", inner).unwrap();
+        let val = lua_value_to_json(&Value::Table(outer)).unwrap();
+        assert_eq!(val, serde_json::json!({"nested": {"key": "val"}}));
+    }
+
+    #[test]
+    fn test_lua_value_to_json_table_integer_key_in_object() {
+        let lua = Lua::new();
+        let t = lua.create_table().unwrap();
+        t.set(42, "answer").unwrap();
+        let val = lua_value_to_json(&Value::Table(t)).unwrap();
+        assert_eq!(val, serde_json::json!({"42": "answer"}));
+    }
+
+    #[test]
+    fn test_lua_value_to_json_function_catch_all() {
+        let lua = Lua::new();
+        let f = lua.create_function(|_, ()| Ok(())).unwrap();
+        assert_eq!(
+            lua_value_to_json(&Value::Function(f)).unwrap(),
+            serde_json::Value::Null
+        );
+    }
+
+    #[test]
+    fn test_lua_value_to_json_userdata_catch_all() {
+        let lua = Lua::new();
+        // Thread is a kind of userdata in Lua
+        let thread = lua.create_thread(
+            lua.load("return 1").into_function().unwrap(),
+        )
+        .unwrap();
+        let val = Value::Thread(thread);
+        assert_eq!(
+            lua_value_to_json(&val).unwrap(),
+            serde_json::Value::Null
+        );
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // json_to_lua_value — every match arm
+    // ═══════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_json_to_lua_value_null() {
+        let lua = Lua::new();
+        assert!(matches!(
+            json_to_lua_value(&lua, serde_json::Value::Null).unwrap(),
+            Value::Nil
+        ));
+    }
+
+    #[test]
+    fn test_json_to_lua_value_bool() {
+        let lua = Lua::new();
+        assert!(matches!(
+            json_to_lua_value(&lua, serde_json::Value::Bool(true)).unwrap(),
+            Value::Boolean(true)
+        ));
+    }
+
+    #[test]
+    fn test_json_to_lua_value_integer() {
+        let lua = Lua::new();
+        assert!(matches!(
+            json_to_lua_value(&lua, serde_json::json!(42)).unwrap(),
+            Value::Integer(42)
+        ));
+    }
+
+    #[test]
+    fn test_json_to_lua_value_float() {
+        let lua = Lua::new();
+        assert!(matches!(
+            json_to_lua_value(&lua, serde_json::json!(3.14)).unwrap(),
+            Value::Number(n) if (n - 3.14).abs() < f64::EPSILON
+        ));
+    }
+
+    #[test]
+    fn test_json_to_lua_value_large_number() {
+        let lua = Lua::new();
+        // 1e200 fits in f64 but not i64 → should become a Lua number
+        let val = json_to_lua_value(&lua, serde_json::json!(1e200)).unwrap();
+        assert!(matches!(val, Value::Number(_)));
+    }
+
+    #[test]
+    fn test_json_to_lua_value_string() {
+        let lua = Lua::new();
+        assert!(matches!(
+            json_to_lua_value(&lua, serde_json::Value::String("hi".into())).unwrap(),
+            Value::String(_)
+        ));
+    }
+
+    #[test]
+    fn test_json_to_lua_value_array() {
+        let lua = Lua::new();
+        let val = json_to_lua_value(&lua, serde_json::json!([1, 2, 3])).unwrap();
+        assert!(matches!(val, Value::Table(_)));
+    }
+
+    #[test]
+    fn test_json_to_lua_value_empty_array() {
+        let lua = Lua::new();
+        let val = json_to_lua_value(&lua, serde_json::json!([])).unwrap();
+        assert!(matches!(val, Value::Table(_)));
+    }
+
+    #[test]
+    fn test_json_to_lua_value_object() {
+        let lua = Lua::new();
+        let val = json_to_lua_value(&lua, serde_json::json!({"a": 1})).unwrap();
+        assert!(matches!(val, Value::Table(_)));
+    }
+
+    #[test]
+    fn test_json_to_lua_value_empty_object() {
+        let lua = Lua::new();
+        let val = json_to_lua_value(&lua, serde_json::json!({})).unwrap();
+        assert!(matches!(val, Value::Table(_)));
+    }
+
+    #[test]
+    fn test_json_to_lua_value_nested() {
+        let lua = Lua::new();
+        let val = json_to_lua_value(
+            &lua,
+            serde_json::json!({"a": {"b": [1, 2, 3]}}),
+        )
+        .unwrap();
+        assert!(matches!(val, Value::Table(_)));
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Struct construction & derive traits
+    // ═══════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_converge_result_construction() {
+        let r = ConvergeResult {
+            surviving_items: vec![serde_json::json!({"k": "v"})],
+            findings: vec![default_finding()],
+            rounds: 2,
+            converged: true,
+            round_stats: vec![RoundStats {
+                round: 1,
+                items_input: 3,
+                findings_generated: 5,
+                findings_survived: 4,
+                findings_refuted: 1,
+                approval_rate: 0.8,
+            }],
+        };
+        assert_eq!(r.rounds, 2);
+        assert!(r.converged);
+        assert_eq!(r.surviving_items.len(), 1);
+        assert_eq!(r.findings.len(), 1);
+        assert_eq!(r.round_stats.len(), 1);
+    }
+
+    #[test]
+    fn test_converge_result_serialize_roundtrip() {
+        let r = ConvergeResult {
+            surviving_items: vec![],
+            findings: vec![],
+            rounds: 0,
+            converged: true,
+            round_stats: vec![],
+        };
+        let json = serde_json::to_string(&r).unwrap();
+        let back: ConvergeResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.rounds, 0);
+        assert!(back.converged);
+    }
+
+    #[test]
+    fn test_converge_result_debug_clone() {
+        let r = ConvergeResult {
+            surviving_items: vec![],
+            findings: vec![],
+            rounds: 1,
+            converged: false,
+            round_stats: vec![],
+        };
+        let _ = format!("{:?}", r);
+        let _ = r.clone();
+    }
+
+    #[test]
+    fn test_round_stats_construction() {
+        let s = RoundStats {
+            round: 1,
+            items_input: 10,
+            findings_generated: 20,
+            findings_survived: 15,
+            findings_refuted: 5,
+            approval_rate: 0.75,
+        };
+        assert_eq!(s.round, 1);
+        assert_eq!(s.items_input, 10);
+        assert_eq!(s.findings_generated, 20);
+        assert_eq!(s.findings_survived, 15);
+        assert_eq!(s.findings_refuted, 5);
+        assert!((s.approval_rate - 0.75).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_round_stats_serialize_roundtrip() {
+        let s = RoundStats {
+            round: 2,
+            items_input: 5,
+            findings_generated: 8,
+            findings_survived: 3,
+            findings_refuted: 5,
+            approval_rate: 0.4,
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        let back: RoundStats = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.round, 2);
+        assert!((back.approval_rate - 0.4).abs() < f32::EPSILON);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // execute_convergence — empty items (early return)
+    // ═══════════════════════════════════════════════════════════════
+
+    #[tokio::test]
+    async fn test_execute_convergence_empty_items() {
+        let scheduler = converge_scheduler(Arc::new(NoOpBackend));
+        let (ctx, _rx) = test_run_ctx(&scheduler);
+
+        let result = execute_convergence(
+            vec![],
+            "producer: {item}",
+            "adversary: {finding}",
+            ConvergeConfig::default(),
+            &scheduler,
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+        assert!(result.surviving_items.is_empty());
+        assert!(result.findings.is_empty());
+        assert_eq!(result.rounds, 0);
+        assert!(result.converged);
+        assert!(result.round_stats.is_empty());
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // execute_convergence — items but backend returns no findings
+    // ═══════════════════════════════════════════════════════════════
+
+    #[tokio::test]
+    async fn test_execute_convergence_no_findings() {
+        let mock = Arc::new(MockBackend::new(
+            "mock",
+            vec![MockBehavior::Success {
+                output: serde_json::Value::Null,
+                tokens: TokenUsage::default(),
+                delay: Duration::from_millis(1),
+            }],
+        ));
+        let scheduler = converge_scheduler(mock);
+        let (ctx, _rx) = test_run_ctx(&scheduler);
+
+        let result = execute_convergence(
+            vec![serde_json::json!({"key": "val"})],
+            "producer: {item}",
+            "adversary: {finding}",
+            ConvergeConfig::default(),
+            &scheduler,
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+        // No findings generated → break before round stats pushed, so rounds=0.
+        // Original items survive because state.items was never replaced.
+        assert_eq!(result.rounds, 0);
+        assert!(!result.converged);
+        assert!(result.findings.is_empty());
+        assert_eq!(result.surviving_items, vec![serde_json::json!({"key": "val"})]);
+        assert!(result.round_stats.is_empty());
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // execute_convergence — findings survive through multiple rounds
+    // ═══════════════════════════════════════════════════════════════
+
+    #[tokio::test]
+    async fn test_execute_convergence_findings_survive() {
+        let findings = vec![default_finding()];
+        let backend = Arc::new(FindingsAlwaysBackend { findings });
+        let scheduler = converge_scheduler(backend);
+        let (ctx, _rx) = test_run_ctx(&scheduler);
+
+        let result = execute_convergence(
+            vec![serde_json::json!({"input": "item"})],
+            "producer: {item}",
+            "adversary: {finding}",
+            ConvergeConfig::default(),
+            &scheduler,
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+        // Round 1: finding generated, survives; Round 2: same finding → full
+        // convergence detected because surviving == generated && round > 1.
+        assert_eq!(result.rounds, 2);
+        assert!(result.converged);
+        assert!(!result.findings.is_empty());
+        assert_eq!(result.round_stats.len(), 2);
+        // Each round should have findings generated and survived
+        for rs in &result.round_stats {
+            assert_eq!(rs.findings_generated, 1);
+            assert_eq!(rs.findings_survived, 1);
+            assert_eq!(rs.findings_refuted, 0);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // execute_convergence — adversarial disabled
+    // ═══════════════════════════════════════════════════════════════
+
+    #[tokio::test]
+    async fn test_execute_convergence_non_adversarial() {
+        let findings = vec![default_finding()];
+        let backend = Arc::new(FindingsAlwaysBackend { findings });
+        let scheduler = converge_scheduler(backend);
+        let (ctx, _rx) = test_run_ctx(&scheduler);
+
+        let mut config = ConvergeConfig::default();
+        config.adversarial = false;
+
+        let result = execute_convergence(
+            vec![serde_json::json!({"x": 1})],
+            "producer: {item}",
+            "adversary: {finding}",
+            config,
+            &scheduler,
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+        // With adversarial=false, findings pass through unverified
+        assert_eq!(result.rounds, 2);
+        assert!(result.converged);
+        assert!(!result.findings.is_empty());
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // execute_convergence — all findings refuted
+    // ═══════════════════════════════════════════════════════════════
+
+    #[tokio::test]
+    async fn test_execute_convergence_all_refuted() {
+        let findings = vec![default_finding()];
+        let backend = Arc::new(FindingsRefutingBackend { findings });
+        let scheduler = converge_scheduler(backend);
+        let (ctx, _rx) = test_run_ctx(&scheduler);
+
+        let result = execute_convergence(
+            vec![serde_json::json!({"x": 1})],
+            "producer: {item}",
+            "adversary: {finding}",
+            ConvergeConfig::default(),
+            &scheduler,
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+        // Round 1: finding generated, then refuted → empty surviving → converged
+        assert_eq!(result.rounds, 1);
+        assert!(result.converged);
+        assert_eq!(result.round_stats.len(), 1);
+        assert_eq!(result.round_stats[0].findings_generated, 1);
+        assert_eq!(result.round_stats[0].findings_survived, 0);
+        assert_eq!(result.round_stats[0].findings_refuted, 1);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // execute_convergence with no adversarial (findings but adversarial disabled)
+    // ═══════════════════════════════════════════════════════════════
+
+    #[tokio::test]
+    async fn test_execute_convergence_no_adversarial_findings_generated() {
+        let findings = vec![default_finding()];
+        let backend = Arc::new(FindingsAlwaysBackend { findings });
+        let scheduler = converge_scheduler(backend);
+        let (ctx, _rx) = test_run_ctx(&scheduler);
+
+        let mut config = ConvergeConfig::default();
+        config.adversarial = false;
+        config.max_rounds = 1;
+
+        let result = execute_convergence(
+            vec![serde_json::json!({"x": 1})],
+            "producer: {item}",
+            "adversary: {finding}",
+            config,
+            &scheduler,
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.rounds, 1);
+        // With max_rounds=1, we never hit the full convergence check (round>1)
+        assert!(!result.converged);
+        assert_eq!(result.findings.len(), 1);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // register_converge_sdk — empty items via Lua
+    // ═══════════════════════════════════════════════════════════════
+
+    #[test]
+fn test_register_converge_sdk_empty_items() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let lua = Lua::new();
+        let scheduler = converge_scheduler(Arc::new(NoOpBackend));
+        let run_id = Uuid::now_v7();
+        let (tx, _rx2) = broadcast::channel(64);
+        let run_ctx = RunContext {
+            run_id,
+            cancel: CancellationToken::new(),
+            events: tx,
+        };
+        let report_sink: ReportSink = Arc::new(std::sync::Mutex::new(None));
+        let handle = rt.handle().clone();
+        let cx = SdkContext::new(run_ctx, scheduler, report_sink, None, handle);
+
+        register_converge_sdk(&lua, &cx).unwrap();
+
+        let globals = lua.globals();
+        let converge: mlua::Function = globals.get("converge").unwrap();
+
+        let items = lua.create_table().unwrap();
+        let options = lua.create_table().unwrap();
+        let result: mlua::Table = converge.call((items, options)).unwrap();
+
+        let converged: bool = result.get("converged").unwrap();
+        assert!(converged);
+        let rounds: u32 = result.get("rounds").unwrap();
+        assert_eq!(rounds, 0);
+        let surviving: mlua::Table = result.get("surviving").unwrap();
+        assert_eq!(surviving.len().unwrap(), 0);
+        let findings: mlua::Table = result.get("findings").unwrap();
+        assert_eq!(findings.len().unwrap(), 0);
+    }
+
+    #[test]
+    fn test_register_converge_sdk_with_items() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let lua = Lua::new();
+        let backend = Arc::new(FindingsAlwaysBackend {
+            findings: vec![default_finding()],
         });
-        let value = json_to_lua_value(&lua, json).unwrap();
-        assert!(matches!(value, Value::Table(_)));
+        let scheduler = converge_scheduler(backend);
+        let run_id = Uuid::now_v7();
+        let _rx = scheduler.init_run(run_id, 64);
+        let (tx, _rx2) = broadcast::channel(64);
+        let run_ctx = RunContext {
+            run_id,
+            cancel: CancellationToken::new(),
+            events: tx,
+        };
+        let report_sink: ReportSink = Arc::new(std::sync::Mutex::new(None));
+        let handle = rt.handle().clone();
+        let cx = SdkContext::new(run_ctx, scheduler, report_sink, None, handle);
+
+        register_converge_sdk(&lua, &cx).unwrap();
+
+        let globals = lua.globals();
+        let converge: mlua::Function = globals.get("converge").unwrap();
+
+        let items = lua.create_table().unwrap();
+        items.set(1, "test item").unwrap();
+        let options = lua.create_table().unwrap();
+        let result: mlua::Table = converge.call((items, options)).unwrap();
+
+        let converged: bool = result.get("converged").unwrap();
+        assert!(converged);
+        let rounds: u32 = result.get("rounds").unwrap();
+        assert!(rounds > 0);
+        let findings: mlua::Table = result.get("findings").unwrap();
+        assert!(findings.len().unwrap() > 0);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // ProducerStats / VoteStats
+    // ═══════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_producer_stats() {
+        let s = ProducerStats {
+            items_processed: 5,
+            agents_run: 10,
+            findings_generated: 20,
+        };
+        assert_eq!(s.items_processed, 5);
+        assert_eq!(s.agents_run, 10);
+        assert_eq!(s.findings_generated, 20);
+    }
+
+    #[test]
+    fn test_producer_stats_default() {
+        let s = ProducerStats::default();
+        assert_eq!(s.items_processed, 0);
+        assert_eq!(s.agents_run, 0);
+        assert_eq!(s.findings_generated, 0);
+    }
+
+    #[test]
+    fn test_vote_stats() {
+        let s = VoteStats { approval_rate: 0.5 };
+        assert!((s.approval_rate - 0.5).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_vote_stats_default() {
+        let s = VoteStats::default();
+        assert!((s.approval_rate - 0.0).abs() < f32::EPSILON);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Custom test backends
+    // ═══════════════════════════════════════════════════════════════
+
+    /// Backend that always returns empty findings with AgentStatus::Ok.
+    /// Used for tests that don't care about scheduler output.
+    struct NoOpBackend;
+
+    #[async_trait]
+    impl AgentBackend for NoOpBackend {
+        fn id(&self) -> &'static str {
+            "noop"
+        }
+        fn capabilities(&self) -> AgentCapabilities {
+            AgentCapabilities::default()
+        }
+        async fn run(
+            &self,
+            task: AgentTask,
+            _ctx: RunContext,
+        ) -> Result<AgentResult, BackendError> {
+            Ok(AgentResult {
+                agent_id: task.agent_id,
+                status: AgentStatus::Ok,
+                output: serde_json::Value::Null,
+                findings: vec![],
+                tokens_used: TokenUsage::default(),
+                artifacts: vec![],
+                logs: LogRef::default(),
+            })
+        }
+    }
+
+    /// Backend that always returns configured findings with AgentStatus::Ok.
+    /// Both producer and adversary phases will see findings + Ok status.
+    struct FindingsAlwaysBackend {
+        findings: Vec<Finding>,
+    }
+
+    #[async_trait]
+    impl AgentBackend for FindingsAlwaysBackend {
+        fn id(&self) -> &'static str {
+            "findings-always"
+        }
+        fn capabilities(&self) -> AgentCapabilities {
+            AgentCapabilities::default()
+        }
+        async fn run(
+            &self,
+            task: AgentTask,
+            _ctx: RunContext,
+        ) -> Result<AgentResult, BackendError> {
+            Ok(AgentResult {
+                agent_id: task.agent_id,
+                status: AgentStatus::Ok,
+                output: serde_json::Value::Null,
+                findings: self.findings.clone(),
+                tokens_used: TokenUsage::default(),
+                artifacts: vec![],
+                logs: LogRef::default(),
+            })
+        }
+    }
+
+    /// Backend that returns findings but adversaries always return Error,
+    /// causing all findings to be refuted.
+    struct FindingsRefutingBackend {
+        findings: Vec<Finding>,
+    }
+
+    #[async_trait]
+    impl AgentBackend for FindingsRefutingBackend {
+        fn id(&self) -> &'static str {
+            "findings-refute"
+        }
+        fn capabilities(&self) -> AgentCapabilities {
+            AgentCapabilities::default()
+        }
+        async fn run(
+            &self,
+            task: AgentTask,
+            _ctx: RunContext,
+        ) -> Result<AgentResult, BackendError> {
+            Ok(AgentResult {
+                agent_id: task.agent_id,
+                status: AgentStatus::Error,
+                output: serde_json::Value::Null,
+                findings: self.findings.clone(),
+                tokens_used: TokenUsage::default(),
+                artifacts: vec![],
+                logs: LogRef::default(),
+            })
+        }
     }
 }
