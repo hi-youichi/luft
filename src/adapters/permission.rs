@@ -95,12 +95,20 @@ pub fn decide(policy: Option<&ToolPolicy>, input: &PermissionInputs) -> Decision
 /// is `None` (→ approve), this only affects policy-constrained runs.
 pub fn extract_inputs(req: &RequestPermissionRequest) -> PermissionInputs {
     let v = serde_json::to_value(req).unwrap_or(serde_json::Value::Null);
+    parse_inputs_from_json(&v)
+}
+
+/// Extract [`PermissionInputs`] from an already-serialized JSON value.
+///
+/// Extracted for testing — the fallback to [`serde_json::Value::Null`] inside
+/// [`extract_inputs`] is covered by calling this with `Null` directly.
+fn parse_inputs_from_json(v: &serde_json::Value) -> PermissionInputs {
     let raw = v.to_string();
-    let is_file_edit = find_str_field(&v, "kind").as_deref() == Some("edit")
+    let is_file_edit = find_str_field(v, "kind").as_deref() == Some("edit")
         || raw.contains("write_text_file");
-    let command = find_str_field(&v, "command");
-    let mcp_tool = find_str_field(&v, "tool")
-        .or_else(|| find_str_field(&v, "name"))
+    let command = find_str_field(v, "command");
+    let mcp_tool = find_str_field(v, "tool")
+        .or_else(|| find_str_field(v, "name"))
         .filter(|_n| raw.contains("mcp") || raw.contains("structured_output"));
     PermissionInputs {
         command,
@@ -168,5 +176,215 @@ mod tests {
         let bad = PermissionInputs { command: Some("curl evil".into()), ..Default::default() };
         assert_eq!(decide(Some(&p), &ok), Decision::Approve);
         assert!(matches!(decide(Some(&p), &bad), Decision::Deny(_)));
+    }
+
+    // --- structured_output early return (lines 38-41) ---
+    #[test]
+    fn structured_output_approved() {
+        let input = PermissionInputs { mcp_tool: Some("structured_output".into()), ..Default::default() };
+        // No policy
+        assert_eq!(decide(None, &input), Decision::Approve);
+        // With policy that would otherwise deny
+        let p = ToolPolicy { accept_edits: false, allow_commands: vec![], allow_mcp: vec![], deny: vec![] };
+        assert_eq!(decide(Some(&p), &input), Decision::Approve);
+    }
+
+    // --- MCP tool allowed (lines 77-80) ---
+    #[test]
+    fn mcp_tool_allowed() {
+        let p = ToolPolicy { accept_edits: false, allow_commands: vec![], allow_mcp: vec!["my_tool".into()], deny: vec![] };
+        let input = PermissionInputs { mcp_tool: Some("my_tool".into()), ..Default::default() };
+        assert_eq!(decide(Some(&p), &input), Decision::Approve);
+    }
+
+    // --- MCP tool denied (lines 77, 82-83) ---
+    #[test]
+    fn mcp_tool_denied() {
+        let p = policy(false, &[], &[]);
+        let input = PermissionInputs { mcp_tool: Some("unknown_tool".into()), ..Default::default() };
+        assert!(matches!(decide(Some(&p), &input), Decision::Deny(_)));
+    }
+
+    // --- fallthrough to Decision::Approve (line 88) ---
+    #[test]
+    fn unknown_request_with_policy_approves() {
+        let p = policy(false, &[], &[]);
+        assert_eq!(decide(Some(&p), &PermissionInputs::default()), Decision::Approve);
+    }
+
+    // --- find_str_field: nested object (lines 113-119) ---
+    #[test]
+    fn find_str_field_nested_object() {
+        let v: serde_json::Value = serde_json::json!({"outer": {"inner": {"target": "found"}}});
+        assert_eq!(find_str_field(&v, "target"), Some("found".into()));
+    }
+
+    // --- find_str_field: array (line 121) ---
+    #[test]
+    fn find_str_field_in_array() {
+        let v: serde_json::Value = serde_json::json!([{"k": "a"}, {"k": "b"}]);
+        assert_eq!(find_str_field(&v, "k"), Some("a".into()));
+    }
+
+    // --- find_str_field: scalar returns None (line 122) ---
+    #[test]
+    fn find_str_field_scalar() {
+        let v: serde_json::Value = serde_json::json!("string");
+        assert_eq!(find_str_field(&v, "key"), None);
+    }
+
+    // --- find_str_field: key absent (line 119 fallthrough) ---
+    #[test]
+    fn find_str_field_missing_key() {
+        let v: serde_json::Value = serde_json::json!({"a": 1, "b": 2});
+        assert_eq!(find_str_field(&v, "missing"), None);
+    }
+
+    // --- extract_inputs: command (lines 96-110) ---
+    #[test]
+    fn extract_inputs_command() {
+        let req: RequestPermissionRequest = serde_json::from_value(serde_json::json!({
+            "sessionId": "s1",
+            "toolCall": {
+                "toolCallId": "t1",
+                "kind": "execute",
+                "rawInput": { "command": "cargo build" }
+            },
+            "options": [],
+            "_meta": null
+        })).unwrap();
+        let inputs = extract_inputs(&req);
+        assert_eq!(inputs.command.as_deref(), Some("cargo build"));
+        assert!(!inputs.is_file_edit);
+        assert!(inputs.mcp_tool.is_none());
+    }
+
+    // --- extract_inputs: file edit via kind=="edit" (lines 99-100) ---
+    #[test]
+    fn extract_inputs_file_edit_via_kind() {
+        let req: RequestPermissionRequest = serde_json::from_value(serde_json::json!({
+            "sessionId": "s1",
+            "toolCall": {
+                "toolCallId": "t1",
+                "kind": "edit",
+                "rawInput": {}
+            },
+            "options": [],
+            "_meta": null
+        })).unwrap();
+        let inputs = extract_inputs(&req);
+        assert!(inputs.is_file_edit);
+        assert_eq!(inputs.command, None);
+        assert!(inputs.mcp_tool.is_none());
+    }
+
+    // --- extract_inputs: file edit via write_text_file (lines 99-100) ---
+    #[test]
+    fn extract_inputs_file_edit_via_write_text_file() {
+        let req: RequestPermissionRequest = serde_json::from_value(serde_json::json!({
+            "sessionId": "s1",
+            "toolCall": {
+                "toolCallId": "t1",
+                "rawInput": { "write_text_file": {} }
+            },
+            "options": [],
+            "_meta": null
+        })).unwrap();
+        let inputs = extract_inputs(&req);
+        assert!(inputs.is_file_edit);
+    }
+
+    // --- extract_inputs: MCP tool via "tool" field (lines 102-104) ---
+    #[test]
+    fn extract_inputs_mcp_tool() {
+        let req: RequestPermissionRequest = serde_json::from_value(serde_json::json!({
+            "sessionId": "s1",
+            "toolCall": {
+                "toolCallId": "t1",
+                "rawInput": { "tool": "my_mcp_tool" }
+            },
+            "options": [],
+            "_meta": null
+        })).unwrap();
+        let inputs = extract_inputs(&req);
+        assert_eq!(inputs.mcp_tool.as_deref(), Some("my_mcp_tool"));
+    }
+
+    // --- extract_inputs: MCP tool via "name" fallback (lines 102-104) ---
+    #[test]
+    fn extract_inputs_mcp_tool_via_name() {
+        let req: RequestPermissionRequest = serde_json::from_value(serde_json::json!({
+            "sessionId": "s1",
+            "toolCall": {
+                "toolCallId": "t1",
+                "rawInput": { "name": "mcp_helper" }
+            },
+            "options": [],
+            "_meta": null
+        })).unwrap();
+        let inputs = extract_inputs(&req);
+        assert_eq!(inputs.mcp_tool.as_deref(), Some("mcp_helper"));
+    }
+
+    // --- extract_inputs: MCP filter rejects non-mcp (lines 102-104 filter) ---
+    #[test]
+    fn extract_inputs_no_mcp_without_keyword() {
+        let req: RequestPermissionRequest = serde_json::from_value(serde_json::json!({
+            "sessionId": "s1",
+            "toolCall": {
+                "toolCallId": "t1",
+                "rawInput": { "tool": "some_tool" }
+            },
+            "options": [],
+            "_meta": null
+        })).unwrap();
+        let inputs = extract_inputs(&req);
+        assert!(inputs.mcp_tool.is_none());
+    }
+
+    // --- parse_inputs_from_json with Value::Null (unwrap_or fallback, line 97) ---
+    #[test]
+    fn parse_inputs_from_json_null_fallback() {
+        let inputs = parse_inputs_from_json(&serde_json::Value::Null);
+        assert_eq!(inputs.command, None);
+        assert!(!inputs.is_file_edit);
+        assert_eq!(inputs.mcp_tool, None);
+    }
+
+    // --- deny list takes priority over file edit (lines 50-55 vs 57-65) ---
+    #[test]
+    fn deny_list_wins_over_file_edit() {
+        let p = policy(true, &[], &["rm -rf"]);
+        let input = PermissionInputs {
+            command: Some("rm -rf /".into()),
+            is_file_edit: true,
+            ..Default::default()
+        };
+        // deny-list check runs first, so this is Deny even though accept_edits=true
+        assert!(matches!(decide(Some(&p), &input), Decision::Deny(_)));
+    }
+
+    // --- extract_inputs: both command and mcp_tool (lines 96-110) ---
+    #[test]
+    fn extract_inputs_command_and_mcp_tool() {
+        let req: RequestPermissionRequest = serde_json::from_value(serde_json::json!({
+            "sessionId": "s1",
+            "toolCall": {
+                "toolCallId": "t1",
+                "kind": "execute",
+                "rawInput": {
+                    "command": "cargo build",
+                    "tool": "my_mcp",
+                    "name": "my_mcp"
+                }
+            },
+            "options": [],
+            "_meta": null
+        })).unwrap();
+        let inputs = extract_inputs(&req);
+        assert_eq!(inputs.command.as_deref(), Some("cargo build"));
+        assert!(!inputs.is_file_edit);
+        // mcp_tool is set because raw contains "mcp"
+        assert_eq!(inputs.mcp_tool.as_deref(), Some("my_mcp"));
     }
 }

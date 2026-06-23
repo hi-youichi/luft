@@ -22,3 +22,40 @@ use std::sync::Arc;
 pub fn register_acp_backend(registry: &mut BackendRegistry, config: AcpConfig) {
     registry.register(Arc::new(AcpAdapter::new(config)));
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::BackendRegistry;
+
+    #[test]
+    fn registers_backend_with_opencode_id() {
+        let mut registry = BackendRegistry::new();
+        register_acp_backend(&mut registry, AcpConfig::default());
+        let backend = registry.get("opencode").unwrap();
+        assert_eq!(backend.id(), "opencode");
+    }
+
+    #[test]
+    fn backend_is_retrievable_after_register() {
+        let mut registry = BackendRegistry::new();
+        register_acp_backend(&mut registry, AcpConfig::default());
+        assert!(registry.get("opencode").is_ok());
+    }
+
+    #[test]
+    fn register_overwrites_existing() {
+        let mut registry = BackendRegistry::new();
+        register_acp_backend(&mut registry, AcpConfig::default());
+        register_acp_backend(&mut registry, AcpConfig::default());
+        let backend = registry.get("opencode").unwrap();
+        assert_eq!(backend.id(), "opencode");
+    }
+
+    #[test]
+    fn register_does_not_add_other_ids() {
+        let mut registry = BackendRegistry::new();
+        register_acp_backend(&mut registry, AcpConfig::default());
+        assert!(registry.get("other").is_err());
+    }
+}

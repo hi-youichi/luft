@@ -29,7 +29,7 @@ struct Cli {
     log_level: Option<String>,
 }
 
-#[derive(Subcommand)]
+#[derive(Debug, Subcommand)]
 enum Commands {
     /// Generate a Lua workflow script from a natural language prompt (no execution).
     Generate(GenerateArgs),
@@ -66,7 +66,7 @@ enum Commands {
     McpStructuredOutput(commands::mcp_server::McpStructuredOutputArgs),
 }
 
-#[derive(clap::Args)]
+#[derive(Debug, clap::Args)]
 struct GenerateArgs {
     #[arg(help = "Natural language prompt describing the workflow to generate")]
     nl: String,
@@ -78,7 +78,7 @@ struct GenerateArgs {
     backend: Option<String>,
 }
 
-#[derive(clap::Args)]
+#[derive(Debug, clap::Args)]
 struct RunArgs {
     #[arg(help = "Natural language prompt (auto-generates Lua script)")]
     nl: Option<String>,
@@ -125,7 +125,13 @@ struct RunArgs {
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
+    dispatch(cli).await
+}
 
+/// Dispatch a parsed CLI to the appropriate handler.
+/// Exposed as a separate function so it can be tested without touching
+/// process-global `std::env::args()`.
+async fn dispatch(cli: Cli) -> Result<()> {
     logging::init(cli.log_level.as_deref(), "warn")?;
 
     match cli.command {
@@ -140,4 +146,185 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn dispatch_generate_unknown_backend() {
+        let cli = Cli {
+            command: Commands::Generate(GenerateArgs {
+                nl: "do something".into(),
+                output: None,
+                backend: Some("does-not-exist".into()),
+            }),
+            log_level: Some("debug".into()),
+        };
+        let err = dispatch(cli).await.unwrap_err();
+        assert!(
+            err.to_string().contains("unknown backend"),
+            "expected 'unknown backend' error, got: {}",
+            err
+        );
+    }
+
+    #[tokio::test]
+    async fn dispatch_generate_mock_backend_planner_exhausted() {
+        let cli = Cli {
+            command: Commands::Generate(GenerateArgs {
+                nl: "do something".into(),
+                output: None,
+                backend: Some("mock".into()),
+            }),
+            log_level: None,
+        };
+        let err = dispatch(cli).await.unwrap_err();
+        assert!(
+            err.to_string().contains("planner"),
+            "expected planner error, got: {}",
+            err
+        );
+    }
+
+    #[tokio::test]
+    async fn dispatch_run_unknown_backend() {
+        let cli = Cli {
+            command: Commands::Run(RunArgs {
+                nl: Some("do something".into()),
+                workflow: None,
+                resume: false,
+                confirm: false,
+                backend: Some("does-not-exist".into()),
+                no_acp_raw: false,
+                log: None,
+                log_format: commands::event_log::LogFormat::Pretty,
+                output: None,
+                args_json: None,
+                extra_args: None,
+            }),
+            log_level: None,
+        };
+        let err = dispatch(cli).await.unwrap_err();
+        assert!(
+            err.to_string().contains("unknown backend"),
+            "expected 'unknown backend' error, got: {}",
+            err
+        );
+    }
+
+    #[tokio::test]
+    async fn dispatch_run_without_nl_or_workflow() {
+        let cli = Cli {
+            command: Commands::Run(RunArgs {
+                nl: None,
+                workflow: None,
+                resume: false,
+                confirm: false,
+                backend: Some("mock".into()),
+                no_acp_raw: false,
+                log: None,
+                log_format: commands::event_log::LogFormat::Pretty,
+                output: None,
+                args_json: None,
+                extra_args: None,
+            }),
+            log_level: None,
+        };
+        let err = dispatch(cli).await.unwrap_err();
+        assert!(
+            err.to_string().contains("natural language prompt")
+                || err.to_string().contains("--workflow"),
+            "expected NL/workflow error, got: {}",
+            err
+        );
+    }
+
+    #[tokio::test]
+    async fn dispatch_workflows() {
+        let cli = Cli {
+            command: Commands::Workflows,
+            log_level: None,
+        };
+        dispatch(cli).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn dispatch_save() {
+        let cli = Cli {
+            command: Commands::Save {
+                name: "test".into(),
+                output: PathBuf::from("out.lua"),
+            },
+            log_level: None,
+        };
+        let err = dispatch(cli).await.unwrap_err();
+        assert!(
+            err.to_string().contains("not implemented"),
+            "expected 'not implemented' error, got: {}",
+            err
+        );
+    }
+
+    #[tokio::test]
+    async fn dispatch_list() {
+        let cli = Cli {
+            command: Commands::List { limit: None },
+            log_level: None,
+        };
+        dispatch(cli).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn dispatch_status_not_found() {
+        let cli = Cli {
+            command: Commands::Status {
+                run_dir: "__nonexistent_run__".into(),
+            },
+            log_level: None,
+        };
+        let err = dispatch(cli).await.unwrap_err();
+        assert!(
+            err.to_string().contains("not found")
+                || err.to_string().contains("No such file"),
+            "expected 'not found' error, got: {}",
+            err
+        );
+    }
+
+    #[tokio::test]
+    async fn dispatch_logs_not_found() {
+        let cli = Cli {
+            command: Commands::Logs {
+                run_dir: "__nonexistent_run__".into(),
+                limit: None,
+            },
+            log_level: None,
+        };
+        let err = dispatch(cli).await.unwrap_err();
+        assert!(
+            err.to_string().contains("not found"),
+            "expected 'not found' error, got: {}",
+            err
+        );
+    }
+
+    #[tokio::test]
+    async fn dispatch_mcp_no_schema_file() {
+        let cli = Cli {
+            command: Commands::McpStructuredOutput(
+                commands::mcp_server::McpStructuredOutputArgs {
+                    schema_file: PathBuf::from("/__nonexistent__/schema.json"),
+                },
+            ),
+            log_level: None,
+        };
+        let err = dispatch(cli).await.unwrap_err();
+        assert!(
+            err.to_string().contains("No such file") || err.to_string().contains("os error 2"),
+            "expected filesystem error, got: {}",
+            err
+        );
+    }
 }
