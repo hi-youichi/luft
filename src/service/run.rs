@@ -332,7 +332,16 @@ pub async fn execute(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::scheduler::{BackendRegistry, Scheduler, SchedulerConfig};
+    use crate::core::{MockBackend, MockBehavior};
+    use crate::runtime::{ExecLimits, Runtime};
     use std::collections::HashMap;
+    use std::time::Duration;
+    use tokio_util::sync::CancellationToken;
+
+    // =========================================================================
+    // validate_source
+    // =========================================================================
 
     #[test]
     fn validate_source_none() {
@@ -374,6 +383,356 @@ mod tests {
         assert!(validate_source(&input).is_ok());
     }
 
+    // =========================================================================
+    // slug_sources (private, tested through its 3 branches)
+    // =========================================================================
+
+    #[test]
+    fn slug_sources_workflow_path() {
+        let spec = RunSpec {
+            run_id: RunId::now_v7(),
+            run_dir_name: String::new(),
+            script: String::new(),
+            task_label: "scripts/clean.lua".to_string(),
+            resuming: false,
+            extra_args: serde_json::json!({}),
+        };
+        let (wf, nl) = slug_sources(&spec);
+        assert!(wf.is_some(), "expected workflow path");
+        assert_eq!(wf.unwrap(), Path::new("scripts/clean.lua"));
+        assert!(nl.is_none());
+    }
+
+    #[test]
+    fn slug_sources_maestro_workflow() {
+        let spec = RunSpec {
+            run_id: RunId::now_v7(),
+            run_dir_name: String::new(),
+            script: String::new(),
+            task_label: "maestro workflow".to_string(),
+            resuming: false,
+            extra_args: serde_json::json!({}),
+        };
+        let (wf, nl) = slug_sources(&spec);
+        assert!(wf.is_none());
+        assert!(nl.is_none());
+    }
+
+    #[test]
+    fn slug_sources_nl_label() {
+        let spec = RunSpec {
+            run_id: RunId::now_v7(),
+            run_dir_name: String::new(),
+            script: String::new(),
+            task_label: "research AI trends".to_string(),
+            resuming: false,
+            extra_args: serde_json::json!({}),
+        };
+        let (wf, nl) = slug_sources(&spec);
+        assert!(wf.is_none());
+        assert_eq!(nl, Some("research AI trends"));
+    }
+
+    // =========================================================================
+    // assign_dir_name
+    // =========================================================================
+
+    #[test]
+    fn assign_dir_name_nl_label() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut spec = RunSpec {
+            run_id: RunId::now_v7(),
+            run_dir_name: String::new(),
+            script: String::new(),
+            task_label: "my test task".to_string(),
+            resuming: false,
+            extra_args: serde_json::json!({}),
+        };
+        assign_dir_name(&mut spec, dir.path());
+        assert!(!spec.run_dir_name.is_empty());
+        assert!(
+            spec.run_dir_name.starts_with("my-test-task_"),
+            "expected slug prefix 'my-test-task_', got '{}'",
+            spec.run_dir_name
+        );
+    }
+
+    #[test]
+    fn assign_dir_name_workflow_label() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut spec = RunSpec {
+            run_id: RunId::now_v7(),
+            run_dir_name: String::new(),
+            script: String::new(),
+            task_label: "scripts/deep-research.lua".to_string(),
+            resuming: false,
+            extra_args: serde_json::json!({}),
+        };
+        assign_dir_name(&mut spec, dir.path());
+        assert!(!spec.run_dir_name.is_empty());
+        assert!(
+            spec.run_dir_name.starts_with("deep-research_"),
+            "expected slug prefix 'deep-research_', got '{}'",
+            spec.run_dir_name
+        );
+    }
+
+    #[test]
+    fn assign_dir_name_maestro_label() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut spec = RunSpec {
+            run_id: RunId::now_v7(),
+            run_dir_name: String::new(),
+            script: String::new(),
+            task_label: "maestro workflow".to_string(),
+            resuming: false,
+            extra_args: serde_json::json!({}),
+        };
+        assign_dir_name(&mut spec, dir.path());
+        assert!(!spec.run_dir_name.is_empty());
+        assert!(
+            spec.run_dir_name.starts_with("maestro-workflow_"),
+            "expected slug prefix 'maestro-workflow_', got '{}'",
+            spec.run_dir_name
+        );
+    }
+
+    #[test]
+    fn assign_dir_name_v4_uuid_fallback_timestamp() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut spec = RunSpec {
+            run_id: uuid::Uuid::new_v4(),
+            run_dir_name: String::new(),
+            script: String::new(),
+            task_label: "test".to_string(),
+            resuming: false,
+            extra_args: serde_json::json!({}),
+        };
+        assign_dir_name(&mut spec, dir.path());
+        assert!(!spec.run_dir_name.is_empty());
+        assert!(
+            spec.run_dir_name.starts_with("test_"),
+            "expected slug prefix 'test_', got '{}'",
+            spec.run_dir_name
+        );
+        // ensure_unique may append _2, _3 etc but that's fine
+    }
+
+    // =========================================================================
+    // resolve_script
+    // =========================================================================
+
+    #[tokio::test]
+    async fn resolve_script_script_variant() {
+        let backend: Arc<dyn AgentBackend> = Arc::new(MockBackend::new(
+            "mock",
+            vec![MockBehavior::Success {
+                output: serde_json::json!(""),
+                tokens: TokenUsage::default(),
+                delay: Duration::ZERO,
+            }],
+        ));
+        let result = resolve_script(ScriptSource::Script("print(1)"), backend)
+            .await
+            .unwrap();
+        assert_eq!(result, "print(1)");
+    }
+
+    #[tokio::test]
+    async fn resolve_script_workflow_variant() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.lua");
+        std::fs::write(&path, "print('hello')").unwrap();
+
+        let backend: Arc<dyn AgentBackend> = Arc::new(MockBackend::new(
+            "mock",
+            vec![MockBehavior::Success {
+                output: serde_json::json!(""),
+                tokens: TokenUsage::default(),
+                delay: Duration::ZERO,
+            }],
+        ));
+        let result = resolve_script(ScriptSource::Workflow(&path), backend)
+            .await
+            .unwrap();
+        assert_eq!(result, "print('hello')");
+    }
+
+    #[tokio::test]
+    async fn resolve_script_nl_variant() {
+        let output =
+            serde_json::json!("```lua\nagent({prompt='test'})\nreport({ok=true})\n```");
+        let backend: Arc<dyn AgentBackend> = Arc::new(MockBackend::new(
+            "mock",
+            vec![MockBehavior::Success {
+                output,
+                tokens: TokenUsage::default(),
+                delay: Duration::ZERO,
+            }],
+        ));
+        let result = resolve_script(ScriptSource::Nl("do something"), backend)
+            .await
+            .unwrap();
+        assert!(result.contains("report("), "planned script must contain report()");
+        assert!(!result.contains("```"), "fences should be stripped");
+    }
+
+    // =========================================================================
+    // resolve_fresh
+    // =========================================================================
+
+    #[tokio::test]
+    async fn resolve_fresh_script_variant() {
+        let backend: Arc<dyn AgentBackend> = Arc::new(MockBackend::new(
+            "mock",
+            vec![MockBehavior::Success {
+                output: serde_json::json!(""),
+                tokens: TokenUsage::default(),
+                delay: Duration::ZERO,
+            }],
+        ));
+        let spec = resolve_fresh(ScriptSource::Script("print(1)"), backend)
+            .await
+            .unwrap();
+        assert_eq!(spec.script, "print(1)");
+        assert_eq!(spec.task_label, "maestro workflow");
+        assert!(!spec.resuming);
+    }
+
+    #[tokio::test]
+    async fn resolve_fresh_workflow_variant() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("my_workflow.lua");
+        std::fs::write(&path, "report({ok=true})").unwrap();
+
+        let backend: Arc<dyn AgentBackend> = Arc::new(MockBackend::new(
+            "mock",
+            vec![MockBehavior::Success {
+                output: serde_json::json!(""),
+                tokens: TokenUsage::default(),
+                delay: Duration::ZERO,
+            }],
+        ));
+        let spec = resolve_fresh(ScriptSource::Workflow(&path), backend)
+            .await
+            .unwrap();
+        assert_eq!(spec.script, "report({ok=true})");
+        assert!(spec.task_label.contains("my_workflow.lua"));
+        assert!(!spec.resuming);
+    }
+
+    #[tokio::test]
+    async fn resolve_fresh_nl_variant() {
+        let output =
+            serde_json::json!("```lua\nagent({prompt='test'})\nreport({ok=true})\n```");
+        let backend: Arc<dyn AgentBackend> = Arc::new(MockBackend::new(
+            "mock",
+            vec![MockBehavior::Success {
+                output,
+                tokens: TokenUsage::default(),
+                delay: Duration::ZERO,
+            }],
+        ));
+        let spec = resolve_fresh(ScriptSource::Nl("build a calculator"), backend)
+            .await
+            .unwrap();
+        assert_eq!(spec.task_label, "build a calculator");
+        assert!(!spec.resuming);
+    }
+
+    // =========================================================================
+    // check_resumable — edge cases for the remaining statuses & corrupt data
+    // =========================================================================
+
+    fn write_checkpoint(dir: &std::path::Path, status: CheckpointStatus) {
+        let cp = RunCheckpoint {
+            run_id: RunId::now_v7(),
+            task: "t".into(),
+            status,
+            current_phase: 1,
+            completed_phases: vec![],
+            agent_results: HashMap::new(),
+            findings: vec![],
+            total_tokens: 0,
+            created_at: 0,
+            updated_at: 0,
+        };
+        std::fs::write(
+            dir.join("checkpoint.json"),
+            serde_json::to_string(&cp).unwrap(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn resume_check_cancelled() {
+        let dir = tempfile::tempdir().unwrap();
+        let run_dir = dir.path().join("test_123");
+        std::fs::create_dir_all(&run_dir).unwrap();
+        write_checkpoint(&run_dir, CheckpointStatus::Cancelled);
+
+        let result = check_resumable("test_123", dir.path());
+        assert!(matches!(
+            result,
+            ResumeCheck::NotResumable(CheckpointStatus::Cancelled)
+        ));
+    }
+
+    #[test]
+    fn resume_check_failed() {
+        let dir = tempfile::tempdir().unwrap();
+        let run_dir = dir.path().join("test_123");
+        std::fs::create_dir_all(&run_dir).unwrap();
+        write_checkpoint(&run_dir, CheckpointStatus::Failed);
+
+        let result = check_resumable("test_123", dir.path());
+        assert!(matches!(
+            result,
+            ResumeCheck::NotResumable(CheckpointStatus::Failed)
+        ));
+    }
+
+    #[test]
+    fn resume_check_invalid_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let run_dir = dir.path().join("test_123");
+        std::fs::create_dir_all(&run_dir).unwrap();
+        std::fs::write(run_dir.join("checkpoint.json"), b"not valid json").unwrap();
+
+        let result = check_resumable("test_123", dir.path());
+        assert!(matches!(result, ResumeCheck::CanResume));
+    }
+
+    #[test]
+    fn resume_check_no_status_field() {
+        let dir = tempfile::tempdir().unwrap();
+        let run_dir = dir.path().join("test_123");
+        std::fs::create_dir_all(&run_dir).unwrap();
+        std::fs::write(
+            run_dir.join("checkpoint.json"),
+            br#"{"run_id":"00000000-0000-0000-0000-000000000000","task":"t"}"#,
+        )
+        .unwrap();
+
+        let result = check_resumable("test_123", dir.path());
+        assert!(matches!(result, ResumeCheck::CanResume));
+    }
+
+    #[test]
+    fn resume_check_wrong_status_type() {
+        let dir = tempfile::tempdir().unwrap();
+        let run_dir = dir.path().join("test_123");
+        std::fs::create_dir_all(&run_dir).unwrap();
+        std::fs::write(
+            run_dir.join("checkpoint.json"),
+            br#"{"status":123,"run_id":"00000000-0000-0000-0000-000000000000","task":"t"}"#,
+        )
+        .unwrap();
+
+        let result = check_resumable("test_123", dir.path());
+        assert!(matches!(result, ResumeCheck::CanResume));
+    }
+
     #[test]
     fn resume_check_not_found() {
         let temp_dir = std::env::temp_dir().join("maestro_svc_test_resume_notfound");
@@ -383,74 +742,330 @@ mod tests {
 
     #[test]
     fn resume_check_completed() {
-        let temp_dir = std::env::temp_dir().join("maestro_svc_test_resume_completed");
-        let dir_name = "test_123";
-        let run_dir = temp_dir.join(dir_name);
+        let dir = tempfile::tempdir().unwrap();
+        let run_dir = dir.path().join("test_123");
         std::fs::create_dir_all(&run_dir).unwrap();
+        write_checkpoint(&run_dir, CheckpointStatus::Completed);
 
-        let checkpoint = RunCheckpoint {
-            run_id: RunId::now_v7(),
-            task: "t".into(),
-            status: CheckpointStatus::Completed,
-            current_phase: 1,
-            completed_phases: vec![],
-            agent_results: HashMap::new(),
-            findings: vec![],
-            total_tokens: 0,
-            created_at: 0,
-            updated_at: 0,
-        };
-        std::fs::write(
-            run_dir.join("checkpoint.json"),
-            serde_json::to_string(&checkpoint).unwrap(),
-        ).unwrap();
-
-        let result = check_resumable(dir_name, &temp_dir);
-        assert!(matches!(result, ResumeCheck::NotResumable(CheckpointStatus::Completed)));
-
-        let _ = std::fs::remove_dir_all(&temp_dir);
+        let result = check_resumable("test_123", dir.path());
+        assert!(matches!(
+            result,
+            ResumeCheck::NotResumable(CheckpointStatus::Completed)
+        ));
     }
 
     #[test]
     fn resume_check_running() {
-        let temp_dir = std::env::temp_dir().join("maestro_svc_test_resume_running");
-        let dir_name = "test_123";
-        let run_dir = temp_dir.join(dir_name);
+        let dir = tempfile::tempdir().unwrap();
+        let run_dir = dir.path().join("test_123");
         std::fs::create_dir_all(&run_dir).unwrap();
+        write_checkpoint(&run_dir, CheckpointStatus::Running);
 
-        let checkpoint = RunCheckpoint {
-            run_id: RunId::now_v7(),
-            task: "t".into(),
-            status: CheckpointStatus::Running,
-            current_phase: 1,
-            completed_phases: vec![],
-            agent_results: HashMap::new(),
-            findings: vec![],
-            total_tokens: 0,
-            created_at: 0,
-            updated_at: 0,
-        };
-        std::fs::write(
-            run_dir.join("checkpoint.json"),
-            serde_json::to_string(&checkpoint).unwrap(),
-        ).unwrap();
-
-        let result = check_resumable(dir_name, &temp_dir);
+        let result = check_resumable("test_123", dir.path());
         assert!(matches!(result, ResumeCheck::CanResume));
-
-        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
     #[test]
     fn resume_check_no_checkpoint() {
-        let temp_dir = std::env::temp_dir().join("maestro_svc_test_resume_nockpt");
-        let dir_name = "test_123";
-        let run_dir = temp_dir.join(dir_name);
+        let dir = tempfile::tempdir().unwrap();
+        let run_dir = dir.path().join("test_123");
         std::fs::create_dir_all(&run_dir).unwrap();
 
-        let result = check_resumable(dir_name, &temp_dir);
+        let result = check_resumable("test_123", dir.path());
         assert!(matches!(result, ResumeCheck::CanResume));
+    }
 
-        let _ = std::fs::remove_dir_all(&temp_dir);
+    // =========================================================================
+    // resolve_resume
+    // =========================================================================
+
+    fn make_checkpoint_json(dir: &std::path::Path, run_id: RunId, status: &str, task: &str) {
+        let cp = serde_json::json!({
+            "run_id": run_id,
+            "task": task,
+            "status": status,
+            "current_phase": 0,
+            "completed_phases": [],
+            "agent_results": {},
+            "findings": [],
+            "total_tokens": 0,
+            "created_at": 0,
+            "updated_at": 0,
+        });
+        std::fs::write(dir.join("checkpoint.json"), serde_json::to_string(&cp).unwrap()).unwrap();
+    }
+
+    fn write_workflow_lua(dir: &std::path::Path, content: &str) {
+        std::fs::write(dir.join("workflow.lua"), content).unwrap();
+    }
+
+    #[test]
+    fn resolve_resume_success() {
+        let dir = tempfile::tempdir().unwrap();
+        let run_dir = dir.path().join("my_run_123");
+        std::fs::create_dir_all(&run_dir).unwrap();
+        let run_id = RunId::now_v7();
+        make_checkpoint_json(&run_dir, run_id, "running", "test task");
+        write_workflow_lua(&run_dir, "print('resume')");
+
+        let spec = resolve_resume("my_run_123", dir.path()).unwrap();
+        assert_eq!(spec.run_id, run_id);
+        assert_eq!(spec.task_label, "test task");
+        assert_eq!(spec.script, "print('resume')");
+        assert!(spec.resuming);
+        assert_eq!(spec.run_dir_name, "my_run_123");
+    }
+
+    #[test]
+    fn resolve_resume_not_found() {
+        let dir = tempfile::tempdir().unwrap();
+        let err = format!("{}", resolve_resume("nonexistent", dir.path()).err().unwrap());
+        assert!(err.contains("not found"), "expected 'not found' error, got: {}", err);
+    }
+
+    #[test]
+    fn resolve_resume_not_resumable_completed() {
+        let dir = tempfile::tempdir().unwrap();
+        let run_dir = dir.path().join("my_run");
+        std::fs::create_dir_all(&run_dir).unwrap();
+        make_checkpoint_json(&run_dir, RunId::now_v7(), "completed", "t");
+        write_workflow_lua(&run_dir, "x");
+
+        let err = format!("{}", resolve_resume("my_run", dir.path()).err().unwrap());
+        assert!(err.contains("not resumable"), "expected 'not resumable' error, got: {}", err);
+    }
+
+    #[test]
+    fn resolve_resume_not_resumable_cancelled() {
+        let dir = tempfile::tempdir().unwrap();
+        let run_dir = dir.path().join("my_run");
+        std::fs::create_dir_all(&run_dir).unwrap();
+        make_checkpoint_json(&run_dir, RunId::now_v7(), "cancelled", "t");
+        write_workflow_lua(&run_dir, "x");
+
+        let err = format!("{}", resolve_resume("my_run", dir.path()).err().unwrap());
+        assert!(err.contains("not resumable"), "expected 'not resumable' error, got: {}", err);
+    }
+
+    #[test]
+    fn resolve_resume_not_resumable_failed() {
+        let dir = tempfile::tempdir().unwrap();
+        let run_dir = dir.path().join("my_run");
+        std::fs::create_dir_all(&run_dir).unwrap();
+        make_checkpoint_json(&run_dir, RunId::now_v7(), "failed", "t");
+        write_workflow_lua(&run_dir, "x");
+
+        let err = format!("{}", resolve_resume("my_run", dir.path()).err().unwrap());
+        assert!(err.contains("not resumable"), "expected 'not resumable' error, got: {}", err);
+    }
+
+    #[test]
+    fn resolve_resume_missing_workflow_lua() {
+        let dir = tempfile::tempdir().unwrap();
+        let run_dir = dir.path().join("my_run");
+        std::fs::create_dir_all(&run_dir).unwrap();
+        make_checkpoint_json(&run_dir, RunId::now_v7(), "running", "t");
+        // Intentionally do NOT write workflow.lua
+
+        let err = format!("{}", resolve_resume("my_run", dir.path()).err().unwrap());
+        assert!(err.contains("workflow.lua"), "expected 'workflow.lua' error, got: {}", err);
+    }
+
+    // =========================================================================
+    // latest_resumable
+    // =========================================================================
+
+    #[test]
+    fn latest_resumable_found() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // Create two run dirs; the last in sorted order should be returned.
+        for name in ["alpha_100", "beta_200"] {
+            let d = dir.path().join(name);
+            std::fs::create_dir_all(&d).unwrap();
+            make_checkpoint_json(&d, RunId::now_v7(), "running", "t");
+        }
+
+        let found = latest_resumable(dir.path()).unwrap();
+        assert_eq!(found, "beta_200");
+    }
+
+    #[test]
+    fn latest_resumable_not_found() {
+        let dir = tempfile::tempdir().unwrap();
+        // Empty directory — no runs at all.
+        let err = latest_resumable(dir.path()).unwrap_err();
+        assert!(
+            err.to_string().contains("no resumable run"),
+            "expected 'no resumable run' error, got: {}",
+            err
+        );
+    }
+
+    // =========================================================================
+    // prepare — fresh run
+    // =========================================================================
+
+    fn make_prepare_backend() -> Arc<dyn AgentBackend> {
+        Arc::new(MockBackend::new(
+            "mock",
+            vec![MockBehavior::Success {
+                output: serde_json::json!({}),
+                tokens: TokenUsage::default(),
+                delay: Duration::ZERO,
+            }],
+        ))
+    }
+
+    #[tokio::test]
+    async fn prepare_fresh_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let run_id = RunId::now_v7();
+        let (tx, _rx) = tokio::sync::broadcast::channel(16);
+        let run_ctx = RunContext {
+            run_id,
+            cancel: CancellationToken::new(),
+            events: tx,
+        };
+        let run_dir_name = "fresh_run_42".to_string();
+
+        // Create the run directory beforehand (prepare creates JournalStore there)
+        let run_dir = dir.path().join(&run_dir_name);
+        std::fs::create_dir_all(&run_dir).unwrap();
+
+        let spec = RunSpec {
+            run_id,
+            run_dir_name,
+            script: "report({ok=true})".to_string(),
+            task_label: "fresh test".to_string(),
+            resuming: false,
+            extra_args: serde_json::json!({}),
+        };
+
+        let backend = make_prepare_backend();
+        let _prepared = prepare(&spec, backend, dir.path(), &run_ctx).unwrap();
+
+        // Fresh run: workflow.lua should have been written
+        assert!(run_dir.join("workflow.lua").exists(), "workflow.lua should exist");
+        assert!(run_dir.join("checkpoint.json").exists(), "checkpoint.json should exist");
+
+        // Journal and runtime should be accessible
+        let content = std::fs::read_to_string(run_dir.join("workflow.lua")).unwrap();
+        assert_eq!(content, "report({ok=true})");
+    }
+
+    // =========================================================================
+    // prepare — resume run
+    // =========================================================================
+
+    #[tokio::test]
+    async fn prepare_resume_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let run_id = RunId::now_v7();
+        let run_dir_name = "resume_run_99".to_string();
+        let run_dir = dir.path().join(&run_dir_name);
+        std::fs::create_dir_all(&run_dir).unwrap();
+
+        // Seed a journal + workflow.lua as if a prior run had been started.
+        let journal = JournalStore::new(&run_dir).unwrap();
+        journal.init_run(run_id, "resume test").unwrap();
+        write_workflow_lua(&run_dir, "report({resumed=true})");
+        drop(journal);
+
+        let (tx, _rx) = tokio::sync::broadcast::channel(16);
+        let run_ctx = RunContext {
+            run_id,
+            cancel: CancellationToken::new(),
+            events: tx,
+        };
+
+        let spec = RunSpec {
+            run_id,
+            run_dir_name,
+            script: String::new(),
+            task_label: String::new(),
+            resuming: true,
+            extra_args: serde_json::json!({}),
+        };
+
+        let backend = make_prepare_backend();
+        let _prepared = prepare(&spec, backend, dir.path(), &run_ctx).unwrap();
+
+        // Resume should NOT overwrite workflow.lua
+        let content = std::fs::read_to_string(run_dir.join("workflow.lua")).unwrap();
+        assert_eq!(content, "report({resumed=true})");
+    }
+
+    // =========================================================================
+    // execute
+    // =========================================================================
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn execute_script_success() {
+        let run_id = RunId::now_v7();
+        let (tx, _rx) = tokio::sync::broadcast::channel(256);
+        let run_ctx = RunContext {
+            run_id,
+            cancel: CancellationToken::new(),
+            events: tx,
+        };
+
+        let backend = make_prepare_backend();
+        let registry = BackendRegistry::new().with(backend);
+        let scheduler = Scheduler::new(SchedulerConfig::default(), registry, None);
+        scheduler.init_run_with(run_id, run_ctx.events.clone());
+
+        let handle = tokio::runtime::Handle::current();
+        let runtime = Runtime::new(
+            scheduler,
+            run_ctx.clone(),
+            serde_json::json!({}),
+            ExecLimits::default(),
+            None,
+            handle,
+        )
+        .unwrap();
+
+        let script = "report({hello = 'world'})".to_string();
+        let result = execute(&run_ctx, runtime, script).await.unwrap();
+        assert!(result.is_ok());
+        let val = result.unwrap();
+        assert_eq!(val["hello"], "world");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn execute_script_error() {
+        let run_id = RunId::now_v7();
+        let (tx, _rx) = tokio::sync::broadcast::channel(256);
+        let run_ctx = RunContext {
+            run_id,
+            cancel: CancellationToken::new(),
+            events: tx,
+        };
+
+        let backend = make_prepare_backend();
+        let registry = BackendRegistry::new().with(backend);
+        let scheduler = Scheduler::new(SchedulerConfig::default(), registry, None);
+        scheduler.init_run_with(run_id, run_ctx.events.clone());
+
+        let handle = tokio::runtime::Handle::current();
+        let runtime = Runtime::new(
+            scheduler,
+            run_ctx.clone(),
+            serde_json::json!({}),
+            ExecLimits::default(),
+            None,
+            handle,
+        )
+        .unwrap();
+
+        // Invalid Lua syntax should produce a ScriptError
+        let script = "this is not valid lua @@".to_string();
+        let result = execute(&run_ctx, runtime, script).await.unwrap();
+        assert!(result.is_err());
+        match result {
+            Err(ScriptError::Syntax(_)) => {} // expected
+            _ => panic!("expected Syntax error, got {:?}", result),
+        }
     }
 }
