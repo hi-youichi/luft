@@ -87,7 +87,7 @@ pub async fn run_workflow(args: RunArgs) -> Result<()> {
         events: events_tx,
     };
 
-    let prepared = svc::prepare(&spec, backend, &base_dir, &run_ctx)?;
+    let prepared = svc::prepare(&spec, backend, &base_dir, &run_ctx).await?;
     if spec.resuming {
         println!(
             "Resuming run {} ({} agents cached)",

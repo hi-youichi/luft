@@ -2,6 +2,7 @@
 use crate::core::contract::event::{AgentEvent, RunStatus};
 use crate::core::contract::ids::{RunId, TokenUsage};
 use crate::core::journal::JournalStore;
+use crate::storage::{open_db, EventWriter};
 use crate::core::run_dir::{compose, derive_slug, ensure_unique};
 use crate::core::scheduler::{BackendRegistry, Scheduler, SchedulerConfig};
 use crate::core::state::{list_runs, CheckpointStatus, RunCheckpoint};
@@ -216,7 +217,7 @@ pub struct PreparedRun {
 /// token: the CLI subscribes locally for headless output. Must be
 /// called from within a tokio runtime (it spawns the forwarder and captures
 /// `Handle::current()`).
-pub fn prepare(
+pub async fn prepare(
     spec: &RunSpec,
     backend: Arc<dyn AgentBackend>,
     base_dir: &Path,
@@ -226,7 +227,7 @@ pub fn prepare(
 
     // Journal: fresh runs init + persist the script (so they can be resumed);
     // resume runs open the journal to replay cached agents.
-    let journal = Arc::new(
+let journal = Arc::new(
         JournalStore::new(&run_dir).map_err(|e| anyhow::anyhow!("failed to open journal: {}", e))?,
     );
     if spec.resuming {
@@ -240,17 +241,30 @@ pub fn prepare(
         std::fs::write(run_dir.join("workflow.lua"), &spec.script)?;
     }
 
+    // SQLite structured persistence — shared across runs. Optional; if the DB
+    // can't be opened (e.g. read-only filesystem) we keep going so journal +
+    // JSONL remain the source of truth for resume.
+    let sqlite_writer = match open_db(&run_dir.parent().unwrap_or(base_dir).join(crate::storage::DEFAULT_DB_PATH)).await {
+        Ok(pool) => Some(EventWriter::new(pool)),
+        Err(e) => {
+            tracing::warn!(error = %e, "sqlite persistence disabled for this run");
+            None
+        }
+    };
+
     // Scheduler. Journaling is handled inside the runtime (cache-key aware), so
     // no scheduler-level callback is required.
     let registry = BackendRegistry::new().with(backend);
     let scheduler = Scheduler::new(SchedulerConfig::default(), registry, None);
     scheduler.init_run_with(spec.run_id, run_ctx.events.clone());
 
-    // Forward the scheduler event stream into the journal's run store — the
-    // single persistence instance for this run (avoids split-brain checkpoints).
+    // Forward the scheduler event stream into BOTH:
+    //   1. Journal (checkpoint.json + events.jsonl) — for resume
+    //   2. SQLite (turns/agents/runs/spans/events tables) — for UI query
     let store = journal.store();
     let mut rx = run_ctx.events.subscribe();
     let fwd_run_id = spec.run_id;
+    let sqlite_writer_fwd = sqlite_writer.clone();
     tokio::spawn(async move {
         loop {
             match rx.recv().await {
@@ -260,6 +274,11 @@ pub fn prepare(
                 Ok(evt) => {
                     if let Err(e) = store.append_event(&evt) {
                         tracing::warn!(run_id = %fwd_run_id, error = %e, "failed to persist event to journal");
+                    }
+                    if let Some(w) = &sqlite_writer_fwd {
+                        if let Err(e) = w.write_event(&evt).await {
+                            tracing::warn!(run_id = %fwd_run_id, error = %e, "failed to persist event to sqlite");
+                        }
                     }
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
@@ -943,7 +962,7 @@ mod tests {
         };
 
         let backend = make_prepare_backend();
-        let _prepared = prepare(&spec, backend, dir.path(), &run_ctx).unwrap();
+        let _prepared = prepare(&spec, backend, dir.path(), &run_ctx).await.unwrap();
 
         // Fresh run: workflow.lua should have been written
         assert!(run_dir.join("workflow.lua").exists(), "workflow.lua should exist");
@@ -989,7 +1008,7 @@ mod tests {
         };
 
         let backend = make_prepare_backend();
-        let _prepared = prepare(&spec, backend, dir.path(), &run_ctx).unwrap();
+        let _prepared = prepare(&spec, backend, dir.path(), &run_ctx).await.unwrap();
 
         // Resume should NOT overwrite workflow.lua
         let content = std::fs::read_to_string(run_dir.join("workflow.lua")).unwrap();
