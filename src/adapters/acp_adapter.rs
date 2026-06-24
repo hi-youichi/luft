@@ -37,8 +37,12 @@ const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
 /// ACP backend configuration.
 #[derive(Debug, Clone)]
 pub struct AcpConfig {
+    /// Backend identifier (returned by `AgentBackend::id`).
+    pub id: &'static str,
     /// Agent binary; resolved from `PATH`. Defaults to `opencode`.
     pub binary: PathBuf,
+    /// Extra arguments passed to the agent binary (e.g. `["acp"]`).
+    pub acp_args: Vec<&'static str>,
     /// Optional `--log-level` passed to the agent.
     pub log_level: Option<String>,
     /// `initialize` handshake timeout.
@@ -52,7 +56,9 @@ pub struct AcpConfig {
 impl Default for AcpConfig {
     fn default() -> Self {
         Self {
+            id: "opencode",
             binary: PathBuf::from("opencode"),
+            acp_args: vec!["acp"],
             log_level: None,
             connect_timeout: Duration::from_secs(10),
             emit_raw_events: true,
@@ -79,7 +85,7 @@ impl AcpAdapter {
 #[async_trait]
 impl AgentBackend for AcpAdapter {
     fn id(&self) -> &'static str {
-        "opencode"
+        self.config.id
     }
 
     fn capabilities(&self) -> AgentCapabilities {
@@ -132,7 +138,7 @@ async fn run_acp_session(
 ) -> Result<AgentResult, BackendError> {
     // 1. Spawn `opencode acp`.
     let mut cmd = tokio::process::Command::new(&config.binary);
-    cmd.arg("acp");
+    cmd.args(&config.acp_args);
     if let Some(level) = &config.log_level {
         cmd.arg("--log-level").arg(level);
     }
@@ -422,13 +428,14 @@ mod tests {
     #[test]
     fn new_adapter_accepts_custom_config() {
         let config = AcpConfig {
+            id: "custom-agent",
             binary: PathBuf::from("custom-agent"),
             log_level: Some("debug".into()),
             connect_timeout: Duration::from_secs(30),
             emit_raw_events: false,
         };
         let adapter = AcpAdapter::new(config);
-        assert_eq!(adapter.id(), "opencode");
+        assert_eq!(adapter.id(), "custom-agent");
         assert!(adapter.capabilities().streaming);
     }
 

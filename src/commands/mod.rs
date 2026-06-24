@@ -1,6 +1,7 @@
 //! Binary command handlers — one module per CLI subcommand. `main` parses
 //! args and routes each subcommand to the matching handler here.
 
+pub mod backend;
 pub mod event_log;
 pub mod mcp_server;
 pub mod generate;

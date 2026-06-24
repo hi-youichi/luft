@@ -16,22 +16,16 @@ use std::path::{Path, PathBuf};
 
 pub async fn run_workflow(args: RunArgs) -> Result<()> {
     let is_nl = args.nl.is_some();
-    let backend_id = match args.backend.as_deref() {
-        Some(id) => id.to_string(),
-        None => {
-            let detected = backend::detect_backend();
-            if is_nl && detected == "mock" {
-                anyhow::bail!(
-                    "NL mode requires a real LLM backend. \
-                     Install opencode (https://opencode.ai) or specify --backend <id>"
-                );
-            }
-            if is_nl {
-                eprintln!("ℹ  no --backend specified, auto-detected: {}", detected);
-            }
-            detected.to_string()
-        }
-    };
+    let backend_id = crate::config::resolve_default_backend(args.backend.as_deref());
+    if is_nl && backend_id == "mock" {
+        anyhow::bail!(
+            "NL mode requires a real LLM backend. \
+             Install opencode (https://opencode.ai) or specify --backend <id>"
+        );
+    }
+    if is_nl && args.backend.is_none() {
+        eprintln!("ℹ  no --backend specified, auto-detected: {}", backend_id);
+    }
     let backend = backend::create_backend(&backend_id, !args.no_acp_raw)?;
     let base_dir = runs_base_dir();
 

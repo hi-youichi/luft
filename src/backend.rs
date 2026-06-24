@@ -2,6 +2,7 @@
 
 use anyhow::Result;
 use maestro::core::{AgentBackend, MockBackend, MockBehavior, TokenUsage};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 /// Construct a backend by id. `emit_raw_events` toggles the ACP backend's raw
@@ -17,13 +18,42 @@ pub fn create_backend(id: &str, emit_raw_events: bool) -> Result<Arc<dyn AgentBa
             }],
         ))),
         "opencode" => Ok(Arc::new(maestro::adapters::AcpAdapter::new(
-            maestro::adapters::AcpConfig {
+            apply_acp_overrides(maestro::adapters::AcpConfig {
                 emit_raw_events,
                 ..Default::default()
-            },
+            }),
+        ))),
+        "loom-acp" => Ok(Arc::new(maestro::adapters::AcpAdapter::new(
+            apply_acp_overrides(maestro::adapters::AcpConfig {
+                id: "loom-acp",
+                binary: PathBuf::from("loom-acp"),
+                acp_args: vec![],
+                emit_raw_events,
+                ..Default::default()
+            }),
         ))),
         _ => anyhow::bail!("unknown backend: {}", id),
     }
+}
+
+/// Merge config file ACP overrides into the given config.
+fn apply_acp_overrides(mut cfg: maestro::adapters::AcpConfig) -> maestro::adapters::AcpConfig {
+    let over = crate::config::load_config()
+        .map(|c| c.backend.acp)
+        .unwrap_or_default();
+    if let Some(b) = over.binary {
+        cfg.binary = b;
+    }
+    if let Some(v) = over.log_level {
+        cfg.log_level = Some(v);
+    }
+    if let Some(s) = over.connect_timeout_secs {
+        cfg.connect_timeout = std::time::Duration::from_secs(s);
+    }
+    if let Some(v) = over.emit_raw_events {
+        cfg.emit_raw_events = v;
+    }
+    cfg
 }
 
 pub fn detect_backend() -> &'static str {
@@ -34,7 +64,7 @@ pub fn detect_backend() -> &'static str {
     }
 }
 
-fn which_exists(cmd: &str) -> bool {
+pub(crate) fn which_exists(cmd: &str) -> bool {
     std::process::Command::new("which")
         .arg(cmd)
         .stdout(std::process::Stdio::null())

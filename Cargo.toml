@@ -42,6 +42,8 @@ jsonschema = "0.18"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 tempfile = "3"
+toml = "0.8"
+dirs = "5"
 
 # Storage (SQLite via sqlx)
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "chrono", "uuid", "json", "macros", "migrate"] }

@@ -7,20 +7,16 @@ use maestro::core::AgentBackend;
 use std::sync::Arc;
 
 pub async fn generate_script(args: GenerateArgs) -> Result<()> {
-    let backend_id = match args.backend.as_deref() {
-        Some(id) => id.to_string(),
-        None => {
-            let detected = backend::detect_backend();
-            if detected == "mock" {
-                anyhow::bail!(
-                    "NL generation requires a real LLM backend. \
-                     Install opencode (https://opencode.ai) or specify --backend <id>"
-                );
-            }
-            eprintln!("ℹ  no --backend specified, auto-detected: {}", detected);
-            detected.to_string()
-        }
-    };
+    let backend_id = crate::config::resolve_default_backend(args.backend.as_deref());
+    if backend_id == "mock" {
+        anyhow::bail!(
+            "NL generation requires a real LLM backend. \
+             Install opencode (https://opencode.ai) or specify --backend <id>"
+        );
+    }
+    if args.backend.is_none() {
+        eprintln!("ℹ  no --backend specified, auto-detected: {}", backend_id);
+    }
 
     let backend = backend::create_backend(&backend_id, false)?;
     generate_script_with_backend(args, backend).await

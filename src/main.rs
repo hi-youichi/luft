@@ -11,6 +11,7 @@
 
 mod backend;
 mod commands;
+mod config;
 mod logging;
 
 use anyhow::Result;
@@ -61,6 +62,9 @@ enum Commands {
         #[arg(help = "Run directory name to inspect")]
         run_dir: String,
     },
+    /// Manage backends (list / info / check).
+    #[command(subcommand)]
+    Backend(commands::backend::BackendSubcommand),
     /// MCP server subcommand for structured output injection (internal).
     #[command(hide = true)]
     McpStructuredOutput(commands::mcp_server::McpStructuredOutputArgs),
@@ -142,6 +146,13 @@ async fn dispatch(cli: Cli) -> Result<()> {
         Commands::List { limit } => commands::list::list_runs_cmd(limit)?,
         Commands::Status { run_dir } => commands::status::status_run_cmd(run_dir)?,
         Commands::Logs { run_dir, limit } => commands::logs::logs_run_cmd(run_dir, limit)?,
+        Commands::Backend(cmd) => match cmd {
+            commands::backend::BackendSubcommand::List => commands::backend::list_backends(),
+            commands::backend::BackendSubcommand::Info { id } => commands::backend::info_backend(id),
+            commands::backend::BackendSubcommand::Check { id } => commands::backend::check_backend(id),
+            commands::backend::BackendSubcommand::Config { key, value } => commands::backend::config_backend(key, value),
+            commands::backend::BackendSubcommand::Set { id } => commands::backend::set_default_backend(id),
+        },
         Commands::McpStructuredOutput(args) => commands::mcp_server::run(args)?,
     }
 
