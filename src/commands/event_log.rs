@@ -160,7 +160,7 @@ mod tests {
 
     #[test]
     fn jsonl_matches_serde_to_string() {
-        let evt = AgentEvent::PhaseDone { run_id: rid(), phase_id: 2, ok: 1, failed: 0 };
+        let evt = AgentEvent::PhaseDone { run_id: rid(), phase_id: 2, ok: 1, failed: 0, ts: chrono::Utc::now() };
         let dir = std::env::temp_dir().join(format!("maestro_evlog_{}", uuid::Uuid::now_v7()));
         let mut logger = EventLogger::new(Some(&dir), LogFormat::Jsonl).unwrap();
         logger.write(&evt).unwrap();
@@ -211,14 +211,14 @@ mod tests {
         let t = TokenUsage { input: 10, output: 5, cache_read: 0, cache_write: 0 };
         let cases: Vec<(AgentEvent, &str)> = vec![
             (AgentEvent::RunStarted { run_id: r, task: "x".into(), ts: chrono::Utc::now() }, "run started: x"),
-            (AgentEvent::PhaseStarted { run_id: r, phase_id: 1, label: "work".into(), planned: 3 }, "phase 1 started"),
+            (AgentEvent::PhaseStarted { run_id: r, phase_id: 1, label: "work".into(), planned: 3, ts: chrono::Utc::now() }, "phase 1 started"),
             (AgentEvent::AgentStarted { run_id: r, phase_id: 0, agent_id: r, prompt_preview: "".into(), model: None }, "agent "),
             (AgentEvent::AgentStarted { run_id: r, phase_id: 0, agent_id: r, prompt_preview: "".into(), model: Some("claude".into()) }, "model claude"),
             (AgentEvent::AgentProgress { run_id: r, agent_id: r, delta: ProgressDelta::Message { text: "hello".into() } }, "agent "),
             (AgentEvent::AcpRaw { run_id: r, agent_id: r, kind: "plan".into(), raw: serde_json::json!({}) }, "acp raw: plan"),
             (AgentEvent::AgentDone { run_id: r, agent_id: r, status: AgentStatus::Error, tokens: TokenUsage::default(), elapsed_ms: 5 }, "agent "),
-            (AgentEvent::PhaseDone { run_id: r, phase_id: 1, ok: 2, failed: 0 }, "phase 1 done: 2 ok"),
-            (AgentEvent::RunDone { run_id: r, status: RunStatus::Completed, total_tokens: TokenUsage::default(), report: serde_json::json!(null) }, "run done"),
+            (AgentEvent::PhaseDone { run_id: r, phase_id: 1, ok: 2, failed: 0, ts: chrono::Utc::now() }, "phase 1 done: 2 ok"),
+            (AgentEvent::RunDone { run_id: r, status: RunStatus::Completed, total_tokens: TokenUsage::default(), report: serde_json::json!(null), ts: chrono::Utc::now() }, "run done"),
             (AgentEvent::Log { run_id: r, agent_id: None, level: LogLevel::Info, msg: "hello".into() }, "log [Info] hello"),
             (AgentEvent::BudgetSet { run_id: r, time_limit_ms: Some(5000), max_rounds: Some(10) }, "budget set: time=Some(5000)ms"),
             (AgentEvent::BudgetSet { run_id: r, time_limit_ms: None, max_rounds: None }, "budget set: time=None"),

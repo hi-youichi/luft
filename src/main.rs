@@ -61,6 +61,13 @@ enum Commands {
         #[arg(help = "Run directory name to inspect")]
         run_dir: String,
     },
+    /// Show planned phases for a past run (uses the script's `meta` table when available).
+    Phases {
+        #[arg(help = "Run directory name to inspect")]
+        run_dir: String,
+        #[arg(long, help = "Render phases view as JSON instead of a plain-text table")]
+        json: bool,
+    },
     /// MCP server subcommand for structured output injection (internal).
     #[command(hide = true)]
     McpStructuredOutput(commands::mcp_server::McpStructuredOutputArgs),
@@ -142,6 +149,9 @@ async fn dispatch(cli: Cli) -> Result<()> {
         Commands::List { limit } => commands::list::list_runs_cmd(limit)?,
         Commands::Status { run_dir } => commands::status::status_run_cmd(run_dir)?,
         Commands::Logs { run_dir, limit } => commands::logs::logs_run_cmd(run_dir, limit)?,
+        Commands::Phases { run_dir, json } => {
+            commands::phases::phases_cmd(run_dir, commands::phases::PhasesArgs { json })?;
+        }
         Commands::McpStructuredOutput(args) => commands::mcp_server::run(args)?,
     }
 

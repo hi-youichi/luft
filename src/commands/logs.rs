@@ -171,7 +171,7 @@ mod tests {
         use maestro::core::contract::backend::AgentStatus;
         let events = vec![
             AgentEvent::RunStarted { run_id, task: "t".into(), ts: chrono::Utc::now() },
-            AgentEvent::PhaseStarted { run_id, phase_id: 0, label: "phase 0".into(), planned: 2 },
+            AgentEvent::PhaseStarted { run_id, phase_id: 0, label: "phase 0".into(), planned: 2, ts: chrono::Utc::now() },
             AgentEvent::AgentStarted {
                 run_id,
                 phase_id: 0,
@@ -191,12 +191,13 @@ mod tests {
                 tokens: TokenUsage { input: 10, output: 5, cache_read: 0, cache_write: 0 },
                 elapsed_ms: 500,
             },
-            AgentEvent::PhaseDone { run_id, phase_id: 0, ok: 1, failed: 0 },
+            AgentEvent::PhaseDone { run_id, phase_id: 0, ok: 1, failed: 0, ts: chrono::Utc::now() },
             AgentEvent::RunDone {
                 run_id,
                 status: RunStatus::Completed,
                 total_tokens: TokenUsage { input: 10, output: 5, cache_read: 0, cache_write: 0 },
                 report: serde_json::json!({"result": "done"}),
+            ts: chrono::Utc::now(),
             },
             AgentEvent::Log {
                 run_id,

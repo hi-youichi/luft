@@ -64,6 +64,29 @@ pub async fn resolve_script(
     }
 }
 
+/// The result of script resolution: script text + extracted meta.
+#[derive(Debug, Clone)]
+pub struct ResolvedScript {
+    pub script: String,
+    pub meta: Option<crate::planner::PlanMeta>,
+}
+
+/// Resolve a script source AND extract any `meta = {...}` table.
+pub async fn resolve_script_with_meta(
+    source: ScriptSource<'_>,
+    backend: Arc<dyn AgentBackend>,
+) -> Result<ResolvedScript> {
+    let script = resolve_script(source, backend).await?;
+    let meta = match crate::planner::extract_meta(&script) {
+        Ok(m) => m,
+        Err(e) => {
+            tracing::warn!(error = %e, "meta extraction failed; continuing without meta");
+            None
+        }
+    };
+    Ok(ResolvedScript { script, meta })
+}
+
 pub enum ResumeCheck {
     CanResume,
     NotFound,
@@ -109,6 +132,8 @@ pub struct RunSpec {
     pub resuming: bool,
     /// JSON arguments passed to the workflow (the Lua `args` global).
     pub extra_args: serde_json::Value,
+    /// Declarative workflow metadata extracted from the script's `meta = {...}` table.
+    pub workflow_meta: Option<crate::planner::PlanMeta>,
 }
 
 /// Resolve a fresh run from a script source: plans NL / reads a workflow file /
@@ -123,15 +148,16 @@ pub async fn resolve_fresh(
         ScriptSource::Workflow(p) => p.display().to_string(),
         ScriptSource::Script(_) => "maestro workflow".to_string(),
     };
-    let script = resolve_script(source, backend).await?;
+    let resolved = resolve_script_with_meta(source, backend).await?;
     let run_id = RunId::now_v7();
     Ok(RunSpec {
         run_id,
-        script,
+        script: resolved.script,
         task_label,
         resuming: false,
         extra_args: serde_json::json!({}),
         run_dir_name: String::new(),
+        workflow_meta: resolved.meta,
     })
 }
 
@@ -188,6 +214,7 @@ pub fn resolve_resume(run_dir_name: &str, base_dir: &Path) -> Result<RunSpec> {
         task_label: checkpoint.task,
         resuming: true,
         extra_args: serde_json::json!({}),
+        workflow_meta: checkpoint.workflow_meta,
     })
 }
 
@@ -235,10 +262,15 @@ let journal = Arc::new(
             .open(spec.run_id)
             .map_err(|e| anyhow::anyhow!("failed to open journal for resume: {}", e))?;
     } else {
-        journal
-            .init_run(spec.run_id, &spec.task_label)
-            .map_err(|e| anyhow::anyhow!("failed to init journal: {}", e))?;
         std::fs::write(run_dir.join("workflow.lua"), &spec.script)?;
+        match &spec.workflow_meta {
+            Some(meta) => journal
+                .init_run_with_meta(spec.run_id, &spec.task_label, meta.clone())
+                .map_err(|e| anyhow::anyhow!("failed to init journal with meta: {}", e))?,
+            None => journal
+                .init_run(spec.run_id, &spec.task_label)
+                .map_err(|e| anyhow::anyhow!("failed to init journal: {}", e))?,
+        }
     }
 
     // SQLite structured persistence — shared across runs. Optional; if the DB
@@ -329,6 +361,7 @@ pub async fn execute(
                 status: RunStatus::Failed,
                 total_tokens: TokenUsage::default(),
                 report: serde_json::Value::Null,
+                ts: chrono::Utc::now(),
             });
             return Err(anyhow::anyhow!("execution task panicked: {}", e));
         }
@@ -344,6 +377,7 @@ pub async fn execute(
         status,
         total_tokens: TokenUsage::default(),
         report,
+        ts: chrono::Utc::now(),
     });
     Ok(result)
 }
@@ -415,6 +449,7 @@ mod tests {
             task_label: "scripts/clean.lua".to_string(),
             resuming: false,
             extra_args: serde_json::json!({}),
+            workflow_meta: None,
         };
         let (wf, nl) = slug_sources(&spec);
         assert!(wf.is_some(), "expected workflow path");
@@ -431,6 +466,7 @@ mod tests {
             task_label: "maestro workflow".to_string(),
             resuming: false,
             extra_args: serde_json::json!({}),
+            workflow_meta: None,
         };
         let (wf, nl) = slug_sources(&spec);
         assert!(wf.is_none());
@@ -446,6 +482,7 @@ mod tests {
             task_label: "research AI trends".to_string(),
             resuming: false,
             extra_args: serde_json::json!({}),
+            workflow_meta: None,
         };
         let (wf, nl) = slug_sources(&spec);
         assert!(wf.is_none());
@@ -466,6 +503,7 @@ mod tests {
             task_label: "my test task".to_string(),
             resuming: false,
             extra_args: serde_json::json!({}),
+            workflow_meta: None,
         };
         assign_dir_name(&mut spec, dir.path());
         assert!(!spec.run_dir_name.is_empty());
@@ -486,6 +524,7 @@ mod tests {
             task_label: "scripts/deep-research.lua".to_string(),
             resuming: false,
             extra_args: serde_json::json!({}),
+            workflow_meta: None,
         };
         assign_dir_name(&mut spec, dir.path());
         assert!(!spec.run_dir_name.is_empty());
@@ -506,6 +545,7 @@ mod tests {
             task_label: "maestro workflow".to_string(),
             resuming: false,
             extra_args: serde_json::json!({}),
+            workflow_meta: None,
         };
         assign_dir_name(&mut spec, dir.path());
         assert!(!spec.run_dir_name.is_empty());
@@ -526,6 +566,7 @@ mod tests {
             task_label: "test".to_string(),
             resuming: false,
             extra_args: serde_json::json!({}),
+            workflow_meta: None,
         };
         assign_dir_name(&mut spec, dir.path());
         assert!(!spec.run_dir_name.is_empty());
@@ -675,6 +716,7 @@ mod tests {
             total_tokens: 0,
             created_at: 0,
             updated_at: 0,
+            workflow_meta: None,
         };
         std::fs::write(
             dir.join("checkpoint.json"),
@@ -959,6 +1001,7 @@ mod tests {
             task_label: "fresh test".to_string(),
             resuming: false,
             extra_args: serde_json::json!({}),
+            workflow_meta: None,
         };
 
         let backend = make_prepare_backend();
@@ -1005,6 +1048,7 @@ mod tests {
             task_label: String::new(),
             resuming: true,
             extra_args: serde_json::json!({}),
+            workflow_meta: None,
         };
 
         let backend = make_prepare_backend();

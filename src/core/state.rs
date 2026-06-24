@@ -33,6 +33,8 @@ pub struct RunCheckpoint {
     pub total_tokens: u64,
     pub created_at: u64,
     pub updated_at: u64,
+    #[serde(default)]
+    pub workflow_meta: Option<crate::planner::PlanMeta>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -122,12 +124,52 @@ impl RunStore {
             total_tokens: 0,
             created_at: current_timestamp(),
             updated_at: current_timestamp(),
+            workflow_meta: None,
         };
 
         // Save checkpoint
         self.save_checkpoint(&checkpoint)?;
 
         // Open events file
+        let events_path = self.run_dir.join("events.jsonl");
+        let events_file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(events_path)?;
+
+        let mut checkpoint_guard = self.checkpoint.write().unwrap();
+        *checkpoint_guard = Some(checkpoint);
+
+        let mut events_guard = self.events_file.write().unwrap();
+        *events_guard = Some(events_file);
+
+        Ok(())
+    }
+
+    /// Initialize a new run with declarative workflow metadata.
+    pub fn init_run_with_meta(
+        &self,
+        run_id: RunId,
+        task: &str,
+        workflow_meta: crate::planner::PlanMeta,
+    ) -> Result<(), std::io::Error> {
+        tracing::info!(%run_id, %task, phases = workflow_meta.phases.len(), "initializing run store with meta");
+        let checkpoint = RunCheckpoint {
+            run_id,
+            task: task.to_string(),
+            status: CheckpointStatus::Running,
+            current_phase: 0,
+            completed_phases: vec![],
+            agent_results: HashMap::new(),
+            findings: vec![],
+            total_tokens: 0,
+            created_at: current_timestamp(),
+            updated_at: current_timestamp(),
+            workflow_meta: Some(workflow_meta),
+        };
+
+        self.save_checkpoint(&checkpoint)?;
+
         let events_path = self.run_dir.join("events.jsonl");
         let events_file = OpenOptions::new()
             .create(true)

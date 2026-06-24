@@ -251,6 +251,7 @@ mod tests {
             status: RunStatus::Completed,
             total_tokens: TokenUsage::default(),
             report: serde_json::json!({ "ok": true }),
+        ts: chrono::Utc::now(),
         }
     }
 

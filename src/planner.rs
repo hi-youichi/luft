@@ -16,6 +16,9 @@ use crate::runtime::validate_script;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+pub mod meta;
+pub use meta::{extract_meta, validate_meta as validate_meta_extracted, MetaPhase, MetaValidation, PlanMeta};
+
 /// Planning configuration.
 #[derive(Debug, Clone)]
 pub struct PlannerConfig {
@@ -34,11 +37,13 @@ impl Default for PlannerConfig {
     }
 }
 
-/// A planned workflow: the generated Lua orchestration script.
+/// A planned workflow: the generated Lua script + its extracted metadata.
 #[derive(Debug, Clone)]
 pub struct PlannedWorkflow {
     /// The generated Lua script (validated, fence-stripped).
     pub script: String,
+    /// Extracted phase structure (`meta = {...}`), if the script declared one.
+    pub meta: Option<PlanMeta>,
 }
 
 /// Planner errors.
@@ -85,7 +90,22 @@ pub async fn plan_workflow(
         };
 
         match validate_generated(&script) {
-            Ok(()) => return Ok(PlannedWorkflow { script }),
+            Ok(()) => {
+                let meta = match meta::extract_meta(&script) {
+                    Ok(Some(m)) => {
+                        let v = meta::validate_meta(&m, &script);
+                        for w in &v.warnings { tracing::warn!(warning = %w, "planner meta validation warning"); }
+                        if !v.is_valid() {
+                            last_error = format!("meta validation failed: {}", v.errors.join("; "));
+                            continue;
+                        }
+                        Some(m)
+                    }
+                    Ok(None) => None,
+                    Err(e) => { tracing::warn!(error = %e, "meta extraction failed; ignoring"); None }
+                };
+                return Ok(PlannedWorkflow { script, meta });
+            }
             Err(e) => {
                 tracing::warn!(attempt, error = %e, "generated script failed validation");
                 last_error = e;

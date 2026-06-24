@@ -33,6 +33,7 @@ pub(crate) fn register_control_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<(
                 phase_id,
                 label,
                 planned,
+                ts: chrono::Utc::now(),
             });
             Ok(phase_id as i64)
         })?;

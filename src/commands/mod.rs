@@ -6,6 +6,7 @@ pub mod mcp_server;
 pub mod generate;
 pub mod list;
 pub mod logs;
+pub mod phases;
 pub mod run;
 pub mod save;
 pub mod status;

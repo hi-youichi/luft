@@ -137,6 +137,10 @@ mod tests {
     use crate::core::contract::ids::TokenUsage;
 
     use chrono::Utc;
+    use std::collections::HashMap;
+    use crate::core::state::{AgentResultCache, CheckpointStatus, PhaseSummary};
+    use crate::core::contract::event::LogLevel;
+    use crate::core::contract::finding::Severity;
 
     #[test]
     fn get_status_non_existing_run() {
@@ -179,6 +183,7 @@ mod tests {
             status: RunStatus::Completed,
             total_tokens: TokenUsage::default(),
             report: report.clone(),
+        ts: chrono::Utc::now(),
         };
         std::fs::write(
             run_dir.join("events.jsonl"),
@@ -214,4 +219,245 @@ mod tests {
         assert!(matches!(result, ReportStatus::NotFound));
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
+
+    #[test]
+    fn status_output_from_checkpoint() {
+        let run_id = uuid::Uuid::now_v7();
+        let cp = RunCheckpoint {
+            run_id,
+            task: "test task".into(),
+            status: CheckpointStatus::Running,
+            current_phase: 1,
+            completed_phases: vec![],
+            agent_results: HashMap::new(),
+            findings: vec![],
+            total_tokens: 0,
+            created_at: 1719000000,
+            updated_at: 1719000100,
+            workflow_meta: None,
+        };
+        let output = StatusOutput::from(("run_dir", &cp));
+        assert_eq!(output.run_id, run_id.to_string());
+        assert_eq!(output.run_dir, "run_dir");
+        assert_eq!(output.task, "test task");
+        assert_eq!(output.status, "running");
+        assert_eq!(output.current_phase, 1);
+        assert_eq!(output.completed_phases, 0);
+        assert_eq!(output.total_agents, 0);
+        assert_eq!(output.completed_agents, 0);
+        assert_eq!(output.total_tokens, 0);
+        assert!(!output.created_at.is_empty());
+        assert!(!output.updated_at.is_empty());
+    }
+
+    #[test]
+    fn status_output_with_completed_agents() {
+        let run_id = uuid::Uuid::now_v7();
+        let agent_id = uuid::Uuid::now_v7();
+        let mut agent_results = HashMap::new();
+        agent_results.insert(agent_id, AgentResultCache {
+            agent_id,
+            phase_id: 1,
+            status: "ok".into(),
+            output: serde_json::json!({}),
+            findings: vec![],
+            tokens: 500,
+            completed_at: 1719000100,
+            cache_key_hash: None,
+        });
+        let cp = RunCheckpoint {
+            run_id,
+            task: "task".into(),
+            status: CheckpointStatus::Completed,
+            current_phase: 2,
+            completed_phases: vec![PhaseSummary {
+                phase_id: 1,
+                label: "phase 1".into(),
+                planned: 1,
+                ok: 1,
+                failed: 0,
+            }],
+            agent_results,
+            findings: vec![],
+            total_tokens: 500,
+            created_at: 1719000000,
+            updated_at: 1719000100,
+            workflow_meta: None,
+        };
+        let output = StatusOutput::from(("run_dir", &cp));
+        assert_eq!(output.status, "completed");
+        assert_eq!(output.current_phase, 2);
+        assert_eq!(output.completed_phases, 1);
+        assert_eq!(output.total_agents, 1);
+        assert_eq!(output.completed_agents, 1);
+        assert_eq!(output.total_tokens, 500);
+    }
+
+    #[test]
+    fn get_checkpoint_existing_run() {
+        let temp_dir = std::env::temp_dir().join("maestro_svc_test_checkpoint");
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let dir_name = uuid::Uuid::now_v7().to_string();
+        let run_id = uuid::Uuid::now_v7();
+        let store = get_run_store(&dir_name, &temp_dir).unwrap();
+        store.init_run(run_id, "test task").unwrap();
+        let result = get_checkpoint(&dir_name, &temp_dir).unwrap();
+        assert!(result.is_some());
+        let cp = result.unwrap();
+        assert_eq!(cp.run_id, run_id);
+        assert_eq!(cp.task, "test task");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn get_status_existing_run() {
+        let temp_dir = std::env::temp_dir().join("maestro_svc_test_status_exist");
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let dir_name = uuid::Uuid::now_v7().to_string();
+        let run_id = uuid::Uuid::now_v7();
+        let store = get_run_store(&dir_name, &temp_dir).unwrap();
+        store.init_run(run_id, "test task").unwrap();
+        let result = get_status(&dir_name, &temp_dir).unwrap();
+        assert!(result.is_some());
+        let status = result.unwrap();
+        assert_eq!(status.run_id, run_id.to_string());
+        assert_eq!(status.task, "test task");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn list_runs_empty() {
+        let temp_dir = std::env::temp_dir().join("maestro_svc_test_list_empty");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let results = list_runs(&temp_dir).unwrap();
+        assert!(results.is_empty());
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn list_runs_with_runs() {
+        let temp_dir = std::env::temp_dir().join("maestro_svc_test_list_runs");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let dir_a = uuid::Uuid::now_v7().to_string();
+        let dir_b = uuid::Uuid::now_v7().to_string();
+        let run_id_a = uuid::Uuid::now_v7();
+        let store_a = get_run_store(&dir_a, &temp_dir).unwrap();
+        store_a.init_run(run_id_a, "task a").unwrap();
+        let run_id_b = uuid::Uuid::now_v7();
+        let store_b = get_run_store(&dir_b, &temp_dir).unwrap();
+        store_b.init_run(run_id_b, "task b").unwrap();
+        let results = list_runs(&temp_dir).unwrap();
+        assert_eq!(results.len(), 2);
+        let ids: Vec<String> = results.iter().map(|r| r.run_id.clone()).collect();
+        assert!(ids.contains(&run_id_a.to_string()));
+        assert!(ids.contains(&run_id_b.to_string()));
+        assert!(results[0].updated_at >= results[1].updated_at);
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn get_events_success() {
+        let temp_dir = std::env::temp_dir().join("maestro_svc_test_events");
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let dir_name = uuid::Uuid::now_v7().to_string();
+        let run_id = uuid::Uuid::now_v7();
+        let store = get_run_store(&dir_name, &temp_dir).unwrap();
+        store.init_run(run_id, "task").unwrap();
+        let event = AgentEvent::Log {
+            run_id,
+            agent_id: None,
+            level: LogLevel::Info,
+            msg: "test log".into(),
+        };
+        store.append_event(&event).unwrap();
+        let events = get_events(&dir_name, &temp_dir).unwrap();
+        assert_eq!(events.len(), 1);
+        assert!(matches!(events[0], AgentEvent::Log { .. }));
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn get_logs_without_limit() {
+        let temp_dir = std::env::temp_dir().join("maestro_svc_test_logs_nolimit");
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let dir_name = uuid::Uuid::now_v7().to_string();
+        let run_id = uuid::Uuid::now_v7();
+        let store = get_run_store(&dir_name, &temp_dir).unwrap();
+        store.init_run(run_id, "task").unwrap();
+        for i in 0..3 {
+            store.append_event(&AgentEvent::Log {
+                run_id,
+                agent_id: None,
+                level: LogLevel::Info,
+                msg: format!("log {}", i),
+            }).unwrap();
+        }
+        let logs = get_logs(&dir_name, &temp_dir, None).unwrap();
+        assert_eq!(logs.len(), 3);
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn get_logs_with_limit() {
+        let temp_dir = std::env::temp_dir().join("maestro_svc_test_logs_limit");
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let dir_name = uuid::Uuid::now_v7().to_string();
+        let run_id = uuid::Uuid::now_v7();
+        let store = get_run_store(&dir_name, &temp_dir).unwrap();
+        store.init_run(run_id, "task").unwrap();
+        for i in 0..5 {
+            store.append_event(&AgentEvent::Log {
+                run_id,
+                agent_id: None,
+                level: LogLevel::Info,
+                msg: format!("log {}", i),
+            }).unwrap();
+        }
+        let logs = get_logs(&dir_name, &temp_dir, Some(2)).unwrap();
+        assert_eq!(logs.len(), 2);
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn get_findings_success() {
+        let temp_dir = std::env::temp_dir().join("maestro_svc_test_findings");
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let dir_name = uuid::Uuid::now_v7().to_string();
+        let run_id = uuid::Uuid::now_v7();
+        let store = get_run_store(&dir_name, &temp_dir).unwrap();
+        store.init_run(run_id, "task").unwrap();
+        let finding = Finding {
+            kind: "test_kind".into(),
+            severity: Severity::High,
+            title: "Test Finding".into(),
+            detail: "A detailed finding description".into(),
+            location: None,
+            evidence: vec![],
+            data: serde_json::json!({}),
+        };
+        let mut cp = store.get_checkpoint().unwrap();
+        cp.findings.push(finding);
+        store.save_checkpoint(&cp).unwrap();
+        let findings = get_findings(&dir_name, &temp_dir).unwrap();
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].kind, "test_kind");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn cancel_run_success() {
+        let temp_dir = std::env::temp_dir().join("maestro_svc_test_cancel");
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let dir_name = uuid::Uuid::now_v7().to_string();
+        let run_id = uuid::Uuid::now_v7();
+        let store = get_run_store(&dir_name, &temp_dir).unwrap();
+        store.init_run(run_id, "task").unwrap();
+        cancel_run(&dir_name, &temp_dir).unwrap();
+        let cp = get_checkpoint(&dir_name, &temp_dir).unwrap().unwrap();
+        assert_eq!(cp.status, CheckpointStatus::Cancelled);
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
 }
