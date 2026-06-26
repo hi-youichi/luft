@@ -1,8 +1,64 @@
+# ── Rust ──────────────────────────────────────────────
 /target
-# Runtime data produced inside consuming repos (dev-plan M0):
-.maestro/runs/
+**/*.rs.bk
+*.pdb
 
+# ── Node.js / TypeScript (root + web/) ────────────────
+node_modules/
+dist/
+dist-ssr/
+*.tsbuildinfo
+.next/
+.nuxt/
+
+# ── Playwright ────────────────────────────────────────
+/playwright-report/
+/test-results/
+/blob-report/
+/.playwright/
+
+# ── Maestro runtime data ──────────────────────────────
+.maestro/runs/
+.maestro/*.db
+.maestro/*.db-*
+
+# ── Loom agent workspace ──────────────────────────────
 .loom
+
+# ── Logs ──────────────────────────────────────────────
 logs
-./*.log
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ── Coverage ──────────────────────────────────────────
+coverage/
+*.lcov
+*.profraw
+*.profdata
+
+# ── Environment & secrets ─────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ── OS files ──────────────────────────────────────────
 .DS_Store
+Thumbs.db
+desktop.ini
+
+# ── IDE / editor ──────────────────────────────────────
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.swp
+*.swo
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
