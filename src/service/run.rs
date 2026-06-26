@@ -263,6 +263,11 @@ let journal = Arc::new(
     //   2. SQLite (turns/agents/runs/spans/events tables) — for UI query
     let store = journal.store();
     let mut rx = run_ctx.events.subscribe();
+    let _ = run_ctx.events.send(AgentEvent::RunStarted {
+        run_id: spec.run_id,
+        task: spec.task_label.clone(),
+        ts: chrono::Utc::now(),
+    });
     let fwd_run_id = spec.run_id;
     let sqlite_writer_fwd = sqlite_writer.clone();
     tokio::spawn(async move {
@@ -299,6 +304,19 @@ let journal = Arc::new(
         Some(journal.clone()),
         handle,
     )?;
+
+    // Inject completed phase spans for resume so scripts can skip finished units.
+    if spec.resuming {
+        let cp_path = run_dir.join("checkpoint.json");
+        if let Ok(content) = std::fs::read_to_string(&cp_path) {
+            if let Ok(cp) = serde_json::from_str::<RunCheckpoint>(&content) {
+                let names: Vec<String> = cp.completed_spans.iter().map(|s| s.name.clone()).collect();
+                if !names.is_empty() {
+                    runtime.set_completed_spans(&names)?;
+                }
+            }
+        }
+    }
 
     Ok(PreparedRun { runtime, journal })
 }
@@ -675,6 +693,7 @@ mod tests {
             total_tokens: 0,
             created_at: 0,
             updated_at: 0,
+            completed_spans: vec![],
         };
         std::fs::write(
             dir.join("checkpoint.json"),

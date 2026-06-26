@@ -187,6 +187,8 @@ impl Scheduler {
             agent_id: task.agent_id,
             prompt_preview: preview(&task.prompt),
             model: task.model.clone(),
+            description: task.description.clone(),
+            role: task.role.clone(),
         });
 
         let start = Instant::now();
@@ -228,17 +230,25 @@ impl Scheduler {
                             );
                             let schema_json = serde_json::to_string_pretty(schema)
                                 .unwrap_or_default();
+                            let last_output = serde_json::to_string_pretty(&result.output)
+                                .unwrap_or_default();
                             task.prompt = format!(
                                 "{original_prompt}\n\n\
                                  ---\n\
                                  Your previous response did not match the required schema.\n\
                                  Error: {error}\n\
-                                 Please correct your output and return ONLY a valid JSON object.\n\
+                                 \n\
+                                 Your output was:\n\
+                                 ```json\n{last_output}\n```\n\
                                  \n\
                                  Required JSON Schema:\n\
-                                 {schema}",
+                                 ```json\n{schema}\n```\n\
+                                 \n\
+                                 Call the `structured_output` tool with a JSON object that\n\
+                                 matches this schema exactly. Include ALL required fields.",
                                 original_prompt = original_prompt,
                                 error = e,
+                                last_output = last_output,
                                 schema = schema_json,
                             );
                             continue;
@@ -403,6 +413,8 @@ mod tests {
             mcp_endpoint: None,
             timeout: None,
             output_schema: None,
+            description: None,
+            role: None,
         }
     }
 

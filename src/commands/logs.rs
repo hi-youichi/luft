@@ -171,7 +171,7 @@ mod tests {
         use maestro::core::contract::backend::AgentStatus;
         let events = vec![
             AgentEvent::RunStarted { run_id, task: "t".into(), ts: chrono::Utc::now() },
-            AgentEvent::PhaseStarted { run_id, phase_id: 0, label: "phase 0".into(), planned: 2 },
+            AgentEvent::PhaseStarted { run_id, phase_id: 0, label: "phase 0".into(), planned: 2, parent_span_id: None, description: None, role: None },
             AgentEvent::AgentStarted {
                 run_id,
                 phase_id: 0,

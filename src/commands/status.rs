@@ -149,6 +149,8 @@ mod tests {
             planned: 3,
             ok: 2,
             failed: 1,
+            description: None,
+            role: None,
         });
         store.save_checkpoint(&cp).unwrap();
         let (output, result) = capture_output(run_dir);
@@ -243,6 +245,8 @@ mod tests {
             planned: 5,
             ok: 5,
             failed: 0,
+            description: None,
+            role: None,
         });
         cp.completed_phases.push(PhaseSummary {
             phase_id: 2,
@@ -250,6 +254,8 @@ mod tests {
             planned: 10,
             ok: 8,
             failed: 2,
+            description: None,
+            role: None,
         });
         cp.agent_results.insert(
             uuid::Uuid::now_v7(),

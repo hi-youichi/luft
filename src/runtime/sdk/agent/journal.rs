@@ -94,6 +94,8 @@ mod tests {
             tokens: 99,
             completed_at: 0,
             cache_key_hash: None,
+            description: None,
+            role: None,
         };
         let (status, output, tokens, _) = slot_from_cache(cached);
         assert_eq!(status, "error");

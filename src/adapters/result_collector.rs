@@ -149,6 +149,8 @@ mod tests {
             mcp_endpoint: None,
             timeout: None,
             output_schema: None,
+            description: None,
+            role: None,
         }
     }
 

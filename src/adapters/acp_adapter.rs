@@ -430,6 +430,7 @@ mod tests {
         let config = AcpConfig {
             id: "custom-agent",
             binary: PathBuf::from("custom-agent"),
+            acp_args: vec!["acp"],
             log_level: Some("debug".into()),
             connect_timeout: Duration::from_secs(30),
             emit_raw_events: false,
@@ -501,6 +502,8 @@ mod tests {
             mcp_endpoint: None,
             timeout: Some(Duration::from_secs(timeout_secs)),
             output_schema,
+            description: None,
+            role: None,
         }
     }
 
@@ -518,9 +521,9 @@ mod tests {
     /// arguments (the ACP adapter always passes `acp` as the first argument).
     /// The script lives inside the returned `TempDir` so it is automatically
     /// cleaned up when the directory is dropped.
+    #[cfg(unix)]
     fn blocking_script(secs: u64) -> (std::path::PathBuf, tempfile::TempDir) {
         use std::io::Write;
-        #[allow(unused_imports)]
         use std::os::unix::fs::PermissionsExt;
 
         let dir = tempfile::tempdir().expect("tempdir");
@@ -601,6 +604,7 @@ mod tests {
 
     // ── Cancellation during the session ────────────────────────────
 
+    #[cfg(unix)]
     #[tokio::test]
     async fn run_cancellation_during_session() {
         let (script_path, _dir) = blocking_script(120);
@@ -630,6 +634,7 @@ mod tests {
 
     // ── Timeout ────────────────────────────────────────────────────
 
+    #[cfg(unix)]
     #[tokio::test]
     async fn run_with_timeout() {
         let (script_path, _dir) = blocking_script(120);

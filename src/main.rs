@@ -124,6 +124,12 @@ struct RunArgs {
     #[arg(help = "Extra arguments passed to the workflow as JSON (positional; prefer --args)")]
     extra_args: Option<String>,
 
+    #[arg(long, help = "Auto-fix script on execution failure (default: off)")]
+    auto_fix: bool,
+
+    #[arg(long, default_value_t = 3, help = "Max fix attempts when auto-fix is enabled")]
+    max_fix_attempts: u32,
+
 }
 
 #[tokio::main]
@@ -214,6 +220,8 @@ mod tests {
                 output: None,
                 args_json: None,
                 extra_args: None,
+                auto_fix: false,
+                max_fix_attempts: 3,
             }),
             log_level: None,
         };
@@ -240,6 +248,8 @@ mod tests {
                 output: None,
                 args_json: None,
                 extra_args: None,
+                auto_fix: false,
+                max_fix_attempts: 3,
             }),
             log_level: None,
         };

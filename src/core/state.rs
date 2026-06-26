@@ -33,6 +33,8 @@ pub struct RunCheckpoint {
     pub total_tokens: u64,
     pub created_at: u64,
     pub updated_at: u64,
+    #[serde(default)]
+    pub completed_spans: Vec<PhaseSpanSummary>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -51,6 +53,10 @@ pub struct PhaseSummary {
     pub planned: usize,
     pub ok: usize,
     pub failed: usize,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub role: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,6 +72,20 @@ pub struct AgentResultCache {
     /// Populated by JournalStore::cache_agent(); None for legacy checkpoints.
     #[serde(default)]
     pub cache_key_hash: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub role: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PhaseSpanSummary {
+    pub id: u32,
+    pub name: String,
+    pub parent_id: Option<u32>,
+    pub depth: u32,
+    pub elapsed_ms: u64,
+    pub completed_at: u64,
 }
 
 /// Persistence store for a single run.
@@ -122,6 +142,7 @@ impl RunStore {
             total_tokens: 0,
             created_at: current_timestamp(),
             updated_at: current_timestamp(),
+            completed_spans: vec![],
         };
 
         // Save checkpoint
@@ -210,6 +231,8 @@ impl RunStore {
                             .map(|c| c.completed_at)
                             .unwrap_or(current_timestamp()),
                         cache_key_hash: existing.and_then(|c| c.cache_key_hash.clone()),
+                        description: existing.and_then(|c| c.description.clone()),
+                        role: existing.and_then(|c| c.role.clone()),
                     };
                     checkpoint.agent_results.insert(*agent_id, cache);
                     checkpoint.total_tokens += tokens.total();
@@ -218,6 +241,16 @@ impl RunStore {
                     if *phase_id > 0 {
                         checkpoint.current_phase = *phase_id;
                     }
+                }
+                AgentEvent::PhaseSpanDone { span_id, name, parent_id, depth, elapsed_ms, .. } => {
+                    checkpoint.completed_spans.push(PhaseSpanSummary {
+                        id: *span_id,
+                        name: name.clone(),
+                        parent_id: *parent_id,
+                        depth: *depth,
+                        elapsed_ms: *elapsed_ms,
+                        completed_at: current_timestamp(),
+                    });
                 }
                 AgentEvent::RunDone { status, total_tokens, .. } => {
                     checkpoint.status = match status {

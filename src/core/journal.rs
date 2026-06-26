@@ -221,6 +221,8 @@ impl JournalStore {
             tokens: tokens.total(),
             completed_at: ts,
             cache_key_hash: Some(cache_key.hash.clone()),
+            description: None,
+            role: None,
         };
 
         // Update in-memory index (instant lookup)
@@ -284,6 +286,8 @@ impl JournalStore {
             tokens: tokens.total(),
             completed_at: current_timestamp(),
             cache_key_hash: Some(cache_key.hash.clone()),
+            description: None,
+            role: None,
         };
 
         {
@@ -410,6 +414,8 @@ impl crate::core::scheduler::JournalCallback for JournalStore {
             tokens: tokens.total(),
             completed_at: ts,
             cache_key_hash: None, // not indexed by cache key from this path
+            description: None,
+            role: None,
         };
 
         // Persist to checkpoint disk

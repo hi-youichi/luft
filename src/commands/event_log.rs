@@ -122,6 +122,12 @@ pub fn format_event_line(evt: &AgentEvent) -> String {
         PipelineDone { stages_completed, total_ok, total_failed, .. } => {
             format!("pipeline done: {stages_completed} stages, {total_ok} ok, {total_failed} failed")
         }
+        PhaseSpanStarted { span_id, name, depth, .. } => {
+            format!("phase span#{span_id} started (depth {depth}): {name}")
+        }
+        PhaseSpanDone { span_id, name, elapsed_ms, status, .. } => {
+            format!("phase span#{span_id} done: {name} ({status}, {elapsed_ms}ms)")
+        }
     }
 }
 
@@ -211,7 +217,7 @@ mod tests {
         let t = TokenUsage { input: 10, output: 5, cache_read: 0, cache_write: 0 };
         let cases: Vec<(AgentEvent, &str)> = vec![
             (AgentEvent::RunStarted { run_id: r, task: "x".into(), ts: chrono::Utc::now() }, "run started: x"),
-            (AgentEvent::PhaseStarted { run_id: r, phase_id: 1, label: "work".into(), planned: 3 }, "phase 1 started"),
+            (AgentEvent::PhaseStarted { run_id: r, phase_id: 1, label: "work".into(), planned: 3, parent_span_id: None, description: None, role: None }, "phase 1 started"),
             (AgentEvent::AgentStarted { run_id: r, phase_id: 0, agent_id: r, prompt_preview: "".into(), model: None }, "agent "),
             (AgentEvent::AgentStarted { run_id: r, phase_id: 0, agent_id: r, prompt_preview: "".into(), model: Some("claude".into()) }, "model claude"),
             (AgentEvent::AgentProgress { run_id: r, agent_id: r, delta: ProgressDelta::Message { text: "hello".into() } }, "agent "),

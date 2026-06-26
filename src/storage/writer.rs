@@ -45,8 +45,11 @@ impl EventWriter {
                 phase_id,
                 label,
                 planned,
+                description,
+                role,
+                parent_span_id: _,
             } => {
-                self.write_phase_started(*run_id, *phase_id, label, *planned)
+                self.write_phase_started(*run_id, *phase_id, label, *planned, description.as_deref(), role.as_deref())
                     .await?;
             }
             AgentEvent::AgentStarted {
@@ -55,6 +58,8 @@ impl EventWriter {
                 agent_id,
                 prompt_preview,
                 model,
+                description: _,
+                role: _,
             } => {
                 self.write_agent_started(
                     *run_id,
@@ -295,6 +300,9 @@ impl EventWriter {
             // AcpRaw is intentionally not persisted (live observability stream,
             // not durable history). See docs/design/acp-raw-events.md.
             AgentEvent::AcpRaw { .. } => {}
+            // Phase span events are structural metadata; captured in audit log
+            // and checkpoint, no dedicated SQL table needed.
+            AgentEvent::PhaseSpanStarted { .. } | AgentEvent::PhaseSpanDone { .. } => {}
         }
 
         // All events are appended to the audit log for replay.
@@ -330,19 +338,25 @@ impl EventWriter {
         phase_id: PhaseId,
         label: &str,
         planned: usize,
+        description: Option<&str>,
+        role: Option<&str>,
     ) -> StorageResult<()> {
         sqlx::query(
-            "INSERT INTO phases (run_id, phase_id, label, planned, started_ts)
-             VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+            "INSERT INTO phases (run_id, phase_id, label, planned, description, role, started_ts)
+             VALUES (?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
              ON CONFLICT(run_id, phase_id) DO UPDATE SET
                label = excluded.label,
                planned = excluded.planned,
+               description = COALESCE(excluded.description, phases.description),
+               role = COALESCE(excluded.role, phases.role),
                started_ts = COALESCE(phases.started_ts, excluded.started_ts)",
         )
         .bind(run_id)
         .bind(phase_id as i64)
         .bind(label)
         .bind(planned as i64)
+        .bind(description)
+        .bind(role)
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -724,6 +738,8 @@ fn audit_metadata(event: &AgentEvent) -> (Option<RunId>, &'static str) {
         }
         AgentEvent::PipelineItemDone { run_id, .. } => (Some(*run_id), "pipeline_item_done"),
         AgentEvent::PipelineDone { run_id, .. } => (Some(*run_id), "pipeline_done"),
+        AgentEvent::PhaseSpanStarted { run_id, .. } => (Some(*run_id), "phase_span_started"),
+        AgentEvent::PhaseSpanDone { run_id, .. } => (Some(*run_id), "phase_span_done"),
     }
 }
 
@@ -852,6 +868,8 @@ mod tests {
             agent_id,
             prompt_preview: "do something".into(),
             model: Some("claude-sonnet-4".into()),
+            description: None,
+            role: None,
         })
         .await
         .unwrap();
@@ -886,6 +904,8 @@ mod tests {
             agent_id,
             prompt_preview: "p".into(),
             model: None,
+            description: None,
+            role: None,
         })
         .await
         .unwrap();
@@ -928,6 +948,8 @@ mod tests {
             agent_id,
             prompt_preview: "".into(),
             model: None,
+            description: None,
+            role: None,
         })
         .await
         .unwrap();
@@ -969,6 +991,8 @@ mod tests {
             agent_id,
             prompt_preview: "".into(),
             model: None,
+            description: None,
+            role: None,
         })
         .await
         .unwrap();
@@ -1003,6 +1027,8 @@ mod tests {
             agent_id,
             prompt_preview: "".into(),
             model: None,
+            description: None,
+            role: None,
         })
         .await
         .unwrap();
@@ -1059,6 +1085,9 @@ mod tests {
             phase_id: 1,
             label: "explore".into(),
             planned: 3,
+            parent_span_id: None,
+            description: None,
+            role: None,
         })
         .await
         .unwrap();
@@ -1189,6 +1218,8 @@ mod tests {
             agent_id,
             prompt_preview: "".into(),
             model: None,
+            description: None,
+            role: None,
         })
         .await
         .unwrap();

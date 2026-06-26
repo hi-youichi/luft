@@ -24,18 +24,16 @@ pub async fn run_workflow(args: RunArgs) -> Result<()> {
         );
     }
     if is_nl && args.backend.is_none() {
-        eprintln!("ℹ  no --backend specified, auto-detected: {}", backend_id);
+        eprintln!("\u{2139}  no --backend specified, auto-detected: {}", backend_id);
     }
-    let backend = backend::create_backend(&backend_id, !args.no_acp_raw)?;
     let base_dir = runs_base_dir();
 
-    // Resolve a fully-specified run (script + run id + resume flag). NL planning,
-    // workflow-file reads and script pass-through all live in the service; this
-    // resolves exactly once (so `--confirm` shows the same script that runs).
+    // Resolve a fully-specified run (script + run id + resume flag).
     let mut spec = if args.resume {
         let run_dir = svc::latest_resumable(&base_dir)?;
         svc::resolve_resume(&run_dir, &base_dir)?
     } else {
+        let backend = backend::create_backend(&backend_id, !args.no_acp_raw)?;
         let source = if let Some(nl) = args.nl.as_deref() {
             svc::ScriptSource::Nl(nl)
         } else if let Some(wf) = args.workflow.as_deref() {
@@ -46,12 +44,11 @@ pub async fn run_workflow(args: RunArgs) -> Result<()> {
         } else {
             anyhow::bail!("either a natural language prompt or --workflow <file> is required");
         };
-        let mut s = svc::resolve_fresh(source, backend.clone()).await?;
+        let mut s = svc::resolve_fresh(source, backend).await?;
         svc::assign_dir_name(&mut s, &base_dir);
         s
     };
-    // `--args` takes precedence over the positional `extra_args`. A malformed
-    // JSON value is a hard error rather than being silently dropped.
+    // `--args` takes precedence over the positional `extra_args`.
     if let Some(s) = args.args_json.as_ref().or(args.extra_args.as_ref()) {
         spec.extra_args = serde_json::from_str(s)
             .map_err(|e| anyhow::anyhow!("invalid workflow args JSON: {}", e))?;
@@ -72,31 +69,73 @@ pub async fn run_workflow(args: RunArgs) -> Result<()> {
         }
     }
 
-    // The CLI owns the event channel + cancel token (subscribed locally for
-    // headless output).
-    let (events_tx, _events_rx) = tokio::sync::broadcast::channel(256);
-    let run_ctx = RunContext {
-        run_id: spec.run_id,
-        cancel: tokio_util::sync::CancellationToken::new(),
-        events: events_tx,
-    };
+    let max_att = if args.auto_fix { args.max_fix_attempts.max(1) } else { 1 };
+    let mut current_script = spec.script.clone();
 
-    let prepared = svc::prepare(&spec, backend, &base_dir, &run_ctx).await?;
-    if spec.resuming {
-        println!(
-            "Resuming run {} ({} agents cached)",
-            spec.run_id,
-            prepared.journal.completed_keys().len()
-        );
+    for attempt in 1..=max_att {
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let (tx, _rx) = tokio::sync::broadcast::channel(2048);
+        let ctx = RunContext {
+            run_id: spec.run_id,
+            cancel,
+            events: tx,
+        };
+
+        let backend2 = backend::create_backend(&backend_id, !args.no_acp_raw)?;
+        let prepared = svc::prepare(&spec, backend2, &base_dir, &ctx).await?;
+
+        if spec.resuming {
+            println!(
+                "Resuming run {} ({} agents cached)",
+                spec.run_id,
+                prepared.journal.completed_keys().len()
+            );
+        }
+
+        let logger = match &args.log {
+            Some(path) => Some(EventLogger::new(Some(path), args.log_format)?),
+            None => None,
+        };
+
+        let result = run_headless(
+            ctx,
+            prepared.runtime,
+            current_script.clone(),
+            args.output.clone(),
+            logger,
+        )
+        .await;
+
+        match result {
+            Ok(()) => return Ok(()),
+            Err(e) if attempt < max_att => {
+                let err_str = e.to_string();
+                // Schema validation failures are LLM compliance issues, not
+                // script bugs — auto-fix can't help and wastes a backend call.
+                if err_str.contains("output schema validation failed") {
+                    eprintln!("\u{2717} Schema validation failed (LLM output non-compliant); auto-fix skipped.");
+                    return Err(e);
+                }
+                eprintln!(
+                    "\u{26a0} Attempt {}/{} \u{2014} fixing script via LLM...",
+                    attempt, max_att
+                );
+                match try_fix_script(&current_script, &e.to_string(), &backend_id).await {
+                    Ok(fixed) => {
+                        eprintln!("\u{2713} Fixed ({} bytes), retrying...", fixed.len());
+                        current_script = fixed;
+                        continue;
+                    }
+                    Err(fix_err) => {
+                        eprintln!("Fix failed: {fix_err}");
+                        return Ok(());
+                    }
+                }
+            }
+            Err(e) => return Err(e),
+        }
     }
-
-    // Optional event-log sink.
-    let logger = match &args.log {
-        Some(path) => Some(EventLogger::new(Some(path), args.log_format)?),
-        None => None,
-    };
-
-    run_headless(run_ctx, prepared.runtime, spec.script, args.output, logger).await
+    Ok(())
 }
 
 /// Persist the final report value to `path`.
@@ -137,9 +176,11 @@ async fn drain_events<F: FnMut(&AgentEvent)>(
     let mut skipped = 0;
     loop {
         match rx.recv().await {
+            // Raw ACP events are high-frequency noise in headless mode; skip
+            // them so the printer stays fast enough to avoid broadcast lag.
+            Ok(AgentEvent::AcpRaw { .. }) => {}
             Ok(evt) => {
                 handle(&evt);
-                // RunDone is the terminal event — stop once it's been handled.
                 if matches!(evt, AgentEvent::RunDone { .. }) {
                     break;
                 }
@@ -154,6 +195,9 @@ async fn drain_events<F: FnMut(&AgentEvent)>(
 /// Headless mode: stream events as JSONL live (concurrently with execution),
 /// then the final report. When `logger` is set, each event is also written to
 /// the event-log sink.
+///
+/// Returns `Ok(())` on successful execution. Returns an error when execution
+/// fails, so the caller can retry with a fixed script.
 async fn run_headless(
     run_ctx: RunContext,
     rt: Runtime,
@@ -165,8 +209,6 @@ async fn run_headless(
 
     let run_id = run_ctx.run_id;
 
-    // Stream events live so the bounded broadcast buffer can't drop the
-    // high-frequency acp_raw stream. The printer exits on the terminal RunDone.
     let rx = run_ctx.events.subscribe();
     let printer = tokio::spawn(async move {
         let skipped = drain_events(rx, |evt| {
@@ -186,13 +228,9 @@ async fn run_headless(
 
     let exec_result = svc::execute(&run_ctx, rt, script).await;
 
-    // RunDone is emitted inside execute() before it returns, so the printer
-    // sees it and stops; the timeout only guards against a dropped RunDone.
-    // Always drain before propagating errors, otherwise the printer task is
-    // dropped before it can process the terminal RunDone event.
     if let Ok(Ok(skipped)) = tokio::time::timeout(Duration::from_secs(2), printer).await {
         if skipped > 0 {
-            eprintln!("⚠ event stream lagged, skipped {skipped} events");
+            eprintln!("\u{26a0} event stream lagged, skipped {skipped} events");
         }
     }
 
@@ -210,14 +248,75 @@ async fn run_headless(
                     "run_id": run_id.to_string(),
                     "report": report,
                 }))?
-            )
+            );
+            Ok(())
         }
         Err(e) => {
             tracing::error!(error = %e, "workflow execution failed");
             eprintln!("Execution error: {}", e);
+            Err(anyhow::anyhow!("{}", e))
         }
     }
-    Ok(())
+}
+
+/// Call the LLM backend to fix a broken Lua workflow script.
+async fn try_fix_script(script: &str, error: &str, backend_id: &str) -> Result<String> {
+    use maestro::core::contract::backend::AgentTask;
+    use maestro::core::contract::ids::AgentId;
+    use maestro::core::RunContext;
+    use tokio_util::sync::CancellationToken;
+
+    let backend = crate::backend::create_backend(backend_id, false)?;
+    let prompt = format!(
+        "The following Lua workflow script failed during execution:\n\n\
+         --- Error ---\n{error}\n\n\
+         --- Script ---\n```lua\n{script}\n```\n\n\
+         Please fix the script. Return ONLY the fixed Lua code wrapped in ```lua ... ```."
+    );
+
+    let task = AgentTask {
+        agent_id: AgentId::now_v7(),
+        phase_id: 0,
+        prompt,
+        model: None,
+        description: None,
+        role: None,
+        allowlist: None,
+        workdir: std::env::current_dir().unwrap_or_default(),
+        mcp_endpoint: None,
+        timeout: Some(std::time::Duration::from_secs(60)),
+        output_schema: None,
+    };
+
+    use maestro::core::contract::event::AgentEvent;
+    let (tx, _rx) = tokio::sync::broadcast::channel::<AgentEvent>(8);
+    let ctx = RunContext {
+        run_id: AgentId::now_v7(),
+        cancel: CancellationToken::new(),
+        events: tx,
+    };
+
+    let result = backend.run(task, ctx).await.map_err(|e| anyhow::anyhow!("{:?}", e))?;
+
+    if result.status != maestro::core::contract::backend::AgentStatus::Ok {
+        anyhow::bail!("backend returned status {:?}", result.status);
+    }
+
+    let content = match &result.output {
+        serde_json::Value::String(s) => s.clone(),
+        other => serde_json::to_string_pretty(other)
+            .unwrap_or_else(|_| other.to_string()),
+    };
+
+    // Simple Lua code extraction: find ```lua ... ``` block
+    if let Some(start) = content.find("```lua") {
+        let rest = &content[start + 6..];
+        if let Some(end) = rest.find("```") {
+            return Ok(rest[..end].trim().to_string());
+        }
+    }
+    // Fallback: try the whole output as Lua code
+    Ok(content.to_string())
 }
 
 #[cfg(test)]
@@ -248,8 +347,6 @@ mod tests {
         }
     }
 
-    /// Build a Runtime suitable for passing to `run_headless` with an empty
-    /// script (no SDK primitives called, so an empty backend registry is fine).
     async fn empty_script_runtime(run_ctx: &RunContext) -> Runtime {
         let registry = BackendRegistry::new();
         let scheduler = Scheduler::new(SchedulerConfig::default(), registry, None);
@@ -275,7 +372,7 @@ mod tests {
         let run_id = RunId::now_v7();
         tx.send(progress(run_id, "hi")).unwrap();
         tx.send(run_done(run_id)).unwrap();
-        tx.send(progress(run_id, "after")).unwrap(); // must not be emitted
+        tx.send(progress(run_id, "after")).unwrap();
 
         let mut lines = Vec::new();
         let skipped = drain_events(rx, |evt| lines.push(serde_json::to_string(evt).unwrap())).await;
@@ -308,7 +405,6 @@ mod tests {
 
     #[tokio::test]
     async fn drain_counts_lagged_but_still_terminates() {
-        // Cap-2 channel, overfilled before draining → early events are dropped.
         let (tx, rx) = tokio::sync::broadcast::channel(2);
         let run_id = RunId::now_v7();
         for i in 0..4 {
@@ -329,7 +425,7 @@ mod tests {
         let run_id = RunId::now_v7();
         tx.send(progress(run_id, "m1")).unwrap();
         tx.send(progress(run_id, "m2")).unwrap();
-        drop(tx); // close the channel so the next recv() returns Closed
+        drop(tx);
 
         let mut lines = Vec::new();
         let skipped = drain_events(rx, |evt| lines.push(serde_json::to_string(evt).unwrap())).await;
@@ -362,7 +458,6 @@ mod tests {
         let path = dir.path().join("out.txt");
         write_report(&path, &serde_json::json!({"markdown": 42, "other": "val"})).unwrap();
         let content = std::fs::read_to_string(&path).unwrap();
-        // "markdown" is not a string → falls back to pretty-printed JSON of the whole object
         assert!(content.contains("\"markdown\""));
         assert!(content.contains("42"));
         assert!(content.contains("\"other\""));
@@ -470,7 +565,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn run_headless_script_error_path() {
+    async fn run_headless_script_error_returns_err() {
         let run_id = RunId::now_v7();
         let (tx, _rx) = tokio::sync::broadcast::channel(256);
         let run_ctx = RunContext {
@@ -480,9 +575,11 @@ mod tests {
         };
         let rt = empty_script_runtime(&run_ctx).await;
 
-        run_headless(run_ctx, rt, "not valid lua <<<>>>".to_string(), None, None)
-            .await
-            .unwrap();
+        let result = run_headless(run_ctx, rt, "not valid lua <<<>>>".to_string(), None, None)
+            .await;
+        assert!(result.is_err(), "expected Err on script failure");
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("syntax error") || err.contains("Syntax"));
     }
 
     #[tokio::test(flavor = "multi_thread")]

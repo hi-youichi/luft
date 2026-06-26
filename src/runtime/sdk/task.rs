@@ -26,6 +26,8 @@ pub(crate) fn build_task(
         .map_err(|_| mlua::Error::RuntimeError("agent: missing required 'prompt' field".into()))?;
     let model: Option<String> = opts.get::<Option<String>>("model").ok().flatten();
     let backend: Option<String> = opts.get::<Option<String>>("backend").ok().flatten();
+    let description: Option<String> = opts.get::<Option<String>>("description").ok().flatten();
+    let role: Option<String> = opts.get::<Option<String>>("role").ok().flatten();
     let timeout = opts
         .get::<i64>("timeout_ms")
         .ok()
@@ -54,6 +56,8 @@ pub(crate) fn build_task(
         phase_id,
         prompt,
         model,
+        description,
+        role,
         allowlist: None,
         workdir: PathBuf::from("."),
         mcp_endpoint: None,

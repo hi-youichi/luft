@@ -20,6 +20,7 @@ use crate::core::journal::JournalStore;
 use crate::core::Scheduler;
 use std::sync::atomic::{AtomicU32, AtomicU64};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 use tokio::runtime::Handle;
 
 /// Report sink shared between the runtime and the `report()` primitive.
@@ -37,12 +38,15 @@ pub(crate) struct SdkContext {
     pub journal: Option<Arc<JournalStore>>,
     pub handle: Handle,
     pub report_sink: ReportSink,
-    /// Phase counter — incremented by `phase()`, read by `agent()`/`parallel()`
-    /// so cache keys and events carry a meaningful phase id.
+    /// Phase counter — incremented by `phase()` and `phase_begin()`, read by
+    /// `agent()`/`parallel()` so cache keys and events carry a meaningful phase id.
     pub phase_counter: Arc<AtomicU32>,
     /// Span counter — `fetch_add`'d by each blocking SDK primitive to correlate
     /// its `*Started`/`*Done` event pair (see `docs/design/sdk-events.md`).
     pub span_counter: Arc<AtomicU64>,
+    /// Phase span stack — push/pop by `phase_begin()`/`phase_end()`.
+    /// `phase()` reads the top as `parent_span_id`.
+    pub phase_span_stack: Arc<Mutex<Vec<PhaseSpan>>>,
 }
 
 impl SdkContext {
@@ -61,6 +65,7 @@ impl SdkContext {
             report_sink,
             phase_counter: Arc::new(AtomicU32::new(0)),
             span_counter: Arc::new(AtomicU64::new(0)),
+            phase_span_stack: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -73,4 +78,16 @@ impl SdkContext {
     pub(crate) fn events(&self) -> EventSender {
         self.run_ctx.events.clone()
     }
+}
+
+/// A phase span entry on the span stack.
+#[derive(Debug, Clone)]
+pub struct PhaseSpan {
+    pub id: u32,
+    pub name: String,
+    pub parent_id: Option<u32>,
+    pub depth: u32,
+    pub started_at: Instant,
+    #[allow(dead_code)]
+    pub planned: usize,
 }

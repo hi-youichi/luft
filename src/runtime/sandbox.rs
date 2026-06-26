@@ -9,6 +9,8 @@
 //! - `converge(items, opts)`     — adversarial verification + voting
 //! - `workflow(path, args?)`     — nested sub-workflow (M6)
 //! - `phase(name, planned?)`     — progress grouping, returns phase id
+//! - `phase_begin(name, planned?)` — begin a structural phase span (push)
+//! - `phase_end(span_id?)`        — end the current structural phase span (pop)
 //! - `log(msg, level?)`          — structured log event
 //! - `budget(time_ms?, rounds?)` — runtime limits hint
 //! - `report(value)`             — final workflow output
@@ -96,6 +98,20 @@ impl Runtime {
         let has_report = guard.is_some();
         tracing::info!(elapsed_ms = elapsed.as_millis() as u64, has_report, "script execution finished");
         Ok(guard.clone().unwrap_or(serde_json::Value::Null))
+    }
+
+    /// Inject completed phase span names as the `completed_spans` Lua global,
+    /// so resume scripts can skip already-finished structural units.
+    pub fn set_completed_spans(&self, names: &[String]) -> Result<(), ScriptError> {
+        if names.is_empty() {
+            return Ok(());
+        }
+        let table = self.lua.create_table()?;
+        for name in names {
+            table.set(name.as_str(), true)?;
+        }
+        self.lua.globals().set("completed_spans", table)?;
+        Ok(())
     }
 }
 

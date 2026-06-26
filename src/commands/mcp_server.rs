@@ -190,10 +190,12 @@ mod tests {
     use std::sync::Mutex;
 
     /// Serialises fd-redirection tests so parallel runs don't race on fd 0/1.
+    #[cfg(unix)]
     static IO_LOCK: Mutex<()> = Mutex::new(());
 
     // --- Raw FFI helpers for fd redirection (macOS / Linux) -------------------
 
+    #[cfg(unix)]
     mod ffi {
         #![allow(dead_code)]
         pub unsafe fn dup(fd: std::os::raw::c_int) -> std::os::raw::c_int {
@@ -224,6 +226,7 @@ mod tests {
     /// Run `f` with stdin / stdout redirected from / to temporary files.
     /// Returns `(f()'s return value, lines written to stdout)`.
     /// **MUST** be called while holding `IO_LOCK`.
+    #[cfg(unix)]
     fn with_redirected_io<R>(input: &str, f: impl FnOnce() -> R) -> (R, Vec<String>) {
         let mut in_file = tempfile::tempfile().expect("tempfile in");
         in_file.write_all(input.as_bytes()).unwrap();
@@ -276,6 +279,7 @@ mod tests {
             .collect()
     }
 
+    #[cfg(unix)]
     fn run_serve_mcp(input_lines: &[&str], schema: &Value) -> Vec<String> {
         let input = if input_lines.is_empty() {
             String::new()
@@ -508,6 +512,7 @@ mod tests {
     //  serve_mcp — integration via fd redirection
     // ------------------------------------------------------------------
 
+    #[cfg(unix)]
     #[test]
     fn serve_mcp_initialize() {
         let schema = serde_json::json!({"type": "object"});
@@ -524,6 +529,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn serve_mcp_notification_initialized() {
         let schema = serde_json::json!({"type": "object"});
@@ -534,6 +540,7 @@ mod tests {
         assert!(lines.is_empty());
     }
 
+    #[cfg(unix)]
     #[test]
     fn serve_mcp_tools_list() {
         let schema =
@@ -549,6 +556,7 @@ mod tests {
         assert_eq!(json[0]["result"]["tools"][0]["inputSchema"], schema);
     }
 
+    #[cfg(unix)]
     #[test]
     fn serve_mcp_tools_call_valid() {
         let schema = serde_json::json!({
@@ -570,6 +578,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn serve_mcp_tools_call_invalid() {
         let schema = serde_json::json!({
@@ -591,6 +600,7 @@ mod tests {
             .contains("Schema validation failed"));
     }
 
+    #[cfg(unix)]
     #[test]
     fn serve_mcp_unknown_method_with_id() {
         let schema = serde_json::json!({"type": "object"});
@@ -605,6 +615,7 @@ mod tests {
         assert_eq!(json[0]["error"]["message"], "Method not found");
     }
 
+    #[cfg(unix)]
     #[test]
     fn serve_mcp_unknown_method_no_id() {
         let schema = serde_json::json!({"type": "object"});
@@ -615,6 +626,7 @@ mod tests {
         assert!(lines.is_empty());
     }
 
+    #[cfg(unix)]
     #[test]
     fn serve_mcp_empty_line_skipped() {
         let schema = serde_json::json!({"type": "object"});
@@ -630,6 +642,7 @@ mod tests {
         assert_eq!(json[0]["id"], 1);
     }
 
+    #[cfg(unix)]
     #[test]
     fn serve_mcp_malformed_json_skipped() {
         let schema = serde_json::json!({"type": "object"});
@@ -650,6 +663,7 @@ mod tests {
     // ------------------------------------------------------------------
 
     /// Helper: call `run()` with a real schema file and redirected I/O.
+    #[cfg(unix)]
     fn run_with_input(input: &str, schema_body: &Value) -> Vec<String> {
         let dir = tempfile::tempdir().unwrap();
         let schema_path = dir.path().join("schema.json");
@@ -676,6 +690,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[cfg(unix)]
     #[test]
     fn run_with_schema_file_and_initialize() {
         let schema = serde_json::json!({"type": "object"});
@@ -692,6 +707,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn run_with_env_log_var() {
         let dir = tempfile::tempdir().unwrap();

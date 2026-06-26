@@ -117,6 +117,8 @@ async fn run_planner_agent(
         phase_id: 0,
         prompt: prompt.to_string(),
         model,
+        description: None,
+        role: None,
         allowlist: None,
         workdir: PathBuf::from("."),
         mcp_endpoint: None,
@@ -135,6 +137,22 @@ fn validate_generated(script: &str) -> Result<(), String> {
     validate_script(script).map_err(|e| format!("lua syntax error: {}", e))?;
     if !script.contains("report(") {
         return Err("script must call report(...) to emit a final result".to_string());
+    }
+    check_span_pairing(script)?;
+    Ok(())
+}
+
+/// Heuristic check that `phase_begin()` calls are accompanied by at least one
+/// `phase_end()`. Dynamic loops render as a single text pair, so we only reject
+/// the case where there are begins but zero ends.
+fn check_span_pairing(script: &str) -> Result<(), String> {
+    let begin_count = script.matches("phase_begin(").count();
+    let end_count = script.matches("phase_end(").count();
+    if begin_count > 0 && end_count == 0 {
+        return Err(format!(
+            "script has {} phase_begin() call(s) but no phase_end() — spans must be paired",
+            begin_count
+        ));
     }
     Ok(())
 }
@@ -265,11 +283,13 @@ fn find_fenced_block(text: &str) -> Option<String> {
 
 /// Build the planner prompt: DSL reference + task (+ optional fix-up error).
 fn build_prompt(task: &str, fix_error: Option<&str>) -> String {
-    let mut p = String::with_capacity(LUA_DSL_REFERENCE.len() + task.len() + 256);
+    let mut p = String::with_capacity(LUA_DSL_REFERENCE.len() + task.len() + 512);
     p.push_str(LUA_DSL_REFERENCE);
     p.push_str("\n\n# Task\n\n");
     p.push_str(task);
     p.push('\n');
+    p.push_str("\n# Decomposition guidance\n\n");
+    p.push_str(DECOMPOSITION_HINTS);
     if let Some(err) = fix_error {
         p.push_str("\n# Your previous attempt was rejected\n\n");
         p.push_str(err);
@@ -278,6 +298,16 @@ fn build_prompt(task: &str, fix_error: Option<&str>) -> String {
     p.push_str("\nOutput ONLY one ```lua code block — no prose before or after.\n");
     p
 }
+
+const DECOMPOSITION_HINTS: &str = r##"
+If this task involves multiple independent units of work (modules, files,
+subsystems, documents), decompose it into phase spans using phase_begin() /
+phase_end(). Each span should wrap a similar internal workflow.
+For unknown or large scopes, start with an agent() call to enumerate targets,
+then loop over them with one phase span per target.
+When the `completed_spans` global is non-nil (resume mode), skip spans whose
+name matches an existing entry.
+"##;
 
 /// The orchestration DSL spec handed to the planner agent. This is the
 /// "target language" the model compiles the task into. Kept in sync with the
@@ -339,6 +369,8 @@ Generate a Lua script that orchestrates LLM subagents to accomplish the user's t
     and returns the next. Prefer pipeline() over parallel() by default.
 
 - phase(name, planned?) -> phase_id   -- group work into a progress phase
+- phase_begin(name, planned?) -> span_id  -- begin a structural phase span (push onto span stack)
+- phase_end(span_id?)                    -- end the current (or matching id) structural phase span (pop)
 - log(msg, level?)                     -- emit a status line
 - budget(time_ms?, max_rounds?)        -- hint runtime limits
 - workflow(path, args?) -> result      -- call another saved workflow as a sub-step
@@ -393,6 +425,84 @@ task genuinely requires cross-checking; skip it for simple tasks.
    outside a quoted string are a syntax error. Write `prompt = "整理文档"`, NEVER
    `prompt = 整理文档`. This applies to table fields, function arguments, and
    string concatenation operands alike.
+12. For large tasks (refactoring multiple modules, auditing multiple subsystems),
+    decompose into phase spans. Each span wraps a similar internal workflow
+    (e.g., analyze → change → verify). Put phase_begin()/phase_end() around
+    each unit; use phase() for steps inside.
+13. For unknown scopes, have an agent enumerate targets first, then loop with
+    phase_begin() per target. Do NOT hardcode module names unless the task
+    specifies them.
+14. ALWAYS pair phase_begin() with phase_end(). Unpaired phase_begin() is a
+    runtime error.
+15. Spans can nest (2-3 levels). Use 2 levels by default (span + steps);
+    use 3 levels (group span + module span + steps) for whole-crate/monorepo tasks.
+16. When resuming (the `completed_spans` global is non-nil), skip spans whose
+    name matches an entry. Use `goto continue` to skip.
+
+# Example: per-module refactoring (static decomposition)
+```lua
+local MODULES = { "auth", "db", "api" }
+local results = {}
+
+for _, mod in ipairs(MODULES) do
+  local name = "refactor " .. mod
+  if completed_spans and completed_spans[name] then
+    log("skipping completed: " .. name)
+    goto continue
+  end
+  local m = phase_begin(name)
+    phase("analyze")
+    local a = agent({ prompt = "Analyze " .. mod .. " for issues", schema = ANALYSIS })
+
+    phase("refactor")
+    local c = agent({ prompt = "Apply refactoring to " .. mod, schema = CHANGES })
+
+    phase("verify")
+    local v = agent({ prompt = "Verify " .. mod .. " still passes tests", schema = VERIFY })
+    table.insert(results, { module = mod, ok = v.ok })
+  phase_end(m)
+  ::continue::
+end
+
+report({ refactored = #results, results = results })
+```
+
+# Example: whole-crate refactoring (dynamic enumeration, 3-level nesting)
+```lua
+phase("discover subsystems")
+local discover = agent({
+  prompt = "Enumerate subsystems under src/ that need refactoring",
+  schema = SUBSYSTEMS_SCHEMA
+})
+
+for _, sys in ipairs(discover.output.subsystems or {}) do
+  local gname = "refactor " .. sys.name
+  if completed_spans and completed_spans[gname] then
+    goto skip_sys
+  end
+  local g = phase_begin(gname)
+    local mods = agent({
+      prompt = "List modules in " .. sys.path .. " needing changes",
+      schema = MODULES_SCHEMA
+    })
+    for _, mod in ipairs(mods.output.modules or {}) do
+      local mname = "refactor " .. mod.name
+      if completed_spans and completed_spans[mname] then
+        goto skip_mod
+      end
+      local m = phase_begin(mname)
+        phase("analyze")
+        phase("change")
+        phase("verify")
+      phase_end(m)
+      ::skip_mod::
+    end
+  phase_end(g)
+  ::skip_sys::
+end
+
+report({ done = true })
+```
 
 # Example: simple research workflow
 ```lua
@@ -701,5 +811,32 @@ mod tests {
         assert!(p.contains("do task"));
         assert!(!p.contains("previous attempt was rejected"));
         assert!(p.contains("Output ONLY"));
+    }
+
+    // ── Span pairing validation ─────────────────────────────────────────
+
+    #[test]
+    fn test_validate_span_unpaired() {
+        let script = "local m = phase_begin(\"x\")\nreport({})";
+        assert!(validate_generated(script).is_err());
+    }
+
+    #[test]
+    fn test_validate_span_paired() {
+        let script = "local m = phase_begin(\"x\")\nphase_end(m)\nreport({})";
+        assert!(validate_generated(script).is_ok());
+    }
+
+    #[test]
+    fn test_validate_no_span_ok() {
+        let script = "report({ok=true})";
+        assert!(validate_generated(script).is_ok());
+    }
+
+    #[test]
+    fn test_build_prompt_contains_decomposition_hints() {
+        let p = build_prompt("refactor everything", None);
+        assert!(p.contains("Decomposition guidance"));
+        assert!(p.contains("phase_begin"));
     }
 }

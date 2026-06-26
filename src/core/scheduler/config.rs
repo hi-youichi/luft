@@ -48,7 +48,7 @@ impl Default for RetryPolicy {
             initial_backoff: Duration::from_millis(500),
             backoff_multiplier: 2.0,
             max_backoff: Duration::from_secs(10),
-            schema_retry_max: 1,
+            schema_retry_max: 3,
         }
     }
 }

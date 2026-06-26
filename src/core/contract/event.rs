@@ -23,6 +23,12 @@ pub enum AgentEvent {
         phase_id: PhaseId,
         label: String,
         planned: usize,
+        #[serde(default)]
+        parent_span_id: Option<u32>,
+        #[serde(default)]
+        description: Option<String>,
+        #[serde(default)]
+        role: Option<String>,
     },
     AgentStarted {
         run_id: RunId,
@@ -30,6 +36,10 @@ pub enum AgentEvent {
         agent_id: AgentId,
         prompt_preview: String,
         model: Option<String>,
+        #[serde(default)]
+        description: Option<String>,
+        #[serde(default)]
+        role: Option<String>,
     },
     AgentProgress {
         run_id: RunId,
@@ -160,6 +170,25 @@ pub enum AgentEvent {
         stages_completed: usize,
         total_ok: usize,
         total_failed: usize,
+    },
+    /// Structural phase span started — emitted by `phase_begin()`.
+    PhaseSpanStarted {
+        run_id: RunId,
+        span_id: u32,
+        name: String,
+        parent_id: Option<u32>,
+        depth: u32,
+        planned: usize,
+    },
+    /// Structural phase span done — emitted by `phase_end()`.
+    PhaseSpanDone {
+        run_id: RunId,
+        span_id: u32,
+        name: String,
+        parent_id: Option<u32>,
+        depth: u32,
+        elapsed_ms: u64,
+        status: String,
     },
 }
 

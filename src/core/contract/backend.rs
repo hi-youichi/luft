@@ -39,6 +39,10 @@ pub struct AgentTask {
     pub phase_id: PhaseId,
     pub prompt: String,
     pub model: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub role: Option<String>,
     pub allowlist: Option<ToolPolicy>,
     pub workdir: PathBuf,
     /// Data-plane injection point (Maestro MCP endpoint).

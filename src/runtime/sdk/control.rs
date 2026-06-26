@@ -5,8 +5,9 @@
 //! `agent()`/`parallel()` read for cache keys and events.
 
 use crate::core::contract::event::{AgentEvent, LogLevel};
+use crate::runtime::sdk::PhaseSpan;
 use crate::runtime::sdk::SdkContext;
-use mlua::{Lua, Table};
+use mlua::{Lua, Table, Value};
 use std::sync::atomic::Ordering;
 
 /// Register `phase`, `log`, and `budget` as Lua globals.
@@ -14,12 +15,79 @@ pub(crate) fn register_control_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<(
     let globals = lua.globals();
     let run_id = cx.run_id();
 
-    // ---- phase(name, planned?) -> phase_id --------------------------------
+    // ---- phase(name, planned?) -> phase_id  OR  phase(opts) -> phase_id -------
+    //
+    // Backward-compatible two forms:
+    //   phase("label", 3)                 — classic positional
+    //   phase({ label="..", planned=3, description="..", role="producer" })
     {
         let events = cx.events();
         let phase_counter = cx.phase_counter.clone();
-        let phase_fn = lua.create_function(move |_, (label, planned): (String, Option<f64>)| {
+        let phase_span_stack = cx.phase_span_stack.clone();
+        let phase_fn = lua.create_function(move |_, (first, second): (Value, Option<f64>)| {
+            let (label, planned, description, role) = match first {
+                Value::String(s) => {
+                    let label = s.to_str()?.to_string();
+                    let planned = second
+                        .map(|v| {
+                            if v.is_nan() || v < 0.0 { 0 }
+                            else if v > usize::MAX as f64 { usize::MAX }
+                            else { v as usize }
+                        })
+                        .unwrap_or(0);
+                    (label, planned, None, None)
+                }
+                Value::Table(t) => {
+                    let label: String = t.get("label")
+                        .or_else(|_| t.get(1))
+                        .map_err(|_| mlua::Error::RuntimeError(
+                            "phase: missing 'label' field".to_string()
+                        ))?;
+                    let planned = t.get::<f64>("planned")
+                        .or_else(|_| t.get::<f64>(2))
+                        .ok()
+                        .map(|v| {
+                            if v.is_nan() || v < 0.0 { 0 }
+                            else if v > usize::MAX as f64 { usize::MAX }
+                            else { v as usize }
+                        })
+                        .unwrap_or(0);
+                    let description: Option<String> = t.get("description").ok();
+                    let role: Option<String> = t.get("role").ok();
+                    (label, planned, description, role)
+                }
+                other => return Err(mlua::Error::RuntimeError(format!(
+                    "phase: expected string or table, got {}", other.type_name()
+                ))),
+            };
+
             let phase_id = phase_counter.fetch_add(1, Ordering::Relaxed) + 1;
+            let parent_span_id = {
+                let stack = phase_span_stack.lock().unwrap();
+                stack.last().map(|s| s.id)
+            };
+            tracing::info!(phase_id, %label, planned, parent_span_id = ?parent_span_id, "phase started");
+            let _ = events.send(AgentEvent::PhaseStarted {
+                run_id,
+                phase_id,
+                label,
+                planned,
+                parent_span_id,
+                description,
+                role,
+            });
+            Ok(phase_id as i64)
+        })?;
+        globals.set("phase", phase_fn)?;
+    }
+
+    // ---- phase_begin(name, planned?) -> span_id ----------------------------
+    {
+        let events = cx.events();
+        let phase_counter = cx.phase_counter.clone();
+        let phase_span_stack = cx.phase_span_stack.clone();
+        let begin_fn = lua.create_function(move |_, (name, planned): (String, Option<f64>)| {
+            let id = phase_counter.fetch_add(1, Ordering::Relaxed) + 1;
             let planned = planned
                 .map(|v| {
                     if v.is_nan() || v < 0.0 { 0 }
@@ -27,16 +95,69 @@ pub(crate) fn register_control_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<(
                     else { v as usize }
                 })
                 .unwrap_or(0);
-            tracing::info!(phase_id, %label, planned, "phase started");
-            let _ = events.send(AgentEvent::PhaseStarted {
+            let (parent_id, depth) = {
+                let stack = phase_span_stack.lock().unwrap();
+                (stack.last().map(|s| s.id), stack.len() as u32)
+            };
+            let span = PhaseSpan {
+                id,
+                name: name.clone(),
+                parent_id,
+                depth,
+                started_at: std::time::Instant::now(),
+                planned,
+            };
+            tracing::info!(span_id = id, %name, parent_id = ?parent_id, depth, "phase span started");
+            phase_span_stack.lock().unwrap().push(span);
+            let _ = events.send(AgentEvent::PhaseSpanStarted {
                 run_id,
-                phase_id,
-                label,
+                span_id: id,
+                name,
+                parent_id,
+                depth,
                 planned,
             });
-            Ok(phase_id as i64)
+            Ok(id as i64)
         })?;
-        globals.set("phase", phase_fn)?;
+        globals.set("phase_begin", begin_fn)?;
+    }
+
+    // ---- phase_end(span_id?) -----------------------------------------------
+    {
+        let events = cx.events();
+        let phase_span_stack = cx.phase_span_stack.clone();
+        let end_fn = lua.create_function(move |_, id: Option<i64>| {
+            let span = {
+                let mut stack = phase_span_stack.lock().unwrap();
+                match id {
+                    Some(target) => {
+                        let pos = stack.iter().rposition(|s| s.id as i64 == target)
+                            .ok_or_else(|| mlua::Error::RuntimeError(
+                                format!("phase_end: span id {} not found in stack", target)
+                            ))?;
+                        stack.split_off(pos).remove(0)
+                    }
+                    None => {
+                        stack.pop().ok_or_else(|| mlua::Error::RuntimeError(
+                            "phase_end: span stack is empty".to_string()
+                        ))?
+                    }
+                }
+            };
+            let elapsed_ms = span.started_at.elapsed().as_millis() as u64;
+            tracing::info!(span_id = span.id, elapsed_ms, "phase span ended");
+            let _ = events.send(AgentEvent::PhaseSpanDone {
+                run_id,
+                span_id: span.id,
+                name: span.name,
+                parent_id: span.parent_id,
+                depth: span.depth,
+                elapsed_ms,
+                status: "completed".to_string(),
+            });
+            Ok(())
+        })?;
+        globals.set("phase_end", end_fn)?;
     }
 
     // ---- log(msg, level?) --------------------------------------------------
@@ -298,4 +419,54 @@ mod tests {
         assert_eq!(t.get::<i64>("max_rounds").unwrap(), 20);
     }
 
+    // ── phase table form ────────────────────────────────────────
+
+    #[test]
+    fn phase_table_form_basic() {
+        let (lua, cx, _rt) = test_setup();
+        register_control_sdk(&lua, &cx).unwrap();
+        lua.load(r#"
+            p = phase({
+                label = "生成分析",
+                planned = 3,
+                description = "多个 producer 并行分析",
+                role = "producer",
+            })
+        "#).exec().unwrap();
+        let id: i64 = lua.globals().get("p").unwrap();
+        assert_eq!(id, 1);
+    }
+
+    #[test]
+    fn phase_table_form_minimal() {
+        let (lua, cx, _rt) = test_setup();
+        register_control_sdk(&lua, &cx).unwrap();
+        lua.load(r#"p = phase({ label = "only label" })"#).exec().unwrap();
+        let id: i64 = lua.globals().get("p").unwrap();
+        assert_eq!(id, 1);
+    }
+
+    #[test]
+    fn phase_table_missing_label_errors() {
+        let (lua, cx, _rt) = test_setup();
+        register_control_sdk(&lua, &cx).unwrap();
+        let result = lua.load(r#"phase({ planned = 3 })"#).exec();
+        assert!(result.is_err(), "missing label should error");
+    }
+
+    #[test]
+    fn phase_mixed_forms_increment() {
+        let (lua, cx, _rt) = test_setup();
+        register_control_sdk(&lua, &cx).unwrap();
+        lua.load(r#"p1 = phase("classic")"#).exec().unwrap();
+        lua.load(r#"p2 = phase({ label = "table" })"#).exec().unwrap();
+        lua.load(r#"p3 = phase("classic2", 5)"#).exec().unwrap();
+        let p1: i64 = lua.globals().get("p1").unwrap();
+        let p2: i64 = lua.globals().get("p2").unwrap();
+        let p3: i64 = lua.globals().get("p3").unwrap();
+        assert_eq!(p1, 1);
+        assert_eq!(p2, 2);
+        assert_eq!(p3, 3);
+    }
 }
+

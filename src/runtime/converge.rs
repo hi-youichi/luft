@@ -242,6 +242,8 @@ async fn generate_findings(
                 phase_id: 2, // Converge phase
                 prompt,
                 model: model.clone(),
+                description: None,
+                role: Some("producer".to_string()),
                 allowlist: None,
                 workdir: std::path::PathBuf::from("."),
                 mcp_endpoint: None,
@@ -299,6 +301,8 @@ async fn verify_findings(
                 phase_id: 2,
                 prompt,
                 model: model.clone(),
+                description: None,
+                role: Some("adversary".to_string()),
                 allowlist: None,
                 workdir: std::path::PathBuf::from("."),
                 mcp_endpoint: None,

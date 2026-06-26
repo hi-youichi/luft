@@ -426,6 +426,8 @@ mod tests {
                 agent_id,
                 prompt_preview: format!("task {i}"),
                 model: Some("claude-sonnet-4".into()),
+                description: None,
+                role: None,
             })
             .await
             .unwrap();
@@ -599,6 +601,8 @@ mod tests {
                 agent_id,
                 prompt_preview: "".into(),
                 model: None,
+                description: None,
+                role: None,
             })
             .await
             .unwrap();
