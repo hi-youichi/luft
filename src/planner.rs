@@ -427,6 +427,8 @@ Anti-patterns (do NOT do these):
     opts:   { prompt=<string, required>,     -- instructions for the subagent
               schema=<table?>,               -- JSON Schema to constrain output (RECOMMENDED)
               model=<string?>,               -- override model (default: backend's model)
+              name=<string?>,                -- short agent identifier shown in CLI (e.g. "analyze-auth")
+              description=<string?>,         -- one-line description shown in CLI (e.g. "审查 auth 模块安全")
               timeout_ms=<int?> }            -- per-agent timeout
     result: { ok=<bool>,                     -- true if agent succeeded
               status=<string>,               -- "ok" / "error" / "cancelled" / "timed_out"

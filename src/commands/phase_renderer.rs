@@ -34,6 +34,7 @@ use maestro::core::contract::ids::{AgentId, PhaseId, TokenUsage};
 
 struct AgentEntry {
     label: String,
+    description: Option<String>,
     pb: Option<ProgressBar>,
 }
 
@@ -72,11 +73,12 @@ impl PhaseRenderer {
                 self.on_phase_started(*phase_id, label, *planned);
             }
             AgentEvent::AgentStarted {
-                phase_id, agent_id, description, role, model, ..
+                phase_id, agent_id, name, description, role, model, ..
             } => {
                 self.on_agent_started(
                     *phase_id,
                     *agent_id,
+                    name.as_deref(),
                     description.as_deref(),
                     role.as_deref(),
                     model.as_deref(),
@@ -175,6 +177,7 @@ impl PhaseRenderer {
         &mut self,
         phase_id: PhaseId,
         agent_id: AgentId,
+        name: Option<&str>,
         description: Option<&str>,
         role: Option<&str>,
         model: Option<&str>,
@@ -184,10 +187,18 @@ impl PhaseRenderer {
             None => return,
         };
 
-        let label = description
+        let label = name
             .map(str::to_string)
+            .or_else(|| description.map(str::to_string))
             .or_else(|| role.map(str::to_string))
             .unwrap_or_else(|| short_id(&agent_id));
+
+        // Show description as secondary detail only when name was used as label.
+        let display_desc = if name.is_some() {
+            description.map(str::to_string)
+        } else {
+            None
+        };
 
         if self.tty {
             let pb = self.mp.add(ProgressBar::new_spinner());
@@ -197,14 +208,16 @@ impl PhaseRenderer {
                     .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"),
             );
             pb.enable_steady_tick(Duration::from_millis(80));
-            let display = match model {
-                Some(m) => format!("{} {}", label, style(m).dim()),
-                None => label.clone(),
+            let display = match (&display_desc, model) {
+                (Some(d), Some(m)) => format!("{} · {} · {}", label, style(d).dim(), style(m).dim()),
+                (Some(d), None) => format!("{} · {}", label, style(d).dim()),
+                (None, Some(m)) => format!("{} · {}", label, style(m).dim()),
+                (None, None) => label.clone(),
             };
             pb.set_message(display);
-            phase.agents.insert(agent_id, AgentEntry { label, pb: Some(pb) });
+            phase.agents.insert(agent_id, AgentEntry { label, description: display_desc, pb: Some(pb) });
         } else {
-            phase.agents.insert(agent_id, AgentEntry { label, pb: None });
+            phase.agents.insert(agent_id, AgentEntry { label, description: display_desc, pb: None });
         }
     }
 
@@ -236,7 +249,12 @@ impl PhaseRenderer {
             AgentStatus::TimedOut => (style("⏱").yellow().bold(), "TIMEOUT".into()),
         };
 
-        let line = format!("│   {} {} · {}", icon, entry.label, style(detail).dim());
+        let desc_part = entry
+            .description
+            .as_deref()
+            .map(|d| format!(" · {}", style(d).dim()))
+            .unwrap_or_default();
+        let line = format!("│   {} {}{} · {}", icon, entry.label, desc_part, style(detail).dim());
 
         // TTY: clear the spinner line, then print the final result.
         // Non-TTY: just print the line.

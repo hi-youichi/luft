@@ -71,13 +71,17 @@ pub fn format_event_line(evt: &AgentEvent) -> String {
         PhaseStarted { phase_id, label, planned, .. } => {
             format!("phase {phase_id} started: {label} ({planned} planned)")
         }
-        AgentStarted { agent_id, model, .. } => {
-            format!("agent {agent_id} started (model {})", model.as_deref().unwrap_or("default"))
+        AgentStarted { agent_id, model, name, description, .. } => {
+            let fallback = agent_id.to_string();
+            let label = name.as_deref().or(description.as_deref()).unwrap_or(&fallback);
+            format!("agent {} started (model {})", label, model.as_deref().unwrap_or("default"))
         }
         AgentProgress { agent_id, delta, .. } => format!("agent {agent_id} · {}", format_delta(delta)),
         AcpRaw { kind, .. } => format!("acp raw: {kind}"),
-        AgentDone { agent_id, status, tokens, elapsed_ms, .. } => {
-            format!("agent {agent_id} done: {status:?} ({elapsed_ms}ms, {} tok)", tokens.total())
+        AgentDone { agent_id, status, tokens, elapsed_ms, name, .. } => {
+            let fallback = agent_id.to_string();
+            let label = name.as_deref().unwrap_or(&fallback);
+            format!("agent {} done: {status:?} ({elapsed_ms}ms, {} tok)", label, tokens.total())
         }
         PhaseDone { phase_id, ok, failed, .. } => {
             format!("phase {phase_id} done: {ok} ok, {failed} failed")
@@ -220,9 +224,13 @@ mod tests {
             (AgentEvent::PhaseStarted { run_id: r, phase_id: 1, label: "work".into(), planned: 3, parent_span_id: None, description: None, role: None }, "phase 1 started"),
             (AgentEvent::AgentStarted { run_id: r, phase_id: 0, agent_id: r, prompt_preview: "".into(), model: None, description: None, role: None, name: None, agent_seq: 0 }, "agent "),
             (AgentEvent::AgentStarted { run_id: r, phase_id: 0, agent_id: r, prompt_preview: "".into(), model: Some("claude".into()), description: None, role: None, name: None, agent_seq: 0 }, "model claude"),
+            (AgentEvent::AgentStarted { run_id: r, phase_id: 0, agent_id: r, prompt_preview: "".into(), model: None, description: None, role: None, name: Some("analyze-auth".into()), agent_seq: 0 }, "agent analyze-auth started"),
+            (AgentEvent::AgentStarted { run_id: r, phase_id: 0, agent_id: r, prompt_preview: "".into(), model: None, description: Some("审查 auth".into()), role: None, name: None, agent_seq: 0 }, "agent 审查 auth started"),
+            (AgentEvent::AgentStarted { run_id: r, phase_id: 0, agent_id: r, prompt_preview: "".into(), model: None, description: None, role: None, name: Some("analyze-auth".into()), agent_seq: 0 }, "agent analyze-auth started"),
             (AgentEvent::AgentProgress { run_id: r, agent_id: r, delta: ProgressDelta::Message { text: "hello".into() } }, "agent "),
             (AgentEvent::AcpRaw { run_id: r, agent_id: r, kind: "plan".into(), raw: serde_json::json!({}) }, "acp raw: plan"),
             (AgentEvent::AgentDone { run_id: r, agent_id: r, status: AgentStatus::Error, tokens: TokenUsage::default(), elapsed_ms: 5, name: None, agent_seq: 0, output: serde_json::Value::Null, findings: Vec::new(), prompt: String::new() }, "agent "),
+            (AgentEvent::AgentDone { run_id: r, agent_id: r, status: AgentStatus::Ok, tokens: TokenUsage::default(), elapsed_ms: 5, name: Some("analyze-auth".into()), agent_seq: 0, output: serde_json::Value::Null, findings: Vec::new(), prompt: String::new() }, "agent analyze-auth done"),
             (AgentEvent::PhaseDone { run_id: r, phase_id: 1, ok: 2, failed: 0 }, "phase 1 done: 2 ok"),
             (AgentEvent::RunDone { run_id: r, status: RunStatus::Completed, total_tokens: TokenUsage::default(), report: serde_json::json!(null) }, "run done"),
             (AgentEvent::Log { run_id: r, agent_id: None, level: LogLevel::Info, msg: "hello".into() }, "log [Info] hello"),
