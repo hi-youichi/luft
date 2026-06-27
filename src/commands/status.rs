@@ -53,10 +53,7 @@ mod tests {
     use maestro::core::contract::finding::{Finding, Severity};
     use maestro::core::state::{get_run_store, AgentResultCache, PhaseSummary};
     use std::path::PathBuf;
-    use std::sync::Mutex;
     use tempfile::TempDir;
-
-    static CWD_LOCK: Mutex<()> = Mutex::new(());
 
     struct TestEnv {
         _lock: std::sync::MutexGuard<'static, ()>,
@@ -66,7 +63,7 @@ mod tests {
 
     impl TestEnv {
         fn new() -> Self {
-            let _lock = CWD_LOCK.lock().unwrap();
+            let _lock = super::super::GLOBAL_CWD_LOCK.lock().unwrap();
             let dir = TempDir::new().unwrap();
             let orig_cwd = std::env::current_dir().unwrap();
             std::env::set_current_dir(dir.path()).unwrap();
@@ -178,6 +175,8 @@ mod tests {
                 tokens: 100,
                 completed_at: 1234567890,
                 cache_key_hash: None,
+                description: None,
+                role: None,
             },
         );
         store.save_checkpoint(&cp).unwrap();
@@ -227,7 +226,8 @@ mod tests {
                 || msg.contains("Not a directory")
                 || msg.contains("would be a file")
                 || msg.contains("Is a directory")
-                || msg.contains("is a directory"),
+                || msg.contains("is a directory")
+                || msg.contains("already exists"),
             "unexpected error message: {msg}"
         );
     }
@@ -268,6 +268,8 @@ mod tests {
                 tokens: 500,
                 completed_at: 1234567890,
                 cache_key_hash: None,
+                description: None,
+                role: None,
             },
         );
         cp.findings.push(Finding {

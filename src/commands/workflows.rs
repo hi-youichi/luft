@@ -64,21 +64,28 @@ mod tests {
         orig_home: Option<String>,
     }
 
+    /// On Windows, `dirs::config_dir()` uses `APPDATA`; on Unix it uses `HOME`.
+    fn config_env_var() -> &'static str {
+        if cfg!(windows) { "APPDATA" } else { "HOME" }
+    }
+
     impl HomeEnv {
         fn new() -> Self {
             let _lock = HOME_LOCK.lock().unwrap();
             let dir = TempDir::new().unwrap();
-            let orig_home = std::env::var("HOME").ok();
-            std::env::set_var("HOME", dir.path());
+            let key = config_env_var();
+            let orig_home = std::env::var(key).ok();
+            std::env::set_var(key, dir.path());
             HomeEnv { _lock, _dir: dir, orig_home }
         }
     }
 
     impl Drop for HomeEnv {
         fn drop(&mut self) {
+            let key = config_env_var();
             match &self.orig_home {
-                Some(h) => std::env::set_var("HOME", h),
-                None => std::env::remove_var("HOME"),
+                Some(h) => std::env::set_var(key, h),
+                None => std::env::remove_var(key),
             }
         }
     }
@@ -91,27 +98,31 @@ mod tests {
     impl UnsetHomeGuard {
         fn new() -> Self {
             let _lock = HOME_LOCK.lock().unwrap();
-            let orig_home = std::env::var("HOME").ok();
-            std::env::remove_var("HOME");
+            let key = config_env_var();
+            let orig_home = std::env::var(key).ok();
+            std::env::remove_var(key);
             UnsetHomeGuard { _lock, orig_home }
         }
     }
 
     impl Drop for UnsetHomeGuard {
         fn drop(&mut self) {
+            let key = config_env_var();
             match &self.orig_home {
-                Some(h) => std::env::set_var("HOME", h),
-                None => std::env::remove_var("HOME"),
+                Some(h) => std::env::set_var(key, h),
+                None => std::env::remove_var(key),
             }
         }
     }
 
+    #[cfg(unix)]
     fn workflow_dir() -> PathBuf {
         let config = dirs::config_dir().unwrap();
         config.join("maestro").join("workflows")
     }
 
     #[test]
+    #[cfg(target_os = "macos")]
     fn config_dir_returns_macos_path_when_home_set() {
         let _env = HomeEnv::new();
         let home = std::env::var("HOME").unwrap();
@@ -122,18 +133,21 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn config_dir_returns_none_when_home_unset() {
         let _guard = UnsetHomeGuard::new();
         assert!(dirs::config_dir().is_none());
     }
 
     #[test]
+    #[cfg(unix)]
     fn list_workflows_dir_does_not_exist() {
         let _env = HomeEnv::new();
         assert!(list_workflows().is_ok());
     }
 
     #[test]
+    #[cfg(unix)]
     fn list_workflows_empty_directory() {
         let _env = HomeEnv::new();
         std::fs::create_dir_all(workflow_dir()).unwrap();
@@ -141,6 +155,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn list_workflows_with_lua_files() {
         let _env = HomeEnv::new();
         let wd = workflow_dir();
@@ -151,6 +166,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn list_workflows_filters_non_lua_files() {
         let _env = HomeEnv::new();
         let wd = workflow_dir();
@@ -161,6 +177,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn list_workflows_skips_files_without_extension() {
         let _env = HomeEnv::new();
         let wd = workflow_dir();
@@ -171,6 +188,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn list_workflows_read_dir_error() {
         let _env = HomeEnv::new();
         let wd = workflow_dir();
@@ -180,31 +198,35 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn home_env_drop_handles_originally_unset_home() {
-        let orig = std::env::var("HOME").ok();
-        std::env::remove_var("HOME");
+        let key = config_env_var();
+        let orig = std::env::var(key).ok();
+        std::env::remove_var(key);
         let lock = HOME_LOCK.lock().unwrap();
         let dir = TempDir::new().unwrap();
-        std::env::set_var("HOME", dir.path());
+        std::env::set_var(key, dir.path());
         {
             let _env = HomeEnv { _lock: lock, _dir: dir, orig_home: None };
         }
         match &orig {
-            Some(h) => std::env::set_var("HOME", h),
-            None => std::env::remove_var("HOME"),
+            Some(h) => std::env::set_var(key, h),
+            None => std::env::remove_var(key),
         }
     }
 
     #[test]
+    #[cfg(unix)]
     fn unset_home_guard_drop_handles_none_orig() {
+        let key = config_env_var();
         let lock = HOME_LOCK.lock().unwrap();
-        let orig = std::env::var("HOME").ok();
+        let orig = std::env::var(key).ok();
         {
             let _guard = UnsetHomeGuard { _lock: lock, orig_home: None };
         }
         match &orig {
-            Some(h) => std::env::set_var("HOME", h),
-            None => std::env::remove_var("HOME"),
+            Some(h) => std::env::set_var(key, h),
+            None => std::env::remove_var(key),
         }
     }
 }

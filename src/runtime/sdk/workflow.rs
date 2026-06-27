@@ -120,6 +120,12 @@ mod tests {
         assert!(lua.globals().get::<mlua::Function>("workflow").is_ok());
     }
 
+    /// Escape backslashes in a path for embedding in a Lua string literal.
+    /// On Windows, paths contain `\` which creates invalid Lua escape sequences.
+    fn lua_str(s: &str) -> String {
+        s.replace('\\', "\\\\")
+    }
+
     #[tokio::test]
     async fn workflow_none_args_uses_empty_object() {
         let dir = tempfile::tempdir().unwrap();
@@ -135,7 +141,7 @@ mod tests {
         register_workflow_sdk(&lua, &cx).unwrap();
 
         let path = sub_path.to_string_lossy().to_string();
-        let script = format!("return workflow(\"{}\", nil)", path);
+        let script = format!("return workflow(\"{}\", nil)", lua_str(&path));
 
         let args_type: String = tokio::task::spawn_blocking(move || {
             let result: mlua::Value = lua.load(script).eval()?;
@@ -185,7 +191,7 @@ mod tests {
         register_workflow_sdk(&lua, &cx).unwrap();
 
         let path = sub_path.to_string_lossy().to_string();
-        let script = format!("return workflow(\"{}\", {{}})", path);
+        let script = format!("return workflow(\"{}\", {{}})", lua_str(&path));
 
         let err = tokio::task::spawn_blocking(move || {
             lua.load(script).eval::<mlua::Value>()
@@ -213,7 +219,7 @@ mod tests {
         register_workflow_sdk(&lua, &cx).unwrap();
 
         let path = sub_path.to_string_lossy().to_string();
-        let script = format!("return workflow(\"{}\", {{}})", path);
+        let script = format!("return workflow(\"{}\", {{}})", lua_str(&path));
 
         let value: i64 = tokio::task::spawn_blocking(move || {
             let result: mlua::Value = lua.load(&script).eval()?;
@@ -245,7 +251,7 @@ mod tests {
 
         let path = sub_path.to_string_lossy().to_string();
         let script =
-            format!("return workflow(\"{}\", {{ name = \"hello\", count = 7 }})", path);
+            format!("return workflow(\"{}\", {{ name = \"hello\", count = 7 }})", lua_str(&path));
 
         let (name, count): (String, i64) = tokio::task::spawn_blocking(move || {
             let result: mlua::Value = lua.load(&script).eval()?;
@@ -273,7 +279,7 @@ mod tests {
         register_workflow_sdk(&lua, &cx).unwrap();
 
         let path = sub_path.to_string_lossy().to_string();
-        let script = format!("workflow(\"{}\", {{}})", path);
+        let script = format!("workflow(\"{}\", {{}})", lua_str(&path));
 
         tokio::task::spawn_blocking(move || {
             lua.load(&script).eval::<mlua::Value>()

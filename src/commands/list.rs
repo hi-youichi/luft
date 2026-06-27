@@ -32,9 +32,6 @@ mod tests {
     use std::sync::Mutex;
     use tempfile::TempDir;
 
-    /// Serialises CWD changes so parallel test executions don't race.
-    static CWD_LOCK: Mutex<()> = Mutex::new(());
-
     /// Drops the temp-dir *after* restoring CWD so the relative
     /// `.maestro/runs` path stays valid for the duration of the test.
     struct TestEnv {
@@ -45,7 +42,7 @@ mod tests {
 
     impl TestEnv {
         fn new() -> Self {
-            let _lock = CWD_LOCK.lock().unwrap();
+            let _lock = super::super::GLOBAL_CWD_LOCK.lock().unwrap();
             let dir = TempDir::new().unwrap();
             let orig_cwd = std::env::current_dir().unwrap();
             std::env::set_current_dir(dir.path()).unwrap();

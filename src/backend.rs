@@ -65,7 +65,8 @@ pub fn detect_backend() -> &'static str {
 }
 
 pub(crate) fn which_exists(cmd: &str) -> bool {
-    std::process::Command::new("which")
+    let checker = if cfg!(windows) { "where" } else { "which" };
+    std::process::Command::new(checker)
         .arg(cmd)
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -121,7 +122,11 @@ mod tests {
 
     #[test]
     fn which_exists_finds_existing_command() {
-        assert!(which_exists("echo"));
+        // On Unix, `echo` is typically at /bin/echo or /usr/bin/echo.
+        // On Windows, `echo` is a cmd builtin, not a standalone executable.
+        // Use `cmd` (Windows) or `sh` (Unix) as the known-present binary.
+        let cmd = if cfg!(windows) { "cmd" } else { "echo" };
+        assert!(which_exists(cmd));
     }
 
     #[test]

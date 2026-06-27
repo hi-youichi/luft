@@ -6,7 +6,7 @@
 //! - `agent(opts)`               — run a single agent
 //! - `parallel(items, mapFn)`    — barrier fan-out, results in input order
 //! - `pipeline(items, stages)`   — non-barrier streaming stages (M2)
-//! - `converge(items, opts)`     — adversarial verification + voting
+
 //! - `workflow(path, args?)`     — nested sub-workflow (M6)
 //! - `phase(name, planned?)`     — progress grouping, returns phase id
 //! - `phase_begin(name, planned?)` — begin a structural phase span (push)
@@ -17,7 +17,8 @@
 //! - `json.encode/decode`        — (de)serialization helpers
 //!
 //! Each primitive is registered by a `register_*_sdk` function in the
-//! [`crate::runtime::sdk`] (and [`crate::runtime::converge`] /
+//! [`crate::runtime::sdk`] (and
+
 //! [`crate::runtime::pipeline`]) modules; this file only owns the VM lifecycle
 //! and the registration dispatch in [`register_sdk`].
 //!

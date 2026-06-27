@@ -43,6 +43,10 @@ pub struct AgentTask {
     pub description: Option<String>,
     #[serde(default)]
     pub role: Option<String>,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub agent_seq: u32,
     pub allowlist: Option<ToolPolicy>,
     pub workdir: PathBuf,
     /// Data-plane injection point (Maestro MCP endpoint).

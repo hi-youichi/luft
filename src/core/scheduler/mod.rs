@@ -151,6 +151,11 @@ impl Scheduler {
                 status: AgentStatus::Error,
                 tokens: TokenUsage::default(),
                 elapsed_ms: 0,
+                name: task.name.clone(),
+                agent_seq: task.agent_seq,
+                output: serde_json::Value::Null,
+                findings: Vec::new(),
+                prompt: task.prompt.clone(),
             });
             return Err(SchedulerError::QuotaExceeded {
                 limit: self.config.quota_per_run,
@@ -175,6 +180,11 @@ impl Scheduler {
                     status: AgentStatus::Cancelled,
                     tokens: TokenUsage::default(),
                     elapsed_ms: 0,
+                    name: task.name.clone(),
+                    agent_seq: task.agent_seq,
+                    output: serde_json::Value::Null,
+                    findings: Vec::new(),
+                    prompt: task.prompt.clone(),
                 });
                 self.cleanup_agent(run_id, task.agent_id);
                 return Err(cancel_kind(&run_cancel));
@@ -189,6 +199,8 @@ impl Scheduler {
             model: task.model.clone(),
             description: task.description.clone(),
             role: task.role.clone(),
+            name: task.name.clone(),
+            agent_seq: task.agent_seq,
         });
 
         let start = Instant::now();
@@ -297,6 +309,17 @@ impl Scheduler {
             status: status.clone(),
             tokens,
             elapsed_ms,
+            name: task.name.clone(),
+            agent_seq: task.agent_seq,
+            output: match &outcome {
+                Ok(r) => r.output.clone(),
+                Err(_) => serde_json::Value::Null,
+            },
+            findings: match &outcome {
+                Ok(r) => r.findings.clone(),
+                Err(_) => Vec::new(),
+            },
+            prompt: task.prompt.clone(),
         });
         tracing::info!(?status, elapsed_ms, "agent finished");
 
@@ -415,6 +438,8 @@ mod tests {
             output_schema: None,
             description: None,
             role: None,
+            name: None,
+            agent_seq: 0,
         }
     }
 

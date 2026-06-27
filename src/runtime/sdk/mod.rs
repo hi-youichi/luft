@@ -41,6 +41,9 @@ pub(crate) struct SdkContext {
     /// Phase counter — incremented by `phase()` and `phase_begin()`, read by
     /// `agent()`/`parallel()` so cache keys and events carry a meaningful phase id.
     pub phase_counter: Arc<AtomicU32>,
+    /// Agent sequence counter — global monotonic, incremented per `agent()` call.
+    /// Shared across pipeline/parallel so every agent gets a unique display id.
+    pub agent_seq_counter: Arc<AtomicU32>,
     /// Span counter — `fetch_add`'d by each blocking SDK primitive to correlate
     /// its `*Started`/`*Done` event pair (see `docs/design/sdk-events.md`).
     pub span_counter: Arc<AtomicU64>,
@@ -64,6 +67,7 @@ impl SdkContext {
             handle,
             report_sink,
             phase_counter: Arc::new(AtomicU32::new(0)),
+            agent_seq_counter: Arc::new(AtomicU32::new(0)),
             span_counter: Arc::new(AtomicU64::new(0)),
             phase_span_stack: Arc::new(Mutex::new(Vec::new())),
         }

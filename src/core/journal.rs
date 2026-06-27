@@ -249,6 +249,11 @@ impl JournalStore {
             status,
             tokens,
             elapsed_ms: 0,
+            name: None,
+            agent_seq: 0,
+            output: serde_json::Value::Null,
+            findings: Vec::new(),
+            prompt: String::new(),
         };
         self.inner.append_event(&event)?;
 
@@ -387,7 +392,7 @@ impl crate::core::scheduler::JournalCallback for CompositeJournalCallback {
         tokens: TokenUsage,
     ) {
         for cb in &self.callbacks {
-            cb.on_agent_done(agent_id, phase_id, status.clone(), output.clone(), tokens.clone())
+            cb.on_agent_done(agent_id, phase_id, status.clone(), output.clone(), tokens)
                 .await;
         }
     }

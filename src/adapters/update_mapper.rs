@@ -120,7 +120,7 @@ pub fn handle_update(
             );
         }
         other => {
-            let kind = serde_json::to_value(&other)
+            let kind = serde_json::to_value(other)
                 .ok()
                 .and_then(|v| v.get("sessionUpdate").and_then(|v| v.as_str()).map(String::from))
                 .unwrap_or_else(|| "unknown".to_string());

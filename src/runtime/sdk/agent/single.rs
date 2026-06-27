@@ -20,10 +20,11 @@ pub(super) fn register(lua: &Lua, cx: &SdkContext) -> mlua::Result<()> {
     let handle = cx.handle.clone();
     let events = cx.events();
     let phase_counter = cx.phase_counter.clone();
+    let agent_seq_counter = cx.agent_seq_counter.clone();
 
     let agent_fn = lua.create_function(move |lua, opts: Table| {
         let phase_id = phase_counter.load(Ordering::Relaxed);
-        let (task, cache_key, backend) = build_task(&opts, phase_id)?;
+        let (task, cache_key, backend) = build_task(&opts, phase_id, &agent_seq_counter)?;
 
         // M1 resume: skip already-completed agents.
         if let Some(ref j) = journal {

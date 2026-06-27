@@ -22,6 +22,7 @@ pub(super) fn register(lua: &Lua, cx: &SdkContext) -> mlua::Result<()> {
     let journal = cx.journal.clone();
     let handle = cx.handle.clone();
     let phase_counter = cx.phase_counter.clone();
+    let agent_seq_counter = cx.agent_seq_counter.clone();
     let span_counter = cx.span_counter.clone();
     let events = cx.events();
 
@@ -58,7 +59,7 @@ pub(super) fn register(lua: &Lua, cx: &SdkContext) -> mlua::Result<()> {
                         ))
                     }
                 };
-                let (task, cache_key, backend) = build_task(&opts, phase_id)?;
+                let (task, cache_key, backend) = build_task(&opts, phase_id, &agent_seq_counter)?;
 
                 if let Some(ref j) = journal {
                     if let Some(c) = j.get_cached(&cache_key) {
@@ -149,6 +150,7 @@ mod tests {
     use crate::runtime::sdk::ReportSink;
     use crate::runtime::sdk::SdkContext;
     use mlua::Lua;
+    use std::sync::atomic::AtomicU32;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
     use tokio::sync::broadcast;
@@ -611,7 +613,7 @@ mod tests {
         // Pre-populate cache with the key that the Lua map fn will produce.
         let opts = lua.create_table().unwrap();
         opts.set("prompt", "cached_prompt").unwrap();
-        let (_, cache_key, _) = build_task(&opts, 0).unwrap();
+        let (_, cache_key, _) = build_task(&opts, 0, &Arc::new(AtomicU32::new(0))).unwrap();
         journal
             .cache_agent(
                 &cache_key,
@@ -668,7 +670,7 @@ mod tests {
         // Cache "aaa" prompt
         let opts1 = lua.create_table().unwrap();
         opts1.set("prompt", "aaa").unwrap();
-        let (_, ck1, _) = build_task(&opts1, 0).unwrap();
+        let (_, ck1, _) = build_task(&opts1, 0, &Arc::new(AtomicU32::new(0))).unwrap();
         journal
             .cache_agent(
                 &ck1,

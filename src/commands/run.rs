@@ -4,7 +4,9 @@
 //! the library exposes only the presentation-free service.
 
 use crate::backend;
+use crate::commands::artifact_writer::ArtifactWriter;
 use crate::commands::event_log::EventLogger;
+use crate::commands::phase_renderer::PhaseRenderer;
 use crate::commands::runs_base_dir;
 use crate::RunArgs;
 use anyhow::Result;
@@ -97,12 +99,24 @@ pub async fn run_workflow(args: RunArgs) -> Result<()> {
             None => None,
         };
 
+        let artifact_dir = if args.no_artifacts {
+            None
+        } else {
+            Some(
+                base_dir
+                    .join(&spec.run_dir_name)
+                    .join(spec.run_id.to_string()),
+            )
+        };
+        let artifact_writer = artifact_dir.map(|dir| ArtifactWriter::new(dir, spec.run_id));
+
         let result = run_headless(
             ctx,
             prepared.runtime,
             current_script.clone(),
             args.output.clone(),
             logger,
+            artifact_writer,
         )
         .await;
 
@@ -192,9 +206,9 @@ async fn drain_events<F: FnMut(&AgentEvent)>(
     skipped
 }
 
-/// Headless mode: stream events as JSONL live (concurrently with execution),
-/// then the final report. When `logger` is set, each event is also written to
-/// the event-log sink.
+/// Headless mode: render events as a live phase tree to stdout (concurrently
+/// with execution), then print the final report. When `logger` is set, each
+/// event is also written to the event-log sink.
 ///
 /// Returns `Ok(())` on successful execution. Returns an error when execution
 /// fails, so the caller can retry with a fixed script.
@@ -204,19 +218,21 @@ async fn run_headless(
     script: String,
     output: Option<PathBuf>,
     mut logger: Option<EventLogger>,
+    mut artifact_writer: Option<ArtifactWriter>,
 ) -> Result<()> {
     use tokio::time::Duration;
 
-    let run_id = run_ctx.run_id;
-
+    let tty = console::user_attended();
     let rx = run_ctx.events.subscribe();
     let printer = tokio::spawn(async move {
+        let mut renderer = PhaseRenderer::new(tty);
         let skipped = drain_events(rx, |evt| {
-            if let Ok(s) = serde_json::to_string(evt) {
-                println!("{s}");
-            }
+            renderer.handle(evt);
             if let Some(l) = logger.as_mut() {
                 let _ = l.write(evt);
+            }
+            if let Some(w) = artifact_writer.as_mut() {
+                w.handle(evt);
             }
         })
         .await;
@@ -241,20 +257,41 @@ async fn run_headless(
                 write_report(path, &report)?;
                 eprintln!("Report written to {}", path.display());
             }
-            println!(
-                "{}",
-                serde_json::to_string(&serde_json::json!({
-                    "type": "report",
-                    "run_id": run_id.to_string(),
-                    "report": report,
-                }))?
-            );
+            print_report(&report);
             Ok(())
         }
         Err(e) => {
             tracing::error!(error = %e, "workflow execution failed");
             eprintln!("Execution error: {}", e);
             Err(anyhow::anyhow!("{}", e))
+        }
+    }
+}
+
+/// Print the final report value to stdout in a human-readable way.
+///
+/// String reports (and objects with a `markdown` string field) are printed
+/// verbatim; everything else is pretty-printed as JSON. `null` is silently
+/// skipped.
+fn print_report(report: &serde_json::Value) {
+    match report {
+        serde_json::Value::Null => {}
+        serde_json::Value::String(s) => {
+            println!();
+            println!("{s}");
+        }
+        serde_json::Value::Object(map) => {
+            if let Some(serde_json::Value::String(s)) = map.get("markdown") {
+                println!();
+                println!("{s}");
+            } else {
+                println!();
+                println!("{}", serde_json::to_string_pretty(report).unwrap_or_default());
+            }
+        }
+        other => {
+            println!();
+            println!("{}", serde_json::to_string_pretty(other).unwrap_or_default());
         }
     }
 }
@@ -281,6 +318,8 @@ async fn try_fix_script(script: &str, error: &str, backend_id: &str) -> Result<S
         model: None,
         description: None,
         role: None,
+        name: None,
+        agent_seq: 0,
         allowlist: None,
         workdir: std::env::current_dir().unwrap_or_default(),
         mcp_endpoint: None,
@@ -384,7 +423,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn drain_passes_through_acp_raw() {
+    async fn drain_skips_acp_raw() {
         let (tx, rx) = tokio::sync::broadcast::channel(16);
         let run_id = RunId::now_v7();
         tx.send(AgentEvent::AcpRaw {
@@ -399,8 +438,8 @@ mod tests {
         let mut lines = Vec::new();
         drain_events(rx, |evt| lines.push(serde_json::to_string(evt).unwrap())).await;
 
-        assert!(lines[0].contains("\"type\":\"acp_raw\""));
-        assert!(lines[0].contains("\"kind\":\"plan\""));
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].contains("\"type\":\"run_done\""));
     }
 
     #[tokio::test]
@@ -539,7 +578,7 @@ mod tests {
         };
         let rt = empty_script_runtime(&run_ctx).await;
 
-        run_headless(run_ctx, rt, "".to_string(), Some(output.clone()), None)
+        run_headless(run_ctx, rt, "".to_string(), Some(output.clone()), None, None)
             .await
             .unwrap();
 
@@ -559,7 +598,7 @@ mod tests {
         };
         let rt = empty_script_runtime(&run_ctx).await;
 
-        run_headless(run_ctx, rt, "".to_string(), None, None)
+        run_headless(run_ctx, rt, "".to_string(), None, None, None)
             .await
             .unwrap();
     }
@@ -575,7 +614,7 @@ mod tests {
         };
         let rt = empty_script_runtime(&run_ctx).await;
 
-        let result = run_headless(run_ctx, rt, "not valid lua <<<>>>".to_string(), None, None)
+        let result = run_headless(run_ctx, rt, "not valid lua <<<>>>".to_string(), None, None, None)
             .await;
         assert!(result.is_err(), "expected Err on script failure");
         let err = result.unwrap_err().to_string();
@@ -597,7 +636,7 @@ mod tests {
         };
         let rt = empty_script_runtime(&run_ctx).await;
 
-        run_headless(run_ctx, rt, "".to_string(), None, Some(logger))
+        run_headless(run_ctx, rt, "".to_string(), None, Some(logger), None)
             .await
             .unwrap();
 

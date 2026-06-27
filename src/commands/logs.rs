@@ -29,10 +29,7 @@ pub fn logs_run_cmd(run_dir: String, limit: Option<usize>) -> Result<()> {
 mod tests {
     use super::*;
     use std::path::PathBuf;
-    use std::sync::Mutex;
     use tempfile::TempDir;
-
-    static CWD_LOCK: Mutex<()> = Mutex::new(());
 
     struct TestEnv {
         _lock: std::sync::MutexGuard<'static, ()>,
@@ -42,7 +39,7 @@ mod tests {
 
     impl TestEnv {
         fn new() -> Self {
-            let _lock = CWD_LOCK.lock().unwrap();
+            let _lock = super::super::GLOBAL_CWD_LOCK.lock().unwrap();
             let dir = TempDir::new().unwrap();
             let orig_cwd = std::env::current_dir().unwrap();
             std::env::set_current_dir(dir.path()).unwrap();
@@ -178,6 +175,10 @@ mod tests {
                 agent_id: rid(),
                 prompt_preview: "do stuff".into(),
                 model: Some("gpt-4".into()),
+                description: None,
+                role: None,
+                name: None,
+                agent_seq: 0,
             },
             AgentEvent::AgentProgress {
                 run_id,
@@ -190,6 +191,11 @@ mod tests {
                 status: AgentStatus::Ok,
                 tokens: TokenUsage { input: 10, output: 5, cache_read: 0, cache_write: 0 },
                 elapsed_ms: 500,
+                name: None,
+                agent_seq: 0,
+                output: serde_json::Value::Null,
+                findings: Vec::new(),
+                prompt: String::new(),
             },
             AgentEvent::PhaseDone { run_id, phase_id: 0, ok: 1, failed: 0 },
             AgentEvent::RunDone {

@@ -11,15 +11,18 @@ use crate::core::journal::AgentCacheKey;
 use crate::runtime::sdk::convert::{lua_value_from_json, value_to_json};
 use mlua::{Lua, Table, Value};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 /// Build an [`AgentTask`] (+ cache key + optional backend id) from a Lua opts
 /// table. Recognised keys: `prompt` (required), `model`, `schema`, `backend`,
-/// `timeout_ms` (idle timeout: max silence from the agent before the session
-/// is killed).
+/// `name`, `timeout_ms` (idle timeout: max silence from the agent before the
+/// session is killed).
 pub(crate) fn build_task(
     opts: &Table,
     phase_id: PhaseId,
+    agent_seq_counter: &Arc<AtomicU32>,
 ) -> mlua::Result<(AgentTask, AgentCacheKey, Option<String>)> {
     let prompt: String = opts
         .get("prompt")
@@ -28,6 +31,7 @@ pub(crate) fn build_task(
     let backend: Option<String> = opts.get::<Option<String>>("backend").ok().flatten();
     let description: Option<String> = opts.get::<Option<String>>("description").ok().flatten();
     let role: Option<String> = opts.get::<Option<String>>("role").ok().flatten();
+    let name: Option<String> = opts.get::<Option<String>>("name").ok().flatten();
     let timeout = opts
         .get::<i64>("timeout_ms")
         .ok()
@@ -51,6 +55,7 @@ pub(crate) fn build_task(
     };
 
     let cache_key = AgentCacheKey::new(&prompt, model.as_deref(), phase_id);
+    let agent_seq = agent_seq_counter.fetch_add(1, Ordering::Relaxed);
     let task = AgentTask {
         agent_id: uuid::Uuid::now_v7(),
         phase_id,
@@ -58,6 +63,8 @@ pub(crate) fn build_task(
         model,
         description,
         role,
+        name,
+        agent_seq,
         allowlist: None,
         workdir: PathBuf::from("."),
         mcp_endpoint: None,
@@ -104,10 +111,14 @@ mod tests {
         lua.create_table().unwrap()
     }
 
+    fn seq_counter() -> Arc<AtomicU32> {
+        Arc::new(AtomicU32::new(0))
+    }
+
     #[test]
     fn build_task_requires_prompt() {
         let lua = Lua::new();
-        assert!(build_task(&opts(&lua), 1).is_err());
+        assert!(build_task(&opts(&lua), 1, &seq_counter()).is_err());
     }
 
     #[test]
@@ -118,7 +129,7 @@ mod tests {
         o.set("model", "claude-x").unwrap();
         o.set("backend", "acp").unwrap();
         o.set("timeout_ms", 5000).unwrap();
-        let (task, _key, backend) = build_task(&o, 7).unwrap();
+        let (task, _key, backend) = build_task(&o, 7, &seq_counter()).unwrap();
         assert_eq!(task.prompt, "do it");
         assert_eq!(task.model.as_deref(), Some("claude-x"));
         assert_eq!(task.phase_id, 7);
@@ -132,7 +143,7 @@ mod tests {
         let o = opts(&lua);
         o.set("prompt", "x").unwrap();
         o.set("timeout_ms", 0).unwrap();
-        let (task, _, _) = build_task(&o, 0).unwrap();
+        let (task, _, _) = build_task(&o, 0, &seq_counter()).unwrap();
         assert!(task.timeout.is_none());
     }
 
@@ -148,7 +159,7 @@ mod tests {
         schema.set("properties", props).unwrap();
         o.set("schema", schema).unwrap();
 
-        let (task, _, _) = build_task(&o, 0).unwrap();
+        let (task, _, _) = build_task(&o, 0, &seq_counter()).unwrap();
         assert!(task.prompt.contains("IMPORTANT"));
         assert!(task.prompt.contains("structured_output"));
         assert!(task.prompt.contains("tool"));
@@ -161,7 +172,7 @@ mod tests {
         let lua = Lua::new();
         let o = opts(&lua);
         o.set("prompt", "just text").unwrap();
-        let (task, _, _) = build_task(&o, 0).unwrap();
+        let (task, _, _) = build_task(&o, 0, &seq_counter()).unwrap();
         assert_eq!(task.prompt, "just text");
         assert!(task.output_schema.is_none());
     }
@@ -173,7 +184,7 @@ mod tests {
             let o = opts(&lua);
             o.set("prompt", "same prompt").unwrap();
             o.set("model", "m").unwrap();
-            build_task(&o, phase).unwrap().1.hash
+            build_task(&o, phase, &seq_counter()).unwrap().1.hash
         };
         // Same prompt+model+phase → same hash; different phase → different hash.
         assert_eq!(key(3), key(3));

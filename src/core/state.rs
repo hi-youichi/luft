@@ -389,7 +389,7 @@ static RUN_STORES: OnceLock<dashmap::DashMap<String, Arc<RunStore>>> = OnceLock:
 
 /// Get or create the global run stores.
 fn get_run_stores() -> &'static dashmap::DashMap<String, Arc<RunStore>> {
-    RUN_STORES.get_or_init(|| dashmap::DashMap::new())
+    RUN_STORES.get_or_init(dashmap::DashMap::new)
 }
 
 /// Get or create a run store for a run directory.

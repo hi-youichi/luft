@@ -504,6 +504,8 @@ mod tests {
             output_schema,
             description: None,
             role: None,
+            name: None,
+            agent_seq: 0,
         }
     }
 
@@ -562,14 +564,34 @@ mod tests {
 
     // ── Non-ACP binary that produces output → error (Protocol or Timeout) ──
     //
-    // `/bin/echo acp` prints "acp\n" to stdout then exits. The ACP client
+    // Using a no-op binary (echo/true) as a non-ACP binary. The ACP client
     // either fails to parse the output (Protocol) or hits the connection-closed
     // path (Timeout), depending on timing. Both are valid error outcomes.
+
+    fn echo_binary() -> PathBuf {
+        if cfg!(windows) {
+            PathBuf::from(
+                std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".into()),
+            )
+        } else {
+            PathBuf::from("/bin/echo")
+        }
+    }
+
+    fn true_binary() -> PathBuf {
+        if cfg!(windows) {
+            PathBuf::from(
+                std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".into()),
+            )
+        } else {
+            PathBuf::from("/usr/bin/true")
+        }
+    }
 
     #[tokio::test]
     async fn run_with_non_acp_binary_returns_error() {
         let config = AcpConfig {
-            binary: PathBuf::from("/bin/echo"),
+            binary: echo_binary(),
             ..Default::default()
         };
         let adapter = AcpAdapter::new(config);
@@ -587,7 +609,7 @@ mod tests {
     #[tokio::test]
     async fn run_with_precancelled_token_returns_cancelled() {
         let config = AcpConfig {
-            binary: PathBuf::from("/usr/bin/true"),
+            binary: true_binary(),
             ..Default::default()
         };
         let adapter = AcpAdapter::new(config);
@@ -665,13 +687,13 @@ mod tests {
 
     // ── Output-schema guard ────────────────────────────────────────
     //
-    // Using /bin/echo (non-ACP binary) with an output schema. The result is
+    // Using a non-ACP binary with an output schema. The result is
     // either Protocol or Timeout depending on timing (see note above).
 
     #[tokio::test]
     async fn run_with_output_schema_creates_guard() {
         let config = AcpConfig {
-            binary: PathBuf::from("/bin/echo"),
+            binary: echo_binary(),
             ..Default::default()
         };
         let adapter = AcpAdapter::new(config);

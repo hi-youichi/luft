@@ -2,6 +2,7 @@
 //! Each [`AgentEvent`] is consumed by the event bus subscribers; the state store persists it.
 
 use crate::core::contract::backend::AgentStatus;
+use crate::core::contract::finding::Finding;
 use crate::core::contract::ids::{AgentId, PhaseId, RunId, TokenUsage};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -40,6 +41,10 @@ pub enum AgentEvent {
         description: Option<String>,
         #[serde(default)]
         role: Option<String>,
+        #[serde(default)]
+        name: Option<String>,
+        #[serde(default)]
+        agent_seq: u32,
     },
     AgentProgress {
         run_id: RunId,
@@ -66,6 +71,16 @@ pub enum AgentEvent {
         status: AgentStatus,
         tokens: TokenUsage,
         elapsed_ms: u64,
+        #[serde(default)]
+        name: Option<String>,
+        #[serde(default)]
+        agent_seq: u32,
+        #[serde(default)]
+        output: serde_json::Value,
+        #[serde(default)]
+        findings: Vec<Finding>,
+        #[serde(default)]
+        prompt: String,
     },
     PhaseDone {
         run_id: RunId,

@@ -244,6 +244,8 @@ async fn generate_findings(
                 model: model.clone(),
                 description: None,
                 role: Some("producer".to_string()),
+                name: None,
+                agent_seq: 0,
                 allowlist: None,
                 workdir: std::path::PathBuf::from("."),
                 mcp_endpoint: None,
@@ -303,6 +305,8 @@ async fn verify_findings(
                 model: model.clone(),
                 description: None,
                 role: Some("adversary".to_string()),
+                name: None,
+                agent_seq: 0,
                 allowlist: None,
                 workdir: std::path::PathBuf::from("."),
                 mcp_endpoint: None,
@@ -574,16 +578,14 @@ Value::String(s) => {
 
             // Fall back to object
             let mut map = serde_json::Map::new();
-            for pair in t.pairs::<Value, Value>() {
-                if let Ok((k, v)) = pair {
-                    let key = match k {
-                        Value::String(s) => s.clone().to_str().map(|s| s.to_string()).unwrap_or_default(),
-                        Value::Integer(i) => i.to_string(),
-                        _ => continue,
-                    };
-                    if let Ok(v) = lua_value_to_json(&v) {
-                        map.insert(key, v);
-                    }
+            for (k, v) in t.pairs::<Value, Value>().flatten() {
+                let key = match k {
+                    Value::String(s) => s.clone().to_str().map(|s| s.to_string()).unwrap_or_default(),
+                    Value::Integer(i) => i.to_string(),
+                    _ => continue,
+                };
+                if let Ok(v) = lua_value_to_json(&v) {
+                    map.insert(key, v);
                 }
             }
             Ok(serde_json::Value::Object(map))

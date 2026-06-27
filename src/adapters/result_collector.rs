@@ -151,6 +151,8 @@ mod tests {
             output_schema: None,
             description: None,
             role: None,
+            name: None,
+            agent_seq: 0,
         }
     }
 

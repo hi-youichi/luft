@@ -60,6 +60,8 @@ impl EventWriter {
                 model,
                 description: _,
                 role: _,
+                name: _,
+                agent_seq: _,
             } => {
                 self.write_agent_started(
                     *run_id,
@@ -83,6 +85,11 @@ impl EventWriter {
                 status,
                 tokens,
                 elapsed_ms,
+                name: _,
+                agent_seq: _,
+                output: _,
+                findings: _,
+                prompt: _,
             } => {
                 self.write_agent_done(*run_id, *agent_id, status, *tokens, *elapsed_ms)
                     .await?;
@@ -870,6 +877,8 @@ mod tests {
             model: Some("claude-sonnet-4".into()),
             description: None,
             role: None,
+            name: None,
+            agent_seq: 0,
         })
         .await
         .unwrap();
@@ -906,6 +915,8 @@ mod tests {
             model: None,
             description: None,
             role: None,
+            name: None,
+            agent_seq: 0,
         })
         .await
         .unwrap();
@@ -950,6 +961,8 @@ mod tests {
             model: None,
             description: None,
             role: None,
+            name: None,
+            agent_seq: 0,
         })
         .await
         .unwrap();
@@ -993,6 +1006,8 @@ mod tests {
             model: None,
             description: None,
             role: None,
+            name: None,
+            agent_seq: 0,
         })
         .await
         .unwrap();
@@ -1029,6 +1044,8 @@ mod tests {
             model: None,
             description: None,
             role: None,
+            name: None,
+            agent_seq: 0,
         })
         .await
         .unwrap();
@@ -1044,6 +1061,11 @@ mod tests {
                 cache_write: 0,
             },
             elapsed_ms: 1234,
+            name: None,
+            agent_seq: 0,
+            output: serde_json::Value::Null,
+            findings: Vec::new(),
+            prompt: String::new(),
         })
         .await
         .unwrap();
@@ -1220,6 +1242,8 @@ mod tests {
             model: None,
             description: None,
             role: None,
+            name: None,
+            agent_seq: 0,
         })
         .await
         .unwrap();

@@ -170,7 +170,7 @@ async fn workflow_events_emitted() {
         local w = workflow("{}", {{ k = 1 }})
         report({{ got = w.sub }})
     "#,
-        sub_path.display()
+        sub_path.display().to_string().replace('\\', "\\\\")
     );
     let events = run_collecting_events(ok_backend(), &script).await;
 

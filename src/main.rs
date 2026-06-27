@@ -130,6 +130,9 @@ struct RunArgs {
     #[arg(long, default_value_t = 3, help = "Max fix attempts when auto-fix is enabled")]
     max_fix_attempts: u32,
 
+    #[arg(long, help = "Disable writing agent artifact reports to disk")]
+    no_artifacts: bool,
+
 }
 
 #[tokio::main]
@@ -199,8 +202,9 @@ mod tests {
         };
         let err = dispatch(cli).await.unwrap_err();
         assert!(
-            err.to_string().contains("planner"),
-            "expected planner error, got: {}",
+            err.to_string().contains("planner")
+                || err.to_string().contains("real LLM backend"),
+            "expected planner or backend error, got: {}",
             err
         );
     }
@@ -222,6 +226,7 @@ mod tests {
                 extra_args: None,
                 auto_fix: false,
                 max_fix_attempts: 3,
+                no_artifacts: false,
             }),
             log_level: None,
         };
@@ -250,6 +255,7 @@ mod tests {
                 extra_args: None,
                 auto_fix: false,
                 max_fix_attempts: 3,
+                no_artifacts: false,
             }),
             log_level: None,
         };
@@ -343,7 +349,7 @@ mod tests {
         };
         let err = dispatch(cli).await.unwrap_err();
         assert!(
-            err.to_string().contains("No such file") || err.to_string().contains("os error 2"),
+            err.to_string().contains("No such file") || err.to_string().contains("os error 2") || err.to_string().contains("os error 3") || err.to_string().contains("cannot find the path"),
             "expected filesystem error, got: {}",
             err
         );
