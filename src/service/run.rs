@@ -598,7 +598,7 @@ mod tests {
     #[tokio::test]
     async fn resolve_script_nl_variant() {
         let output =
-            serde_json::json!("```lua\nagent({prompt='test'})\nreport({ok=true})\n```");
+            serde_json::json!("```lua\nmeta = { reasoning = \"test\", phases = {} }\nfunction main()\nagent({prompt='test'})\nreport({ok=true})\nend\n```");
         let backend: Arc<dyn AgentBackend> = Arc::new(MockBackend::new(
             "mock",
             vec![MockBehavior::Success {
@@ -661,7 +661,7 @@ mod tests {
     #[tokio::test]
     async fn resolve_fresh_nl_variant() {
         let output =
-            serde_json::json!("```lua\nagent({prompt='test'})\nreport({ok=true})\n```");
+            serde_json::json!("```lua\nmeta = { reasoning = \"test\", phases = {} }\nfunction main()\nagent({prompt='test'})\nreport({ok=true})\nend\n```");
         let backend: Arc<dyn AgentBackend> = Arc::new(MockBackend::new(
             "mock",
             vec![MockBehavior::Success {
@@ -1064,7 +1064,7 @@ mod tests {
         )
         .unwrap();
 
-        let script = "report({hello = 'world'})".to_string();
+        let script = "meta = { reasoning = \"test\", phases = {{ label = \"work\" }} }\nfunction main() report({hello = 'world'}) end".to_string();
         let result = execute(&run_ctx, runtime, script).await.unwrap();
         assert!(result.is_ok());
         let val = result.unwrap();

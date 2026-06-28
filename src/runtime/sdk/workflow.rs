@@ -132,7 +132,7 @@ mod tests {
         let sub_path = dir.path().join("sub.lua");
         std::fs::write(
             &sub_path,
-            "report({ args_type = type(args) })",
+            "meta = { reasoning = \"test\", phases = {{ label = \"work\" }} }\nfunction main() report({ args_type = type(args) }) end",
         )
         .unwrap();
 
@@ -212,7 +212,7 @@ mod tests {
     async fn workflow_successful_execution_returns_report() {
         let dir = tempfile::tempdir().unwrap();
         let sub_path = dir.path().join("ok.lua");
-        std::fs::write(&sub_path, "report({ value = 99 })").unwrap();
+        std::fs::write(&sub_path, "meta = { reasoning = \"test\", phases = {{ label = \"work\" }} }\nfunction main() report({ value = 99 }) end").unwrap();
 
         let lua = Lua::new();
         let (cx, _rx) = make_cx();
@@ -241,7 +241,7 @@ mod tests {
         let sub_path = dir.path().join("args.lua");
         std::fs::write(
             &sub_path,
-            "report({ name = args.name, count = args.count })",
+            "meta = { reasoning = \"test\", phases = {{ label = \"work\" }} }\nfunction main() report({ name = args.name, count = args.count }) end",
         )
         .unwrap();
 
@@ -272,7 +272,7 @@ mod tests {
     async fn workflow_emits_started_and_done_events() {
         let dir = tempfile::tempdir().unwrap();
         let sub_path = dir.path().join("events.lua");
-        std::fs::write(&sub_path, "report({ ok = true })").unwrap();
+        std::fs::write(&sub_path, "meta = { reasoning = \"test\", phases = {{ label = \"work\" }} }\nfunction main() report({ ok = true }) end").unwrap();
 
         let lua = Lua::new();
         let (cx, mut rx) = make_cx();

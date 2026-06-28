@@ -14,6 +14,16 @@
 --
 -- 子研究员以「仓库当前目录」为 cwd 运行，因此可读取 ./docs 下的本地资料来夯实结论。
 
+meta = {
+  reasoning = "Multi-agent deep research workflow: decompose topic, parallel research, synthesize report, and verify facts",
+  phases = {
+    { label = "plan", dynamic = false },
+    { label = "research", dynamic = false },
+    { label = "synthesize", dynamic = false },
+    { label = "verify", dynamic = false },
+  },
+}
+
 ----------------------------------------------------------------------
 -- 参数
 ----------------------------------------------------------------------
@@ -111,6 +121,7 @@ local function default_questions(t)
     }
 end
 
+function main()
 ----------------------------------------------------------------------
 -- 阶段 1: 分解 —— 首席研究员把主题拆成子问题
 ----------------------------------------------------------------------
@@ -246,3 +257,4 @@ report({
     -- `-o file.md` 会直接写出这段干净的 Markdown (见 cli 的报告落盘逻辑)。
     markdown = final_md,
 })
+end

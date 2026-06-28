@@ -49,6 +49,9 @@ pub enum ScriptError {
 
     #[error("internal error: {0}")]
     Internal(String),
+
+    #[error("script is missing a `function main() ... end` entry point")]
+    MissingMain,
 }
 
 impl From<mlua::Error> for ScriptError {

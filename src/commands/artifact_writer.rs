@@ -27,7 +27,6 @@ struct AgentStats {
     tool_calls: HashMap<String, u32>,
     file_edits: Vec<PathBuf>,
     pipeline_stage: Option<usize>,
-    pipeline_item: Option<usize>,
 }
 
 #[derive(Clone)]
@@ -57,7 +56,6 @@ struct PipelineContext {
 }
 
 struct ParallelContext {
-    span_id: u64,
     count: usize,
     parallel_index: usize,
 }
@@ -176,7 +174,7 @@ impl ArtifactWriter {
                     let _ = ctx;
                 }
 
-                self.write_agent_report(&record, &stats);
+                let _ = self.write_agent_report(&record, &stats);
                 self.completed_agents.push(record);
             }
 
@@ -236,19 +234,17 @@ impl ArtifactWriter {
 
             AgentEvent::PipelineDone { .. } => {
                 if let Some(ctx) = self.pipeline_ctx.take() {
-                    self.write_pipeline_summary(&ctx);
+                    let _ = self.write_pipeline_summary(&ctx);
                 }
             }
 
             AgentEvent::ParallelStarted {
-                span_id,
                 count,
                 ..
             } => {
                 let idx = self.parallel_count;
                 self.parallel_count += 1;
                 self.parallel_ctxs.push(ParallelContext {
-                    span_id: *span_id,
                     count: *count,
                     parallel_index: idx,
                 });
@@ -261,7 +257,7 @@ impl ArtifactWriter {
                 ..
             } => {
                 let pctx = self.parallel_ctxs.pop();
-                self.write_parallel_summary(*ok, *failed, *elapsed_ms, pctx.as_ref());
+                let _ = self.write_parallel_summary(*ok, *failed, *elapsed_ms, pctx.as_ref());
             }
 
             AgentEvent::ReportEmitted { report, .. } => {

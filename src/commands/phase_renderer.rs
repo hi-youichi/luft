@@ -138,6 +138,9 @@ impl PhaseRenderer {
             AgentEvent::PhaseSpanDone { span_id, name, elapsed_ms, status, .. } => {
                 self.summary(&format!("span#{} · {} ({}, {})", span_id, name, status, fmt_dur(*elapsed_ms)));
             }
+            AgentEvent::PlanPreview { reasoning, phases, .. } => {
+                self.on_plan_preview(reasoning, phases);
+            }
             // Intentionally ignored (decision: no AgentProgress / AcpRaw / Log / etc.)
             _ => {}
         }
@@ -149,6 +152,22 @@ impl PhaseRenderer {
         self.run_start = Some(Instant::now());
         self.print(&format!("╭─ Run: {}", style(task).bold()));
         self.print("");
+    }
+
+    fn on_plan_preview(&self, reasoning: &str, phases: &[maestro::core::contract::event::PlanPhase]) {
+        if !reasoning.is_empty() {
+            self.print(&format!("│  {}", style(reasoning).dim()));
+        }
+        for (i, p) in phases.iter().enumerate() {
+            let marker = if p.dynamic { " ◇ dynamic" } else { "" };
+            self.print(&format!(
+                "│  {} {}{}",
+                style(format!("{}.", i + 1)).dim(),
+                p.label,
+                if p.dynamic { style(marker).yellow() } else { style("") },
+            ));
+        }
+        self.print(&format!("│  {}", style("─".repeat(40)).dim()));
     }
 
     fn on_phase_started(&mut self, phase_id: PhaseId, label: &str, planned: usize) {

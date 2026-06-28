@@ -50,6 +50,11 @@ enum Commands {
         #[arg(short, long, help = "Limit to N most recent runs")]
         limit: Option<usize>,
     },
+    /// Clear terminal-state runs (completed/cancelled/failed). Running runs are preserved.
+    Clear {
+        #[arg(long, help = "Only clear runs older than N days")]
+        days: Option<u64>,
+    },
     /// Show status of a past run.
     Status {
         #[arg(help = "Run directory name to inspect")]
@@ -68,6 +73,9 @@ enum Commands {
     /// MCP server subcommand for structured output injection (internal).
     #[command(hide = true)]
     McpStructuredOutput(commands::mcp_server::McpStructuredOutputArgs),
+    /// Lua script utilities.
+    #[command(subcommand)]
+    Lua(commands::lua_validate::LuaSubcommand),
 }
 
 #[derive(Debug, clap::Args)]
@@ -153,6 +161,7 @@ async fn dispatch(cli: Cli) -> Result<()> {
         Commands::Workflows => commands::workflows::list_workflows()?,
         Commands::Save { name, output } => commands::save::save_workflow(&name, &output)?,
         Commands::List { limit } => commands::list::list_runs_cmd(limit)?,
+        Commands::Clear { days } => commands::clear::clear_runs_cmd(days)?,
         Commands::Status { run_dir } => commands::status::status_run_cmd(run_dir)?,
         Commands::Logs { run_dir, limit } => commands::logs::logs_run_cmd(run_dir, limit)?,
         Commands::Backend(cmd) => match cmd {
@@ -163,6 +172,11 @@ async fn dispatch(cli: Cli) -> Result<()> {
             commands::backend::BackendSubcommand::Set { id } => commands::backend::set_default_backend(id),
         },
         Commands::McpStructuredOutput(args) => commands::mcp_server::run(args)?,
+        Commands::Lua(cmd) => match cmd {
+            commands::lua_validate::LuaSubcommand::Validate(args) => {
+                commands::lua_validate::validate_lua(args)?
+            }
+        },
     }
 
     Ok(())

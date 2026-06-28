@@ -8,6 +8,15 @@
 --   cargo run --bin maestro -- run --workflow examples/architecture-report.lua \
 --       --backend opencode --approve -o architecture-report.md
 
+meta = {
+  reasoning = "Discover and analyze all Rust modules in Maestro codebase, then synthesize a comprehensive Chinese architecture overview report",
+  phases = {
+    { label = "discovery", dynamic = false },
+    { label = "analysis", dynamic = true },
+    { label = "synthesis", dynamic = false },
+  },
+}
+
 ----------------------------------------------------------------------
 -- 工具函数
 ----------------------------------------------------------------------
@@ -29,6 +38,7 @@ local function safe_agent(opts)
     return { status = "error", ok = false, output = {}, tokens = 0, findings = {} }
 end
 
+function main()
 ----------------------------------------------------------------------
 -- 阶段 1: 发现 —— 探测模块结构
 ----------------------------------------------------------------------
@@ -230,3 +240,4 @@ report({
     total_tokens = total_tokens,
     markdown = overview_md,
 })
+end

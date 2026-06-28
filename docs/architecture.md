@@ -130,6 +130,8 @@ producer 生成 findings → adversary 投票 → 存活 finding 进入下一轮
 
 - [architecture/](./architecture/) — 各模块详细架构（技术动机、关键算法、实现细节，code-accurate）
 - [Dynamic Workflow 指南](./dynamic-workflow-guide.md) — 范式直觉、运转机制、Claude Code vs Maestro 对比
+- [Lua Workflow 编写指南](./workflow-authoring-guide.md) — 面向开发者的实践方法论（任务分解、架构注释、错误处理、对抗验证）
+- [Lua Workflow 技术规范](./dev/lua-workflow-spec.md) — 文件格式、沙箱模型、验证规则、执行生命周期
 - [Lua SDK 参考](./sdk-reference.md) — 10 个原语的参数与示例
 - [路线图](./roadmap.md) · [P1/P2 路线图](./roadmap-p1-p2.md) — 实施计划
 - [设计文档（design/）](./design/) — P0 实现设计（[p0-acp-backend](./design/p0-acp-backend.md) / [p0-planner-resume](./design/p0-planner-resume.md)）+ 集成测试

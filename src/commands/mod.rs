@@ -1,12 +1,14 @@
 //! Binary command handlers — one module per CLI subcommand. `main` parses
 //! args and routes each subcommand to the matching handler here.
 
+pub mod lua_validate;
 pub mod backend;
 pub mod artifact_writer;
 pub mod event_log;
 pub mod phase_renderer;
 pub mod mcp_server;
 pub mod generate;
+pub mod clear;
 pub mod list;
 pub mod logs;
 pub mod run;

@@ -205,6 +205,22 @@ pub enum AgentEvent {
         elapsed_ms: u64,
         status: String,
     },
+    /// Plan preview — emitted before execution starts, from the `meta` table.
+    /// Lists the declared phases so the CLI can render a plan overview before
+    /// real-time execution output begins.
+    PlanPreview {
+        run_id: RunId,
+        reasoning: String,
+        phases: Vec<PlanPhase>,
+    },
+}
+
+/// A single phase entry in the plan preview `meta.phases` array.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlanPhase {
+    pub label: String,
+    #[serde(default)]
+    pub dynamic: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -132,6 +132,16 @@ pub fn format_event_line(evt: &AgentEvent) -> String {
         PhaseSpanDone { span_id, name, elapsed_ms, status, .. } => {
             format!("phase span#{span_id} done: {name} ({status}, {elapsed_ms}ms)")
         }
+        PlanPreview { reasoning, phases, .. } => {
+            let labels: Vec<String> = phases.iter().map(|p| {
+                if p.dynamic {
+                    format!("{} (dynamic)", p.label)
+                } else {
+                    p.label.clone()
+                }
+            }).collect();
+            format!("plan preview: {reasoning} | phases: {}", labels.join(", "))
+        }
     }
 }
 

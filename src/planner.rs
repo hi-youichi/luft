@@ -12,7 +12,7 @@
 
 use crate::core::contract::backend::{AgentBackend, AgentTask, RunContext};
 use crate::core::contract::event::AgentEvent;
-use crate::runtime::validate_script;
+use crate::runtime::{validate_script, validate_workflow};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -134,30 +134,17 @@ async fn run_planner_agent(
         .map_err(|e| e.to_string())
 }
 
-/// Validate a generated script: Lua syntax + a required `report(...)` call.
+/// Validate a generated script: syntax + structure + heuristic checks.
 fn validate_generated(script: &str) -> Result<(), String> {
-    validate_script(script).map_err(|e| format!("lua syntax error: {}", e))?;
-    if !script.contains("report(") {
-        return Err("script must call report(...) to emit a final result".to_string());
+    let result = validate_workflow(script)
+        .map_err(|e| format!("lua validation error: {}", e))?;
+    if result.errors.is_empty() {
+        Ok(())
+    } else {
+        Err(result.errors.join("; "))
     }
-    check_span_pairing(script)?;
-    Ok(())
 }
 
-/// Heuristic check that `phase_begin()` calls are accompanied by at least one
-/// `phase_end()`. Dynamic loops render as a single text pair, so we only reject
-/// the case where there are begins but zero ends.
-fn check_span_pairing(script: &str) -> Result<(), String> {
-    let begin_count = script.matches("phase_begin(").count();
-    let end_count = script.matches("phase_end(").count();
-    if begin_count > 0 && end_count == 0 {
-        return Err(format!(
-            "script has {} phase_begin() call(s) but no phase_end() — spans must be paired",
-            begin_count
-        ));
-    }
-    Ok(())
-}
 
 /// Coerce the agent output into text and pull out the Lua script.
 fn extract_script(output: &serde_json::Value) -> Option<String> {
@@ -383,6 +370,57 @@ Header rules:
   MUST show the decomposition via `for each X:` branches — one level per
   decomposition dimension.
 
+# Meta Table & Entry Point
+Every script MUST declare a `meta` table and a `function main()` entry point.
+The meta table is extracted before execution to render a plan preview in the CLI.
+
+Format:
+```lua
+meta = {
+  reasoning = "<one-line explanation of the workflow strategy>",
+  phases = {
+    { label = "<phase name>", dynamic = false },
+    -- Use dynamic = true for phases inside loops/parallel/pipeline where
+    -- the count or names are determined at runtime.
+  },
+}
+```
+
+Rules:
+- `meta` MUST be the first statement after the header comment.
+- `meta.reasoning` — a single English line explaining the approach.
+- `meta.phases` — an array of { label, dynamic } entries listing the
+  top-level phases. This is a static preview; not every runtime phase()
+  call needs to be listed — only the main structural phases.
+- `dynamic` defaults to false. Set it to true for phases whose items are
+  discovered at runtime (e.g., inside a `for each` loop over agent results).
+- After `meta`, declare any schema locals, then define `function main()`.
+- ALL execution code (agent calls, phase calls, loops, report) goes inside
+  `main()`. The top level must only contain meta, locals, and function defs.
+
+Minimal skeleton:
+```lua
+--------------------------------------------
+-- Goal:  ...
+-- Arch:  ...
+-- Flow:  ...
+--------------------------------------------
+meta = {
+  reasoning = "...",
+  phases = {
+    { label = "discover" },
+    { label = "process", dynamic = true },
+    { label = "report" },
+  },
+}
+local SCHEMA = { ... }
+function main()
+  phase("discover")
+  ...
+  report({ result = ... })
+end
+```
+
 # Task Decomposition
 Break large tasks into smaller, independent units of work. Each unit becomes a
 phase span; inside each span runs a similar mini-workflow (e.g., analyze ->
@@ -481,32 +519,36 @@ Anti-patterns (do NOT do these):
     Streaming multi-stage: each item flows through all stages; different items can
     be in different stages simultaneously. Prefer pipeline() over parallel() by default.
 
+    IMPORTANT: Unlike parallel(), pipeline stage handlers are NOT auto-executed. Each
+    handler MUST call agent() itself and return the result (or custom data). The return
+    value becomes the input to the next stage.
+
     Parameters:
       items:       array of work items.
-      stages:      array of stage functions. Each stageFn(prev) receives the previous
-                   stage's result (or the raw item for stage 1) and must RETURN an
-                   agent opts table (same shape as agent()).
+      stages:      array of stages. Each stage is either a function(prev) or a
+                   table { label=, handler=function(prev) }. The handler receives
+                   the previous stage's return value (or the raw item for stage 1),
+                   calls agent() internally, and returns its result.
       max_inflight: max concurrent items (default: 4).
 
     Stage data flow:
-      Stage 1:  stageFn(item)        → opts → agent runs → result_1
-      Stage 2:  stageFn(result_1)    → opts → agent runs → result_2
-      Stage 3:  stageFn(result_2)    → opts → agent runs → result_3
+      Stage 1:  handler(item)     → [calls agent()] → return value(data₁)
+      Stage 2:  handler(data₁)    → [calls agent()] → return value(data₂)
+      Stage 3:  handler(data₂)    → [calls agent()] → return value(data₃)
       ...
-      The returned `pipeline_result.items[i]` is the LAST stage's result for item i.
-      To access an intermediate stage's output, index into the pipeline's internal
-      storage (e.g. pipeline_result.items[i - 1] for the second-to-last stage in a
-      2-stage pipeline).
+      pipeline_result.items[i].output is the LAST stage's return value for item i.
+      pipeline_result.items[i].stages[j] = { label, status, elapsed_ms }.
 
     Error degradation:
-      If a stage fails (result.ok = false), the next stage still receives the result.
-      Check `prev.ok` at the start of each stage and decide: degrade gracefully or abort.
+      If a stage returns a failed result (prev.ok = false), the next stage still
+      receives it. Check `prev.ok` at the start of each handler and decide: degrade
+      gracefully or abort. On degrade, return default data directly (do NOT call agent).
       Example:
         function(prev)
           if not prev.ok then
-            return { prompt = "Return minimal default", schema = SCHEMA }
+            return { ok = false, output = { module = "unknown", score = 0 } }
           end
-          return { prompt = "Process: " .. json.encode(prev.output), schema = SCHEMA }
+          return agent({ prompt = "Process: " .. json.encode(prev.output), schema = SCHEMA })
         end
 
     Example (2-stage: analyze → assess):
@@ -516,14 +558,14 @@ Anti-patterns (do NOT do these):
         stages = {
           function(mod)
             phase("analyze " .. mod.name)
-            return { prompt = "Analyze " .. mod.path, schema = ANALYSIS }
+            return agent({ prompt = "Analyze " .. mod.path, schema = ANALYSIS })
           end,
           function(prev)
             phase("assess " .. (prev.output and prev.output.module or "?"))
             if not prev.ok then
-              return { prompt = "Return minimal: module 'unknown', scores 0", schema = ASSESS }
+              return { ok = false, output = { module = "unknown", score = 0 } }
             end
-            return { prompt = "Assess: " .. json.encode(prev.output), schema = ASSESS }
+            return agent({ prompt = "Assess: " .. json.encode(prev.output), schema = ASSESS })
           end
         }
       }
@@ -872,7 +914,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_plan_extracts_and_validates_script() {
-        let script = "```lua\nlocal r = agent({prompt='hi'})\nreport({ok=true})\n```";
+        let script = "```lua\nmeta = { reasoning = \"test\", phases = {{ label = \"work\" }} }\nfunction main()\n  local r = agent({prompt='hi'})\n  report({ok=true})\nend\n```";
         let backend = mock_returning(serde_json::json!(script));
         let planned = plan_workflow("do something", backend, &PlannerConfig::default())
             .await
@@ -967,7 +1009,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_plan_retry_then_succeeds() {
-        let valid = "```lua\nlocal r = agent({prompt='hi'})\nreport({ok=true})\n```";
+        let valid = "```lua\nmeta = { reasoning = \"test\", phases = {{ label = \"work\" }} }\nfunction main()\n  local r = agent({prompt='hi'})\n  report({ok=true})\nend\n```";
         let backend: Arc<dyn AgentBackend> = Arc::new(MockBackend::new(
             "mock",
             vec![
@@ -1087,19 +1129,19 @@ mod tests {
 
     #[test]
     fn test_validate_span_unpaired() {
-        let script = "local m = phase_begin(\"x\")\nreport({})";
+        let script = "meta = { reasoning = \"test\", phases = {} }\nfunction main()\nlocal m = phase_begin(\"x\")\nreport({})\nend";
         assert!(validate_generated(script).is_err());
     }
 
     #[test]
     fn test_validate_span_paired() {
-        let script = "local m = phase_begin(\"x\")\nphase_end(m)\nreport({})";
+        let script = "meta = { reasoning = \"test\", phases = {} }\nfunction main()\nlocal m = phase_begin(\"x\")\nphase_end(m)\nreport({})\nend";
         assert!(validate_generated(script).is_ok());
     }
 
     #[test]
     fn test_validate_no_span_ok() {
-        let script = "report({ok=true})";
+        let script = "meta = { reasoning = \"test\", phases = {} }\nfunction main() report({ok=true}) end";
         assert!(validate_generated(script).is_ok());
     }
 
