@@ -125,10 +125,8 @@ pub fn get_report(run_dir_name: &str, base_dir: &Path) -> Result<ReportStatus> {
     }
     let content = std::fs::read_to_string(&events_path)?;
     for line in content.lines().rev() {
-        if let Ok(evt) = serde_json::from_str::<AgentEvent>(line) {
-            if let AgentEvent::RunDone { report, .. } = evt {
-                return Ok(ReportStatus::Found(report));
-            }
+        if let Ok(AgentEvent::RunDone { report, .. }) = serde_json::from_str::<AgentEvent>(line) {
+            return Ok(ReportStatus::Found(report));
         }
     }
     Ok(ReportStatus::NotFound)

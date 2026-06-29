@@ -201,6 +201,7 @@ impl JournalStore {
     /// Called by the scheduler after an agent completes successfully or fails
     /// with a non-retryable error. The result is persisted to disk immediately
     /// (via append_event → update_from_event → write_checkpoint_to_disk).
+    #[allow(clippy::too_many_arguments)]
     pub fn cache_agent(
         &self,
         cache_key: &AgentCacheKey,
@@ -272,6 +273,7 @@ impl JournalStore {
     /// totals. It only upserts the checkpoint entry (preserving `cache_key_hash`
     /// and the structured output) and refreshes the in-memory cache index.
     /// Called by the Lua SDK after an agent completes during a live run.
+    #[allow(clippy::too_many_arguments)]
     pub fn record_result(
         &self,
         cache_key: &AgentCacheKey,
