@@ -17,6 +17,10 @@ path = "src/lib.rs"
 name = "maestro"
 path = "src/main.rs"
 
+[[bin]]
+name = "fake_acp"
+path = "src/bin/fake_acp.rs"
+
 [features]
 # Expose MockBackend to integration tests / downstream test harnesses.
 testing = []

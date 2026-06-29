@@ -29,8 +29,10 @@ fn task(prompt: &str, timeout: Duration) -> AgentTask {
     }
 }
 
-fn ctx() -> (RunContext, tokio::sync::broadcast::Receiver<maestro::core::contract::event::AgentEvent>)
-{
+fn ctx() -> (
+    RunContext,
+    tokio::sync::broadcast::Receiver<maestro::core::contract::event::AgentEvent>,
+) {
     let (events, rx) = tokio::sync::broadcast::channel(256);
     (
         RunContext {
@@ -48,14 +50,16 @@ async fn acp_round_trip() {
     let backend = AcpAdapter::default_opencode();
     let (rc, _rx) = ctx();
     let result = backend
-        .run(task("Reply with exactly: HELLO", Duration::from_secs(120)), rc)
+        .run(
+            task("Reply with exactly: HELLO", Duration::from_secs(120)),
+            rc,
+        )
         .await
         .expect("opencode run should succeed");
 
     assert_eq!(result.status, AgentStatus::Ok);
     assert!(
-        result.output.get("text").and_then(|t| t.as_str()).is_some()
-            || result.output.is_array(),
+        result.output.get("text").and_then(|t| t.as_str()).is_some() || result.output.is_array(),
         "expected text output or findings, got: {}",
         result.output
     );

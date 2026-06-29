@@ -17,7 +17,12 @@ fn ok_backend() -> Arc<MockBackend> {
         "mock",
         vec![MockBehavior::Success {
             output: serde_json::json!({ "v": 1 }),
-            tokens: TokenUsage { input: 3, output: 2, cache_read: 0, cache_write: 0 },
+            tokens: TokenUsage {
+                input: 3,
+                output: 2,
+                cache_read: 0,
+                cache_write: 0,
+            },
             delay: Duration::from_millis(1),
         }],
     ))
@@ -33,7 +38,11 @@ async fn run_with(
     let registry = BackendRegistry::new().with(backend);
     let scheduler = Scheduler::new(SchedulerConfig::default(), registry, None);
     let (tx, _rx) = tokio::sync::broadcast::channel(256);
-    let run_ctx = RunContext { run_id, cancel: CancellationToken::new(), events: tx };
+    let run_ctx = RunContext {
+        run_id,
+        cancel: CancellationToken::new(),
+        events: tx,
+    };
     scheduler.init_run_with(run_id, run_ctx.events.clone());
 
     let handle = tokio::runtime::Handle::current();
@@ -99,14 +108,28 @@ async fn run_collecting_events(
     let scheduler = Scheduler::new(SchedulerConfig::default(), registry, None);
     let run_id = uuid::Uuid::now_v7();
     let (tx, mut rx) = tokio::sync::broadcast::channel(2048);
-    let run_ctx = RunContext { run_id, cancel: CancellationToken::new(), events: tx };
+    let run_ctx = RunContext {
+        run_id,
+        cancel: CancellationToken::new(),
+        events: tx,
+    };
     scheduler.init_run_with(run_id, run_ctx.events.clone());
     let handle = tokio::runtime::Handle::current();
-    let rt = Runtime::new(scheduler, run_ctx, serde_json::json!({}), ExecLimits::default(), None, handle)
-        .expect("runtime init");
+    let rt = Runtime::new(
+        scheduler,
+        run_ctx,
+        serde_json::json!({}),
+        ExecLimits::default(),
+        None,
+        handle,
+    )
+    .expect("runtime init");
 
     let s = script.to_string();
-    tokio::task::spawn_blocking(move || rt.execute(&s)).await.expect("join").expect("script ok");
+    tokio::task::spawn_blocking(move || rt.execute(&s))
+        .await
+        .expect("join")
+        .expect("script ok");
 
     let mut events = Vec::new();
     while let Ok(e) = rx.try_recv() {
@@ -131,29 +154,47 @@ async fn sdk_events_emitted_with_span_pairing() {
 
     // budget(t, r) → BudgetSet with the literal values.
     let budget = events.iter().find_map(|e| match e {
-        AgentEvent::BudgetSet { time_limit_ms, max_rounds, .. } => Some((*time_limit_ms, *max_rounds)),
+        AgentEvent::BudgetSet {
+            time_limit_ms,
+            max_rounds,
+            ..
+        } => Some((*time_limit_ms, *max_rounds)),
         _ => None,
     });
     assert_eq!(budget, Some((Some(300000), Some(5))));
 
     // parallel → Started/Done sharing one span_id; 3 items all succeed under mock.
-    let p_start = events.iter().find_map(|e| match e {
-        AgentEvent::ParallelStarted { span_id, count, .. } => Some((*span_id, *count)),
-        _ => None,
-    }).expect("ParallelStarted");
-    let p_done = events.iter().find_map(|e| match e {
-        AgentEvent::ParallelDone { span_id, ok, failed, .. } => Some((*span_id, *ok, *failed)),
-        _ => None,
-    }).expect("ParallelDone");
+    let p_start = events
+        .iter()
+        .find_map(|e| match e {
+            AgentEvent::ParallelStarted { span_id, count, .. } => Some((*span_id, *count)),
+            _ => None,
+        })
+        .expect("ParallelStarted");
+    let p_done = events
+        .iter()
+        .find_map(|e| match e {
+            AgentEvent::ParallelDone {
+                span_id,
+                ok,
+                failed,
+                ..
+            } => Some((*span_id, *ok, *failed)),
+            _ => None,
+        })
+        .expect("ParallelDone");
     assert_eq!(p_start.0, p_done.0, "parallel span_id must pair");
     assert_eq!(p_start.1, 3);
     assert_eq!((p_done.1, p_done.2), (3, 0));
 
     // report → ReportEmitted carrying the full value.
-    let report = events.iter().find_map(|e| match e {
-        AgentEvent::ReportEmitted { report, .. } => Some(report.clone()),
-        _ => None,
-    }).expect("ReportEmitted");
+    let report = events
+        .iter()
+        .find_map(|e| match e {
+            AgentEvent::ReportEmitted { report, .. } => Some(report.clone()),
+            _ => None,
+        })
+        .expect("ReportEmitted");
     assert_eq!(report["n"], 3);
 }
 
@@ -174,14 +215,30 @@ async fn workflow_events_emitted() {
     );
     let events = run_collecting_events(ok_backend(), &script).await;
 
-    let w_start = events.iter().find_map(|e| match e {
-        AgentEvent::WorkflowStarted { span_id, path, args, .. } => Some((*span_id, path.clone(), args.clone())),
-        _ => None,
-    }).expect("WorkflowStarted");
-    let w_done = events.iter().find_map(|e| match e {
-        AgentEvent::WorkflowDone { span_id, report, error, .. } => Some((*span_id, report.clone(), error.clone())),
-        _ => None,
-    }).expect("WorkflowDone");
+    let w_start = events
+        .iter()
+        .find_map(|e| match e {
+            AgentEvent::WorkflowStarted {
+                span_id,
+                path,
+                args,
+                ..
+            } => Some((*span_id, path.clone(), args.clone())),
+            _ => None,
+        })
+        .expect("WorkflowStarted");
+    let w_done = events
+        .iter()
+        .find_map(|e| match e {
+            AgentEvent::WorkflowDone {
+                span_id,
+                report,
+                error,
+                ..
+            } => Some((*span_id, report.clone(), error.clone())),
+            _ => None,
+        })
+        .expect("WorkflowDone");
 
     assert_eq!(w_start.0, w_done.0, "workflow span_id must pair");
     assert!(w_start.1.ends_with("sub.lua"));
@@ -224,17 +281,33 @@ async fn schema_validation_rejects_bad_output() {
     let scheduler = Scheduler::new(SchedulerConfig::default(), registry, None);
     let run_id = uuid::Uuid::now_v7();
     let (tx, _rx) = tokio::sync::broadcast::channel(64);
-    let run_ctx = RunContext { run_id, cancel: CancellationToken::new(), events: tx };
+    let run_ctx = RunContext {
+        run_id,
+        cancel: CancellationToken::new(),
+        events: tx,
+    };
     scheduler.init_run_with(run_id, run_ctx.events.clone());
     let handle = tokio::runtime::Handle::current();
-    let rt = Runtime::new(scheduler, run_ctx, serde_json::json!({}), ExecLimits::default(), None, handle)
-        .unwrap();
+    let rt = Runtime::new(
+        scheduler,
+        run_ctx,
+        serde_json::json!({}),
+        ExecLimits::default(),
+        None,
+        handle,
+    )
+    .unwrap();
 
     let script = r#"
         agent({ prompt = "x", model = "mock", schema = { type = "object", required = {"missing"} } })
         report({ unreachable = true })
     "#
     .to_string();
-    let res = tokio::task::spawn_blocking(move || rt.execute(&script)).await.unwrap();
-    assert!(res.is_err(), "schema mismatch should surface as a script error");
+    let res = tokio::task::spawn_blocking(move || rt.execute(&script))
+        .await
+        .unwrap();
+    assert!(
+        res.is_err(),
+        "schema mismatch should surface as a script error"
+    );
 }
