@@ -139,7 +139,10 @@ pub enum McpRequest {
     #[serde(rename = "tools/list")]
     ToolsList,
     #[serde(rename = "tools/call")]
-    ToolsCall { name: String, arguments: serde_json::Value },
+    ToolsCall {
+        name: String,
+        arguments: serde_json::Value,
+    },
     #[serde(rename = "notifications/initialized")]
     NotificationsInitialized,
     #[serde(rename = "ping")]
@@ -347,7 +350,9 @@ pub struct ToolDefinition {
 }
 
 /// Run the MCP server on stdio (for Claude Code compatibility).
-pub async fn run_mcp_server(store: Arc<McpStore>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn run_mcp_server(
+    store: Arc<McpStore>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
 
@@ -364,11 +369,7 @@ pub async fn run_mcp_server(store: Arc<McpStore>) -> Result<(), Box<dyn std::err
         let request: serde_json::Value = match serde_json::from_str(&line) {
             Ok(v) => v,
             Err(e) => {
-                let response = McpResponse::error(
-                    None,
-                    -32700,
-                    format!("Parse error: {}", e),
-                );
+                let response = McpResponse::error(None, -32700, format!("Parse error: {}", e));
                 let json = serde_json::to_string(&response)?;
                 writer.write_all(json.as_bytes()).await?;
                 writer.write_all(b"\n").await?;
@@ -404,25 +405,31 @@ async fn handle_request(
     match method {
         "initialize" => {
             *initialized = true;
-            McpResponse::result(id, serde_json::json!({
-                "protocolVersion": "2024-11-05",
-                "capabilities": ServerCapabilities {
-                    tools: ToolsServerCapability {
-                        list_changed: false
+            McpResponse::result(
+                id,
+                serde_json::json!({
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": ServerCapabilities {
+                        tools: ToolsServerCapability {
+                            list_changed: false
+                        }
+                    },
+                    "serverInfo": {
+                        "name": "maestro",
+                        "version": "0.1.0"
                     }
-                },
-                "serverInfo": {
-                    "name": "maestro",
-                    "version": "0.1.0"
-                }
-            }))
+                }),
+            )
         }
 
         "tools/list" => {
             let tools = get_tool_definitions();
-            McpResponse::result(id, serde_json::json!({
-                "tools": tools
-            }))
+            McpResponse::result(
+                id,
+                serde_json::json!({
+                    "tools": tools
+                }),
+            )
         }
 
         "tools/call" => {
@@ -486,14 +493,15 @@ async fn handle_tool_call(
                 .unwrap_or("")
                 .to_string();
 
-            let location = arguments.get("location").map(|loc| {
-                crate::core::contract::finding::Location {
-                    file: std::path::PathBuf::from(
-                        loc.get("file").and_then(|v| v.as_str()).unwrap_or(""),
-                    ),
-                    line: loc.get("line").and_then(|v| v.as_u64()).map(|l| l as u32),
-                }
-            });
+            let location =
+                arguments
+                    .get("location")
+                    .map(|loc| crate::core::contract::finding::Location {
+                        file: std::path::PathBuf::from(
+                            loc.get("file").and_then(|v| v.as_str()).unwrap_or(""),
+                        ),
+                        line: loc.get("line").and_then(|v| v.as_u64()).map(|l| l as u32),
+                    });
 
             let evidence: Vec<String> = arguments
                 .get("evidence")
@@ -522,12 +530,15 @@ async fn handle_tool_call(
 
             store.add_finding(finding);
 
-            McpResponse::result(id, serde_json::json!({
-                "content": [{
-                    "type": "text",
-                    "text": "Finding reported successfully"
-                }]
-            }))
+            McpResponse::result(
+                id,
+                serde_json::json!({
+                    "content": [{
+                        "type": "text",
+                        "text": "Finding reported successfully"
+                    }]
+                }),
+            )
         }
 
         "report_artifacts" => {
@@ -556,12 +567,15 @@ async fn handle_tool_call(
                 store.add_artifact(artifact.clone());
             }
 
-            McpResponse::result(id, serde_json::json!({
-                "content": [{
-                    "type": "text",
-                    "text": format!("{} artifact(s) reported", artifacts.len())
-                }]
-            }))
+            McpResponse::result(
+                id,
+                serde_json::json!({
+                    "content": [{
+                        "type": "text",
+                        "text": format!("{} artifact(s) reported", artifacts.len())
+                    }]
+                }),
+            )
         }
 
         "report_log" => {
@@ -583,12 +597,15 @@ async fn handle_tool_call(
                 ts,
             });
 
-            McpResponse::result(id, serde_json::json!({
-                "content": [{
-                    "type": "text",
-                    "text": "Log recorded"
-                }]
-            }))
+            McpResponse::result(
+                id,
+                serde_json::json!({
+                    "content": [{
+                        "type": "text",
+                        "text": "Log recorded"
+                    }]
+                }),
+            )
         }
 
         "report_status" => {
@@ -597,8 +614,14 @@ async fn handle_tool_call(
                 .and_then(|v| v.as_str())
                 .unwrap_or("progress")
                 .to_string();
-            let progress = arguments.get("progress").and_then(|v| v.as_f64()).map(|p| p as f32);
-            let message = arguments.get("message").and_then(|v| v.as_str()).map(String::from);
+            let progress = arguments
+                .get("progress")
+                .and_then(|v| v.as_f64())
+                .map(|p| p as f32);
+            let message = arguments
+                .get("message")
+                .and_then(|v| v.as_str())
+                .map(String::from);
 
             store.update_status(
                 uuid::Uuid::nil(),
@@ -611,23 +634,29 @@ async fn handle_tool_call(
                 },
             );
 
-            McpResponse::result(id, serde_json::json!({
-                "content": [{
-                    "type": "text",
-                    "text": "Status updated"
-                }]
-            }))
+            McpResponse::result(
+                id,
+                serde_json::json!({
+                    "content": [{
+                        "type": "text",
+                        "text": "Status updated"
+                    }]
+                }),
+            )
         }
 
         "request_next_task" => {
             // This is handled by the converge logic in the runtime
-            McpResponse::result(id, serde_json::json!({
-                "content": [{
-                    "type": "text",
-                    "text": "Task queue is empty"
-                }],
-                "isError": true
-            }))
+            McpResponse::result(
+                id,
+                serde_json::json!({
+                    "content": [{
+                        "type": "text",
+                        "text": "Task queue is empty"
+                    }],
+                    "isError": true
+                }),
+            )
         }
 
         _ => McpResponse::error(id, -32602, format!("Unknown tool: {}", name)),
@@ -684,10 +713,10 @@ mod tests {
         let store = McpStore::new();
         let findings = store.get_findings();
         assert!(findings.is_empty());
-        
+
         let artifacts = store.get_artifacts();
         assert!(artifacts.is_empty());
-        
+
         let logs = store.get_logs();
         assert!(logs.is_empty());
     }
@@ -704,7 +733,7 @@ mod tests {
             evidence: vec![],
             data: serde_json::Value::Null,
         };
-        
+
         let finding2 = Finding {
             kind: "test2".to_string(),
             severity: Severity::High,
@@ -717,7 +746,7 @@ mod tests {
 
         store.add_finding(finding1);
         store.add_finding(finding2);
-        
+
         let findings = store.get_findings();
         assert_eq!(findings.len(), 2);
         assert_eq!(findings[0].title, "Test Finding 1");
@@ -739,7 +768,7 @@ mod tests {
 
         store.add_finding(finding.clone());
         assert_eq!(store.get_findings().len(), 1);
-        
+
         store.clear_findings();
         assert!(store.get_findings().is_empty());
     }
@@ -774,7 +803,7 @@ mod tests {
 
         store.add_log(log.clone());
         store.add_log(log);
-        
+
         let logs = store.get_logs();
         assert_eq!(logs.len(), 2);
         assert_eq!(logs[0].msg, "Test log message");
@@ -795,7 +824,7 @@ mod tests {
 
         store.update_status(agent_id, status.clone());
         let retrieved_status = store.get_status(&agent_id);
-        
+
         assert!(retrieved_status.is_some());
         let retrieved = retrieved_status.unwrap();
         assert_eq!(retrieved.status, "running");
@@ -816,9 +845,9 @@ mod tests {
         let store = McpStore::new();
         let unknown_tool_name = "unknown_tool";
         let arguments = serde_json::json!({});
-        
+
         let response = handle_tool_call(unknown_tool_name, arguments, &store, None).await;
-        
+
         assert!(response.result.is_none());
         assert!(response.error.is_some());
         if let Some(error) = response.error {
@@ -844,10 +873,10 @@ mod tests {
         });
 
         let response = handle_tool_call("report_finding", arguments, &store, None).await;
-        
+
         assert!(response.result.is_some());
         assert!(response.error.is_none());
-        
+
         let findings = store.get_findings();
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].kind, "test");
@@ -873,10 +902,10 @@ mod tests {
         });
 
         let response = handle_tool_call("report_artifacts", arguments, &store, None).await;
-        
+
         assert!(response.result.is_some());
         assert!(response.error.is_none());
-        
+
         let artifacts = store.get_artifacts();
         assert_eq!(artifacts.len(), 2);
         assert_eq!(artifacts[0].key, "artifact1");
@@ -892,10 +921,10 @@ mod tests {
         });
 
         let response = handle_tool_call("report_log", arguments, &store, None).await;
-        
+
         assert!(response.result.is_some());
         assert!(response.error.is_none());
-        
+
         let logs = store.get_logs();
         assert_eq!(logs.len(), 1);
         assert_eq!(logs[0].level, "error");
@@ -913,10 +942,10 @@ mod tests {
         });
 
         let response = handle_tool_call("report_status", arguments, &store, None).await;
-        
+
         assert!(response.result.is_some());
         assert!(response.error.is_none());
-        
+
         let status = store.get_status(&uuid::Uuid::nil()); // The function uses uuid::Uuid::nil()
         assert!(status.is_some());
         let retrieved = status.unwrap();
@@ -929,7 +958,7 @@ mod tests {
     fn test_mcp_response_result() {
         let result_value = serde_json::json!({"success": true});
         let response = McpResponse::result(Some(serde_json::json!(1)), result_value.clone());
-        
+
         assert_eq!(response.jsonrpc, "2.0");
         assert_eq!(response.id, Some(serde_json::json!(1)));
         assert_eq!(response.result, Some(result_value));
@@ -938,8 +967,9 @@ mod tests {
 
     #[test]
     fn test_mcp_response_error() {
-        let response = McpResponse::error(Some(serde_json::json!(2)), -32600, "Test error".to_string());
-        
+        let response =
+            McpResponse::error(Some(serde_json::json!(2)), -32600, "Test error".to_string());
+
         assert_eq!(response.jsonrpc, "2.0");
         assert_eq!(response.id, Some(serde_json::json!(2)));
         assert!(response.result.is_none());
@@ -954,13 +984,13 @@ mod tests {
     fn test_mcp_response_notification() {
         let params = serde_json::json!({"key": "value"});
         let response = McpResponse::notification("test_method", params);
-        
+
         assert_eq!(response.jsonrpc, "2.0");
         assert!(response.id.is_none());
         assert!(response.error.is_none());
         assert!(response.result.is_some());
     }
-    
+
     #[test]
     fn test_mcp_store_empty_list_tools() {
         let _store = McpStore::new();
@@ -968,7 +998,7 @@ mod tests {
         assert!(!tools.is_empty());
         assert_eq!(tools.len(), 5); // Should have 5 predefined tools
     }
-    
+
     #[test]
     fn test_add_finding_and_get_it() {
         let store = McpStore::new();
@@ -984,21 +1014,21 @@ mod tests {
             evidence: vec!["Line 42 has vulnerability".to_string()],
             data: serde_json::json!({"cve": "CVE-2024-1234"}),
         };
-        
+
         store.add_finding(finding.clone());
         let findings = store.get_findings();
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].kind, "security");
         assert_eq!(findings[0].severity, Severity::Critical);
     }
-    
+
     #[tokio::test]
     async fn test_handle_tool_call_request_next_task() {
         let store = McpStore::new();
         let arguments = serde_json::json!({});
-        
+
         let response = handle_tool_call("request_next_task", arguments, &store, None).await;
-        
+
         assert!(response.result.is_some());
         assert!(response.error.is_none());
     }

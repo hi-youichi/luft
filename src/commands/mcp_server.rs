@@ -17,13 +17,12 @@ pub struct McpStructuredOutputArgs {
 }
 
 pub fn run(args: McpStructuredOutputArgs) -> Result<()> {
-    let log_path = std::env::var("MAESTRO_MCP_LOG")
-        .unwrap_or_else(|_| {
-            let dir = std::env::temp_dir();
-            dir.join(format!("maestro-mcp-{}.log", std::process::id()))
-                .to_string_lossy()
-                .into_owned()
-        });
+    let log_path = std::env::var("MAESTRO_MCP_LOG").unwrap_or_else(|_| {
+        let dir = std::env::temp_dir();
+        dir.join(format!("maestro-mcp-{}.log", std::process::id()))
+            .to_string_lossy()
+            .into_owned()
+    });
     let log_file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -95,7 +94,13 @@ fn serve_mcp(schema: &Value) -> Result<()> {
             (Some("tools/call"), Some(id)) => {
                 tracing::info!(params = ?msg.params, "MCP tools/call");
                 let result = handle_tool_call(&msg.params, schema);
-                tracing::info!(is_error = result.get("isError").and_then(|v| v.as_bool()).unwrap_or(false), "MCP tools/call response");
+                tracing::info!(
+                    is_error = result
+                        .get("isError")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false),
+                    "MCP tools/call response"
+                );
                 write_response(&mut stdout, id, &result)?;
             }
             (_, Some(id)) => {
@@ -340,7 +345,10 @@ mod tests {
         let err = validate_against_schema(&input, &schema).unwrap_err();
         assert!(err.contains("instance"), "got: {err}");
         let semicolons = err.matches(';').count();
-        assert!(semicolons <= 2, "expected ≤2 separators (≤3 errors), got {semicolons}");
+        assert!(
+            semicolons <= 2,
+            "expected ≤2 separators (≤3 errors), got {semicolons}"
+        );
     }
 
     #[test]
@@ -412,8 +420,7 @@ mod tests {
             "properties": {"result": {"type": "string"}},
             "required": ["result"]
         });
-        let params =
-            serde_json::json!({"name": "structured_output", "arguments": {"result": 42}});
+        let params = serde_json::json!({"name": "structured_output", "arguments": {"result": 42}});
         let result = handle_tool_call(&Some(params), &schema);
         assert_eq!(result["isError"], true);
         assert!(result["content"][0]["text"]
@@ -431,6 +438,45 @@ mod tests {
         });
         let params = serde_json::json!({"name": "structured_output"});
         let result = handle_tool_call(&Some(params), &schema);
+        assert_eq!(result["isError"], true);
+        assert!(result["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("Schema validation failed"));
+    }
+
+    #[test]
+    fn tool_call_with_file_kind_summary_schema() {
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "file": {"type": "string"},
+                "kind": {"type": "string"},
+                "summary": {"type": "string"}
+            },
+            "required": ["file", "kind", "summary"]
+        });
+
+        let params = serde_json::json!({
+            "name": "structured_output",
+            "arguments": {
+                "file": "src/adapters/result_collector.rs",
+                "kind": "rust",
+                "summary": "collects agent results"
+            }
+        });
+        let result = handle_tool_call(&Some(params), &schema);
+        assert_eq!(result["isError"], false);
+        assert_eq!(result["content"][0]["text"], "Result accepted.");
+
+        let missing = serde_json::json!({
+            "name": "structured_output",
+            "arguments": {
+                "file": "src/adapters/result_collector.rs",
+                "kind": "rust"
+            }
+        });
+        let result = handle_tool_call(&Some(missing), &schema);
         assert_eq!(result["isError"], true);
         assert!(result["content"][0]["text"]
             .as_str()
@@ -543,8 +589,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn serve_mcp_tools_list() {
-        let schema =
-            serde_json::json!({"type": "object", "properties": {"x": {"type": "string"}}});
+        let schema = serde_json::json!({"type": "object", "properties": {"x": {"type": "string"}}});
         let lines = run_serve_mcp(
             &[r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#],
             &schema,
@@ -565,17 +610,16 @@ mod tests {
             "required": ["result"]
         });
         let lines = run_serve_mcp(
-            &[r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"structured_output","arguments":{"result":"done"}}}"#],
+            &[
+                r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"structured_output","arguments":{"result":"done"}}}"#,
+            ],
             &schema,
         );
         let json = json_lines(&lines);
         assert_eq!(json.len(), 1);
         assert_eq!(json[0]["id"], 3);
         assert_eq!(json[0]["result"]["isError"], false);
-        assert_eq!(
-            json[0]["result"]["content"][0]["text"],
-            "Result accepted."
-        );
+        assert_eq!(json[0]["result"]["content"][0]["text"], "Result accepted.");
     }
 
     #[cfg(unix)]
@@ -587,7 +631,9 @@ mod tests {
             "required": ["result"]
         });
         let lines = run_serve_mcp(
-            &[r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"structured_output","arguments":{"result":42}}}"#],
+            &[
+                r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"structured_output","arguments":{"result":42}}}"#,
+            ],
             &schema,
         );
         let json = json_lines(&lines);
@@ -619,10 +665,7 @@ mod tests {
     #[test]
     fn serve_mcp_unknown_method_no_id() {
         let schema = serde_json::json!({"type": "object"});
-        let lines = run_serve_mcp(
-            &[r#"{"jsonrpc":"2.0","method":"unknown/method"}"#],
-            &schema,
-        );
+        let lines = run_serve_mcp(&[r#"{"jsonrpc":"2.0","method":"unknown/method"}"#], &schema);
         assert!(lines.is_empty());
     }
 
@@ -631,10 +674,7 @@ mod tests {
     fn serve_mcp_empty_line_skipped() {
         let schema = serde_json::json!({"type": "object"});
         let lines = run_serve_mcp(
-            &[
-                "",
-                r#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#,
-            ],
+            &["", r#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#],
             &schema,
         );
         let json = json_lines(&lines);
@@ -667,7 +707,11 @@ mod tests {
     fn run_with_input(input: &str, schema_body: &Value) -> Vec<String> {
         let dir = tempfile::tempdir().unwrap();
         let schema_path = dir.path().join("schema.json");
-        std::fs::write(&schema_path, serde_json::to_string_pretty(schema_body).unwrap()).unwrap();
+        std::fs::write(
+            &schema_path,
+            serde_json::to_string_pretty(schema_body).unwrap(),
+        )
+        .unwrap();
 
         let _lock = IO_LOCK.lock().unwrap();
         let (_, out_lines) = with_redirected_io(input, || {
@@ -694,10 +738,7 @@ mod tests {
     #[test]
     fn run_with_schema_file_and_initialize() {
         let schema = serde_json::json!({"type": "object"});
-        let lines = run_with_input(
-            r#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#,
-            &schema,
-        );
+        let lines = run_with_input(r#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#, &schema);
         let json = json_lines(&lines);
         assert_eq!(json.len(), 1);
         assert_eq!(json[0]["id"], 1);
@@ -719,15 +760,13 @@ mod tests {
         std::env::set_var("MAESTRO_MCP_LOG", log_path.to_str().unwrap());
 
         let _lock = IO_LOCK.lock().unwrap();
-        let (_, out_lines) = with_redirected_io(
-            r#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#,
-            || {
+        let (_, out_lines) =
+            with_redirected_io(r#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#, || {
                 let args = McpStructuredOutputArgs {
                     schema_file: schema_path.clone(),
                 };
                 let _ = run(args);
-            },
-        );
+            });
         let json = json_lines(&out_lines);
         assert_eq!(json.len(), 1);
         assert!(log_path.exists(), "custom log file should exist");
