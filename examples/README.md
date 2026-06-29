@@ -53,7 +53,7 @@ cargo run -- run -w examples/hello.lua -b mock \
 {"type":"run_done","run_id":"...","status":"Completed","total_tokens":{...},"report":{...}}
 ```
 
-### 1.2 parallel-demo.lua — 并行处理
+### 1.3 parallel-demo.lua — 并行处理
 
 ```bash
 cargo run -- run -w examples/parallel-demo.lua -b mock \
@@ -77,7 +77,7 @@ cargo run -- run -w examples/parallel-demo.lua -b mock \
 {"type":"run_done",...}
 ```
 
-### 1.3 pipeline-demo.lua — 多阶段管道
+### 1.4 pipeline-demo.lua — 多阶段管道
 
 ```bash
 cargo run -- run -w examples/pipeline-demo.lua -b mock \
@@ -104,7 +104,7 @@ cargo run -- run -w examples/pipeline-demo.lua -b mock \
 {"type":"run_done",...}
 ```
 
-### 1.4 converge-demo.lua — 对抗收敛（mock）
+### 1.5 converge-demo.lua — 对抗收敛（mock）
 
 ```bash
 cargo run -- run -w examples/converge-demo.lua -b mock \
@@ -161,7 +161,41 @@ cargo run -- run -w examples/converge-demo.lua -b opencode \
 {"type":"run_done",...}
 ```
 
-### 2.2 deep-research.lua — 多智能体深度研究
+### 2.2 schema-demo.lua — Schema 结构化输出
+
+```bash
+cargo run --bin maestro -- run -w examples/schema-demo.lua -b opencode \
+    --log .maestro/example_logs/schema.jsonl --log-format jsonl
+```
+
+**预期：** `extracted.name` 存在（真实的 LLM 输出），`eval.approved >= 0`，`summary` 非空。
+
+**演示要点：**
+- 定义 JSON Schema（`PERSON_SCHEMA`、`FINDING_SCHEMA`、`REPORT_SCHEMA`）约束 agent 输出
+- `agent()` 调用中传 `schema = MY_SCHEMA`，结果通过 `result.output.field_name` 按字段访问
+- `parallel(items, mapperFn)` 中 mapper 返回值携带独立 schema
+- 结构化数据跨 agent 传递：extract → parallel validate → summarize
+- 使用 `safe_agent`（`pcall` 包装）使脚本在 mock 后下降级可用
+
+**日志中会出现的事件：**
+
+```jsonl
+{"type":"run_started",...}
+{"type":"agent_started","prompt_preview":"You are analyzing the Maestro project contributors...",...}
+{"type":"agent_done","status":"ok","output":{"name":"...","role":"...","languages":[...],"yoe":...}}
+{"type":"parallel_started","count":3,...}
+{"type":"agent_started",...}  × 3
+{"type":"agent_done",...}  × 3
+{"type":"parallel_done",...}
+{"type":"agent_started","prompt_preview":"Generate a brief one-paragraph summary...",...}
+{"type":"agent_done",...}
+{"type":"report_emitted","report":{"extracted":{...},"eval":{...},"summary":"..."}}
+{"type":"run_done",...}
+```
+
+> 也可用 mock 运行验证接线：`cargo run --bin maestro -- run -w examples/schema-demo.lua -b mock`（所有 agent 降级到 fallback 数据，验证错误处理路径）。
+
+### 2.3 deep-research.lua — 多智能体深度研究
 
 ```bash
 cargo run -- run -w examples/deep-research.lua -b opencode \
@@ -206,7 +240,7 @@ cargo run -- run -w examples/deep-research.lua -b opencode \
 {"type":"run_done","status":"Completed",...}
 ```
 
-### 2.3 architecture-report.lua — 代码架构分析
+### 2.4 architecture-report.lua — 代码架构分析
 
 ```bash
 cargo run -- run -w examples/architecture-report.lua -b opencode \
