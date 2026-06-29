@@ -65,7 +65,11 @@ pub fn decide(policy: Option<&ToolPolicy>, input: &PermissionInputs) -> Decision
     }
 
     if let Some(cmd) = &input.command {
-        return if policy.allow_commands.iter().any(|p| cmd.starts_with(p.as_str())) {
+        return if policy
+            .allow_commands
+            .iter()
+            .any(|p| cmd.starts_with(p.as_str()))
+        {
             tracing::debug!(%cmd, "permission: command approved");
             Decision::Approve
         } else {
@@ -104,8 +108,8 @@ pub fn extract_inputs(req: &RequestPermissionRequest) -> PermissionInputs {
 /// [`extract_inputs`] is covered by calling this with `Null` directly.
 fn parse_inputs_from_json(v: &serde_json::Value) -> PermissionInputs {
     let raw = v.to_string();
-    let is_file_edit = find_str_field(v, "kind").as_deref() == Some("edit")
-        || raw.contains("write_text_file");
+    let is_file_edit =
+        find_str_field(v, "kind").as_deref() == Some("edit") || raw.contains("write_text_file");
     let command = find_str_field(v, "command");
     let mcp_tool = find_str_field(v, "tool")
         .or_else(|| find_str_field(v, "name"))
@@ -146,7 +150,10 @@ mod tests {
 
     #[test]
     fn no_policy_approves() {
-        assert_eq!(decide(None, &PermissionInputs::default()), Decision::Approve);
+        assert_eq!(
+            decide(None, &PermissionInputs::default()),
+            Decision::Approve
+        );
     }
 
     #[test]
@@ -161,8 +168,14 @@ mod tests {
 
     #[test]
     fn accept_edits_gate() {
-        let edit = PermissionInputs { is_file_edit: true, ..Default::default() };
-        assert_eq!(decide(Some(&policy(true, &[], &[])), &edit), Decision::Approve);
+        let edit = PermissionInputs {
+            is_file_edit: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            decide(Some(&policy(true, &[], &[])), &edit),
+            Decision::Approve
+        );
         assert!(matches!(
             decide(Some(&policy(false, &[], &[])), &edit),
             Decision::Deny(_)
@@ -172,8 +185,14 @@ mod tests {
     #[test]
     fn allow_commands_prefix() {
         let p = policy(false, &["cargo"], &[]);
-        let ok = PermissionInputs { command: Some("cargo test".into()), ..Default::default() };
-        let bad = PermissionInputs { command: Some("curl evil".into()), ..Default::default() };
+        let ok = PermissionInputs {
+            command: Some("cargo test".into()),
+            ..Default::default()
+        };
+        let bad = PermissionInputs {
+            command: Some("curl evil".into()),
+            ..Default::default()
+        };
         assert_eq!(decide(Some(&p), &ok), Decision::Approve);
         assert!(matches!(decide(Some(&p), &bad), Decision::Deny(_)));
     }
@@ -181,19 +200,35 @@ mod tests {
     // --- structured_output early return (lines 38-41) ---
     #[test]
     fn structured_output_approved() {
-        let input = PermissionInputs { mcp_tool: Some("structured_output".into()), ..Default::default() };
+        let input = PermissionInputs {
+            mcp_tool: Some("structured_output".into()),
+            ..Default::default()
+        };
         // No policy
         assert_eq!(decide(None, &input), Decision::Approve);
         // With policy that would otherwise deny
-        let p = ToolPolicy { accept_edits: false, allow_commands: vec![], allow_mcp: vec![], deny: vec![] };
+        let p = ToolPolicy {
+            accept_edits: false,
+            allow_commands: vec![],
+            allow_mcp: vec![],
+            deny: vec![],
+        };
         assert_eq!(decide(Some(&p), &input), Decision::Approve);
     }
 
     // --- MCP tool allowed (lines 77-80) ---
     #[test]
     fn mcp_tool_allowed() {
-        let p = ToolPolicy { accept_edits: false, allow_commands: vec![], allow_mcp: vec!["my_tool".into()], deny: vec![] };
-        let input = PermissionInputs { mcp_tool: Some("my_tool".into()), ..Default::default() };
+        let p = ToolPolicy {
+            accept_edits: false,
+            allow_commands: vec![],
+            allow_mcp: vec!["my_tool".into()],
+            deny: vec![],
+        };
+        let input = PermissionInputs {
+            mcp_tool: Some("my_tool".into()),
+            ..Default::default()
+        };
         assert_eq!(decide(Some(&p), &input), Decision::Approve);
     }
 
@@ -201,7 +236,10 @@ mod tests {
     #[test]
     fn mcp_tool_denied() {
         let p = policy(false, &[], &[]);
-        let input = PermissionInputs { mcp_tool: Some("unknown_tool".into()), ..Default::default() };
+        let input = PermissionInputs {
+            mcp_tool: Some("unknown_tool".into()),
+            ..Default::default()
+        };
         assert!(matches!(decide(Some(&p), &input), Decision::Deny(_)));
     }
 
@@ -209,7 +247,10 @@ mod tests {
     #[test]
     fn unknown_request_with_policy_approves() {
         let p = policy(false, &[], &[]);
-        assert_eq!(decide(Some(&p), &PermissionInputs::default()), Decision::Approve);
+        assert_eq!(
+            decide(Some(&p), &PermissionInputs::default()),
+            Decision::Approve
+        );
     }
 
     // --- find_str_field: nested object (lines 113-119) ---
@@ -252,7 +293,8 @@ mod tests {
             },
             "options": [],
             "_meta": null
-        })).unwrap();
+        }))
+        .unwrap();
         let inputs = extract_inputs(&req);
         assert_eq!(inputs.command.as_deref(), Some("cargo build"));
         assert!(!inputs.is_file_edit);
@@ -271,7 +313,8 @@ mod tests {
             },
             "options": [],
             "_meta": null
-        })).unwrap();
+        }))
+        .unwrap();
         let inputs = extract_inputs(&req);
         assert!(inputs.is_file_edit);
         assert_eq!(inputs.command, None);
@@ -289,7 +332,8 @@ mod tests {
             },
             "options": [],
             "_meta": null
-        })).unwrap();
+        }))
+        .unwrap();
         let inputs = extract_inputs(&req);
         assert!(inputs.is_file_edit);
     }
@@ -305,7 +349,8 @@ mod tests {
             },
             "options": [],
             "_meta": null
-        })).unwrap();
+        }))
+        .unwrap();
         let inputs = extract_inputs(&req);
         assert_eq!(inputs.mcp_tool.as_deref(), Some("my_mcp_tool"));
     }
@@ -321,7 +366,8 @@ mod tests {
             },
             "options": [],
             "_meta": null
-        })).unwrap();
+        }))
+        .unwrap();
         let inputs = extract_inputs(&req);
         assert_eq!(inputs.mcp_tool.as_deref(), Some("mcp_helper"));
     }
@@ -337,7 +383,8 @@ mod tests {
             },
             "options": [],
             "_meta": null
-        })).unwrap();
+        }))
+        .unwrap();
         let inputs = extract_inputs(&req);
         assert!(inputs.mcp_tool.is_none());
     }
@@ -380,7 +427,8 @@ mod tests {
             },
             "options": [],
             "_meta": null
-        })).unwrap();
+        }))
+        .unwrap();
         let inputs = extract_inputs(&req);
         assert_eq!(inputs.command.as_deref(), Some("cargo build"));
         assert!(!inputs.is_file_edit);

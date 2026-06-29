@@ -24,9 +24,9 @@ use std::time::Duration;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 use agent_client_protocol::schema::{
-    ContentBlock, InitializeRequest, McpServer, McpServerStdio, NewSessionRequest,
-    PromptRequest, ProtocolVersion, RequestPermissionOutcome, RequestPermissionRequest,
-    RequestPermissionResponse, SelectedPermissionOutcome, SessionNotification, TextContent,
+    ContentBlock, InitializeRequest, McpServer, McpServerStdio, NewSessionRequest, PromptRequest,
+    ProtocolVersion, RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
+    SelectedPermissionOutcome, SessionNotification, TextContent,
 };
 use agent_client_protocol::{Agent, ByteStreams, Client, ConnectionTo, Responder};
 
@@ -42,7 +42,7 @@ pub struct AcpConfig {
     /// Agent binary; resolved from `PATH`. Defaults to `opencode`.
     pub binary: PathBuf,
     /// Extra arguments passed to the agent binary (e.g. `["acp"]`).
-    pub acp_args: Vec<&'static str>,
+    pub acp_args: Vec<String>,
     /// Optional `--log-level` passed to the agent.
     pub log_level: Option<String>,
     /// `initialize` handshake timeout.
@@ -51,6 +51,56 @@ pub struct AcpConfig {
     /// [`AgentEvent::AcpRaw`](crate::core::contract::event::AgentEvent::AcpRaw).
     /// On by default; the journal does not persist them (see `docs/design/acp-raw-events.md`).
     pub emit_raw_events: bool,
+    /// Explicit allowlist of environment variable NAMES forwarded to the
+    /// ACP subprocess. The parent process env is **not** inherited by default.
+    ///
+    /// Each name is looked up via `std::env::var` at spawn time; missing
+    /// entries are silently skipped. Set to `vec![]` to forward **no**
+    /// environment at all (subprocess starts with a fully empty env).
+    ///
+    /// AI provider credentials (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, ...)
+    /// and the generic `MODEL` env var are deliberately excluded from the
+    /// default — provider/model selection must come from the subprocess's
+    /// own config files (`auth.json`, `config.json`) or explicit CLI
+    /// arguments, not from the host shell. This is a security and
+    /// reproducibility boundary: subprocess behavior does not silently
+    /// change because the user happens to have a stray env var set.
+    ///
+    /// Default: [`AcpConfig::DEFAULT_ENV_PASSTHROUGH`] — the minimum set
+    /// needed for the binary to bootstrap on the current OS (PATH, user
+    /// dirs, temp, locale, shell).
+    pub env_passthrough: Vec<String>,
+}
+
+impl AcpConfig {
+    /// Environment variables forwarded by default. The minimum set needed
+    /// for a subprocess to bootstrap on the current OS — **no** AI provider
+    /// keys, no `MODEL`, no arbitrary shell state. Extend or override via
+    /// [`AcpConfig::env_passthrough`].
+    pub const DEFAULT_ENV_PASSTHROUGH: &'static [&'static str] = &[
+        // OS / loader
+        "PATH",
+        "SYSTEMROOT",
+        "WINDIR",
+        "COMSPEC",
+        "PATHEXT",
+        // User / home
+        "USERPROFILE",
+        "HOME",
+        "USER",
+        "USERNAME",
+        "LOGNAME",
+        // Temp
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        // Locale
+        "LANG",
+        "LC_ALL",
+        "LC_CTYPE",
+        // Shell (sometimes needed for spawned sub-shells)
+        "SHELL",
+    ];
 }
 
 impl Default for AcpConfig {
@@ -58,10 +108,14 @@ impl Default for AcpConfig {
         Self {
             id: "opencode",
             binary: PathBuf::from("opencode"),
-            acp_args: vec!["acp"],
+            acp_args: vec!["acp".to_string()],
             log_level: None,
             connect_timeout: Duration::from_secs(10),
             emit_raw_events: true,
+            env_passthrough: Self::DEFAULT_ENV_PASSTHROUGH
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
         }
     }
 }
@@ -146,6 +200,21 @@ async fn run_acp_session(
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
 
+    // SECURITY / REPRODUCIBILITY: do NOT inherit the parent process env.
+    // The subprocess gets only the explicit allowlist in
+    // `config.env_passthrough`. This prevents accidental leakage of
+    // shell-level API keys (OPENAI_API_KEY, ANTHROPIC_API_KEY, ...) and
+    // makes spawn behavior deterministic across host configurations.
+    // Provider credentials and model selection must come from the
+    // subprocess's own config files (`auth.json`, `config.json`) or
+    // explicit arguments.
+    cmd.env_clear();
+    for name in &config.env_passthrough {
+        if let Ok(value) = std::env::var(name) {
+            cmd.env(name, value);
+        }
+    }
+
     let mut child = cmd.spawn().map_err(|e| {
         tracing::error!(binary = %config.binary.display(), error = %e, "failed to spawn ACP backend");
         BackendError::Spawn(format!("failed to spawn {}: {e}", config.binary.display()))
@@ -188,7 +257,9 @@ async fn run_acp_session(
     } else {
         None
     };
-    let schema_file_path = _schema_guard.as_ref().map(|g| g.0.path().to_string_lossy().into_owned());
+    let schema_file_path = _schema_guard
+        .as_ref()
+        .map(|g| g.0.path().to_string_lossy().into_owned());
 
     // 3. Build + drive the ACP client connection.
     let conn_fut = {
@@ -236,7 +307,11 @@ async fn run_acp_session(
                                 permission::decide(policy.as_ref(), &inputs),
                                 permission::Decision::Approve
                             );
-                            tracing::debug!(approve, options = req.options.len(), "ACP permission request");
+                            tracing::debug!(
+                                approve,
+                                options = req.options.len(),
+                                "ACP permission request"
+                            );
                             let outcome = match (approve, req.options.first()) {
                                 (true, Some(opt)) => RequestPermissionOutcome::Selected(
                                     SelectedPermissionOutcome::new(opt.option_id.clone()),
@@ -250,59 +325,61 @@ async fn run_acp_session(
                 )
                 .connect_with(transport, {
                     move |conn: ConnectionTo<Agent>| {
-                    let acc_prompt = acc_prompt.clone();
-                    async move {
-                    tracing::debug!("ACP handshake: initialize");
-                    conn.send_request(InitializeRequest::new(ProtocolVersion::V1))
-                        .block_task()
-                        .await?;
-                    tracing::debug!("ACP handshake: session/new");
-                    let ns = {
-                        let req = NewSessionRequest::new(cwd);
-                        let req = if let Some(ref sf) = schema_file_path {
-                            let maestro_bin = std::env::current_exe()
-                                .unwrap_or_else(|_| std::path::PathBuf::from("maestro"));
-                            let mcp = McpServerStdio::new(
-                                "maestro-structured-output",
-                                maestro_bin,
-                            )
-                            .args(vec![
-                                "mcp-structured-output".to_string(),
-                                "--schema-file".to_string(),
-                                sf.clone(),
-                            ]);
-                            req.mcp_servers(vec![McpServer::Stdio(mcp)])
-                        } else {
-                            req
-                        };
-                        conn.send_request(req).block_task().await?
-                    };
-                    tracing::debug!("ACP handshake: session/prompt");
-                    let pr = conn
-                        .send_request(PromptRequest::new(
-                            ns.session_id,
-                            vec![ContentBlock::Text(TextContent::new(prompt))],
-                        ))
-                        .block_task()
-                        .await?;
-                    tracing::debug!(stop_reason = ?pr.stop_reason, "ACP prompt complete");
-                    *stop_holder.lock().unwrap() = Some(format!("{:?}", pr.stop_reason));
-                    if let Some(ref u) = pr.usage {
-                        tracing::debug!(
-                            input = u.input_tokens,
-                            output = u.output_tokens,
-                            total = u.total_tokens,
-                            "ACP prompt usage"
-                        );
-                        *acc_prompt.tokens.lock().unwrap() = TokenUsage {
-                            input: u.input_tokens,
-                            output: u.output_tokens,
-                            cache_read: u.cached_read_tokens.unwrap_or(0),
-                            cache_write: u.cached_write_tokens.unwrap_or(0),
-                        };
+                        let acc_prompt = acc_prompt.clone();
+                        async move {
+                            tracing::debug!("ACP handshake: initialize");
+                            conn.send_request(InitializeRequest::new(ProtocolVersion::V1))
+                                .block_task()
+                                .await?;
+                            tracing::debug!("ACP handshake: session/new");
+                            let ns = {
+                                let req = NewSessionRequest::new(cwd);
+                                let req = if let Some(ref sf) = schema_file_path {
+                                    let maestro_bin = std::env::current_exe()
+                                        .unwrap_or_else(|_| std::path::PathBuf::from("maestro"));
+                                    let mcp = McpServerStdio::new(
+                                        "maestro-structured-output",
+                                        maestro_bin,
+                                    )
+                                    .args(vec![
+                                        "mcp-structured-output".to_string(),
+                                        "--schema-file".to_string(),
+                                        sf.clone(),
+                                    ]);
+                                    req.mcp_servers(vec![McpServer::Stdio(mcp)])
+                                } else {
+                                    req
+                                };
+                                conn.send_request(req).block_task().await?
+                            };
+                            tracing::debug!("ACP handshake: session/prompt");
+                            let pr = conn
+                                .send_request(PromptRequest::new(
+                                    ns.session_id,
+                                    vec![ContentBlock::Text(TextContent::new(prompt))],
+                                ))
+                                .block_task()
+                                .await?;
+                            tracing::debug!(stop_reason = ?pr.stop_reason, "ACP prompt complete");
+                            *stop_holder.lock().unwrap() = Some(format!("{:?}", pr.stop_reason));
+                            if let Some(ref u) = pr.usage {
+                                tracing::debug!(
+                                    input = u.input_tokens,
+                                    output = u.output_tokens,
+                                    total = u.total_tokens,
+                                    "ACP prompt usage"
+                                );
+                                *acc_prompt.tokens.lock().unwrap() = TokenUsage {
+                                    input: u.input_tokens,
+                                    output: u.output_tokens,
+                                    cache_read: u.cached_read_tokens.unwrap_or(0),
+                                    cache_write: u.cached_write_tokens.unwrap_or(0),
+                                };
+                            }
+                            Ok::<(), agent_client_protocol::Error>(())
+                        }
                     }
-                    Ok::<(), agent_client_protocol::Error>(())
-                }}})
+                })
                 .await
         }
     };
@@ -346,7 +423,9 @@ async fn run_acp_session(
     let message = std::mem::take(&mut *acc.message.lock().unwrap());
     let tokens = *acc.tokens.lock().unwrap();
     let structured = acc.structured_output.lock().unwrap().take();
-    Ok(result_collector::collect(&task, &stop, message, tokens, structured))
+    Ok(result_collector::collect(
+        &task, &stop, message, tokens, structured,
+    ))
 }
 
 /// Completes after `idle` elapses with **no** signal on `rx`.
@@ -355,10 +434,7 @@ async fn run_acp_session(
 /// the idle timer. This lets a slow-but-alive agent (e.g. a long tool call
 /// with periodic `ToolCallUpdate` events) run indefinitely while a truly
 /// hung agent (no notifications at all) is killed after `idle`.
-async fn idle_watchdog(
-    idle: Duration,
-    rx: &mut tokio::sync::mpsc::UnboundedReceiver<()>,
-) {
+async fn idle_watchdog(idle: Duration, rx: &mut tokio::sync::mpsc::UnboundedReceiver<()>) {
     loop {
         tokio::select! {
             biased;
@@ -429,15 +505,61 @@ mod tests {
     fn new_adapter_accepts_custom_config() {
         let config = AcpConfig {
             id: "custom-agent",
-            binary: PathBuf::from("custom-agent"),
-            acp_args: vec!["acp"],
-            log_level: Some("debug".into()),
-            connect_timeout: Duration::from_secs(30),
-            emit_raw_events: false,
+            ..Default::default()
         };
         let adapter = AcpAdapter::new(config);
         assert_eq!(adapter.id(), "custom-agent");
         assert!(adapter.capabilities().streaming);
+    }
+
+    #[test]
+    fn default_env_passthrough_excludes_ai_provider_vars() {
+        // Security boundary: the default passthrough must not include any
+        // common AI provider credential / model-selection variables, so
+        // a stray shell `OPENAI_API_KEY` or `MODEL` cannot leak into
+        // the subprocess and override the subprocess's own config.
+        let c = AcpConfig::default();
+        for forbidden in [
+            "OPENAI_API_KEY",
+            "OPENAI_BASE_URL",
+            "OPENAI_MODEL",
+            "ANTHROPIC_API_KEY",
+            "ANTHROPIC_MODEL",
+            "MODEL",
+            "LOOM_AUX_MODEL",
+        ] {
+            assert!(
+                !c.env_passthrough.iter().any(|v| v == forbidden),
+                "default env_passthrough must not include {forbidden} (would defeat env isolation)"
+            );
+        }
+        // Sanity: OS bootstrap vars that the subprocess needs to start
+        // (PATH at minimum) must be present.
+        for required in ["PATH"] {
+            assert!(
+                c.env_passthrough.iter().any(|v| v == required),
+                "default env_passthrough must include {required}"
+            );
+        }
+        // Sanity: the default allowlist is a closed list, not "inherit
+        // everything" (the latter would be a security hole).
+        assert!(
+            c.env_passthrough.len() <= AcpConfig::DEFAULT_ENV_PASSTHROUGH.len(),
+            "default env_passthrough size {} exceeds DEFAULT_ENV_PASSTHROUGH size {}",
+            c.env_passthrough.len(),
+            AcpConfig::DEFAULT_ENV_PASSTHROUGH.len()
+        );
+    }
+
+    #[test]
+    fn empty_env_passthrough_is_supported() {
+        // Users who want a fully empty env (no PATH, no HOME) can opt
+        // in explicitly. This is the "hardest" isolation mode.
+        let config = AcpConfig {
+            env_passthrough: vec![],
+            ..Default::default()
+        };
+        let _adapter = AcpAdapter::new(config);
     }
 
     #[test]
@@ -534,8 +656,7 @@ mod tests {
         writeln!(f, "#!/bin/sh").expect("write shebang");
         writeln!(f, "sleep {secs}").expect("write sleep");
         drop(f);
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
-            .expect("chmod +x");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).expect("chmod +x");
         (path, dir)
     }
 
@@ -570,9 +691,7 @@ mod tests {
 
     fn echo_binary() -> PathBuf {
         if cfg!(windows) {
-            PathBuf::from(
-                std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".into()),
-            )
+            PathBuf::from(std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".into()))
         } else {
             PathBuf::from("/bin/echo")
         }
@@ -580,9 +699,7 @@ mod tests {
 
     fn true_binary() -> PathBuf {
         if cfg!(windows) {
-            PathBuf::from(
-                std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".into()),
-            )
+            PathBuf::from(std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".into()))
         } else {
             PathBuf::from("/usr/bin/true")
         }
@@ -599,7 +716,10 @@ mod tests {
         let ctx = test_context(None);
         let result = adapter.run(task, ctx).await;
         assert!(
-            matches!(&result, Err(BackendError::Protocol(_)) | Err(BackendError::Timeout)),
+            matches!(
+                &result,
+                Err(BackendError::Protocol(_)) | Err(BackendError::Timeout)
+            ),
             "expected Protocol or Timeout error, got: {result:?}"
         );
     }
@@ -701,7 +821,10 @@ mod tests {
         let ctx = test_context(None);
         let result = adapter.run(task, ctx).await;
         assert!(
-            matches!(&result, Err(BackendError::Protocol(_)) | Err(BackendError::Timeout)),
+            matches!(
+                &result,
+                Err(BackendError::Protocol(_)) | Err(BackendError::Timeout)
+            ),
             "expected Protocol or Timeout with schema, got: {result:?}"
         );
     }

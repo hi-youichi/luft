@@ -29,12 +29,18 @@ pub fn collect(
         if json.is_object() {
             json
         } else {
-            serde_json::json!({ "text": message })
+            serde_json::json!({
+                "_agent_fallback_text": true,
+                "text": message
+            })
         }
     } else if let Some(json) = extract_last_json_block(&message) {
         json
     } else {
-        serde_json::json!({ "text": message })
+        serde_json::json!({
+            "_agent_fallback_text": true,
+            "text": message
+        })
     };
 
     AgentResult {
@@ -116,11 +122,20 @@ fn parse_finding(json: &serde_json::Value) -> Option<Finding> {
         "low" => Severity::Low,
         _ => Severity::Info,
     };
-    let str_field = |k: &str| json.get(k).and_then(|t| t.as_str()).unwrap_or("").to_string();
+    let str_field = |k: &str| {
+        json.get(k)
+            .and_then(|t| t.as_str())
+            .unwrap_or("")
+            .to_string()
+    };
     let evidence = json
         .get("evidence")
         .and_then(|e| e.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
 
     Some(Finding {
@@ -165,7 +180,10 @@ mod tests {
     fn end_turn_is_ok_text_output() {
         let r = collect_simple("EndTurn", "hello");
         assert_eq!(r.status, AgentStatus::Ok);
-        assert_eq!(r.output, serde_json::json!({ "text": "hello" }));
+        assert_eq!(
+            r.output,
+            serde_json::json!({ "_agent_fallback_text": true, "text": "hello" })
+        );
     }
 
     #[test]
@@ -201,7 +219,10 @@ mod tests {
     fn plain_text_still_wraps_as_text() {
         let msg = "I deleted the files as requested.";
         let r = collect_simple("EndTurn", msg);
-        assert_eq!(r.output, serde_json::json!({"text": msg}));
+        assert_eq!(
+            r.output,
+            serde_json::json!({"_agent_fallback_text": true, "text": msg})
+        );
     }
 
     #[test]

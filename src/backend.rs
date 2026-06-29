@@ -53,6 +53,9 @@ fn apply_acp_overrides(mut cfg: maestro::adapters::AcpConfig) -> maestro::adapte
     if let Some(v) = over.emit_raw_events {
         cfg.emit_raw_events = v;
     }
+    if let Some(a) = over.args {
+        cfg.acp_args = a;
+    }
     cfg
 }
 
