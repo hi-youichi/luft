@@ -66,7 +66,11 @@ pub async fn plan_workflow(
 
     for attempt in 0..attempts {
         if attempt > 0 {
-            tracing::warn!(attempt, total = attempts, "retrying script generation after validation failure");
+            tracing::warn!(
+                attempt,
+                total = attempts,
+                "retrying script generation after validation failure"
+            );
         }
 
         let prompt = build_prompt(task, (attempt > 0).then_some(last_error.as_str()));
@@ -136,15 +140,13 @@ async fn run_planner_agent(
 
 /// Validate a generated script: syntax + structure + heuristic checks.
 fn validate_generated(script: &str) -> Result<(), String> {
-    let result = validate_workflow(script)
-        .map_err(|e| format!("lua validation error: {}", e))?;
+    let result = validate_workflow(script).map_err(|e| format!("lua validation error: {}", e))?;
     if result.errors.is_empty() {
         Ok(())
     } else {
         Err(result.errors.join("; "))
     }
 }
-
 
 /// Coerce the agent output into text and pull out the Lua script.
 fn extract_script(output: &serde_json::Value) -> Option<String> {
@@ -194,10 +196,7 @@ fn extract_lua_block(text: &str) -> String {
 /// Keeps lines from the first Lua-looking line to the last.
 fn strip_prose(text: &str) -> String {
     let lines: Vec<&str> = text.lines().collect();
-    let lua_start = lines
-        .iter()
-        .position(|l| looks_like_lua(l))
- .unwrap_or(0);
+    let lua_start = lines.iter().position(|l| looks_like_lua(l)).unwrap_or(0);
     let lua_end = lines
         .iter()
         .rposition(|l| looks_like_lua(l))
@@ -219,12 +218,14 @@ fn looks_like_lua(line: &str) -> bool {
         return true;
     }
     const KEYWORDS: &[&str] = &[
-        "local", "phase", "report", "agent", "parallel", "pipeline", "for",
-        "if", "while", "function", "return", "log", "budget", "workflow",
-        "json", "do", "end", "else", "elseif", "then", "and", "or", "not",
-        "true", "false", "nil", "args", "ctx",
+        "local", "phase", "report", "agent", "parallel", "pipeline", "for", "if", "while",
+        "function", "return", "log", "budget", "workflow", "json", "do", "end", "else", "elseif",
+        "then", "and", "or", "not", "true", "false", "nil", "args", "ctx",
     ];
-    let first_word = t.split(|c: char| !c.is_alphanumeric() && c != '_').next().unwrap_or("");
+    let first_word = t
+        .split(|c: char| !c.is_alphanumeric() && c != '_')
+        .next()
+        .unwrap_or("");
     KEYWORDS.contains(&first_word)
         || t.starts_with('{')
         || t.starts_with('}')
@@ -379,19 +380,39 @@ Format:
 meta = {
   reasoning = "<one-line explanation of the workflow strategy>",
   phases = {
-    { label = "<phase name>", dynamic = false },
-    -- Use dynamic = true for phases inside loops/parallel/pipeline where
-    -- the count or names are determined at runtime.
+    {
+      label = "<phase name>",
+      description = "<one-line description shown in CLI>",
+      agents = <int>,                  -- planned agent count (for progress display)
+      depends_on = { <int>, ... },     -- indices of phases that must complete first
+      dynamic = false,                 -- true for phases inside loops/parallel/pipeline
+    },
   },
 }
 ```
 
+Field reference (`phases[i]`):
+- `label` (string, REQUIRED) — phase name (shown in CLI).
+- `description` (string, optional but recommended) — one-line description
+  shown in CLI so the user understands what this phase does. Keep it short.
+- `agents` (int, optional) — planned agent count, e.g. parallel fan-out
+  size, used for progress display. Hint only, not enforced.
+- `depends_on` (int[], optional) — indices of earlier phases that must
+  complete before this phase starts. Empty `{}` or omitted = no dependency.
+- `dynamic` (bool, default false) — true for phases whose items are
+  discovered at runtime (e.g. inside a `for each` loop over agent results).
+
 Rules:
 - `meta` MUST be the first statement after the header comment.
 - `meta.reasoning` — a single English line explaining the approach.
-- `meta.phases` — an array of { label, dynamic } entries listing the
-  top-level phases. This is a static preview; not every runtime phase()
-  call needs to be listed — only the main structural phases.
+- `meta.phases` — an array of `{ label, description?, agents?,
+  depends_on?, dynamic? }` entries listing the top-level phases. This is a
+  static preview; not every runtime `phase()` call needs to be listed —
+  only the main structural phases.
+- `description`, `agents`, and `depends_on` are RECOMMENDED for every
+  phase that has a non-trivial structure; they make the CLI plan preview
+  readable and let the user understand ordering and parallelism at a
+  glance. Only `label` is strictly required.
 - `dynamic` defaults to false. Set it to true for phases whose items are
   discovered at runtime (e.g., inside a `for each` loop over agent results).
 - After `meta`, declare any schema locals, then define `function main()`.
@@ -1100,7 +1121,10 @@ mod tests {
         assert!(output_to_text(&obj).is_some());
 
         // Array → `other` arm
-        assert_eq!(output_to_text(&serde_json::json!([1, 2, 3])).unwrap(), "[1,2,3]");
+        assert_eq!(
+            output_to_text(&serde_json::json!([1, 2, 3])).unwrap(),
+            "[1,2,3]"
+        );
 
         // Number → `other` arm
         assert_eq!(output_to_text(&serde_json::json!(42)).unwrap(), "42");
@@ -1141,7 +1165,8 @@ mod tests {
 
     #[test]
     fn test_validate_no_span_ok() {
-        let script = "meta = { reasoning = \"test\", phases = {} }\nfunction main() report({ok=true}) end";
+        let script =
+            "meta = { reasoning = \"test\", phases = {} }\nfunction main() report({ok=true}) end";
         assert!(validate_generated(script).is_ok());
     }
 

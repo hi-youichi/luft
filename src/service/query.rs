@@ -39,7 +39,11 @@ impl From<(&str, &RunCheckpoint)> for StatusOutput {
             current_phase: cp.current_phase,
             completed_phases: cp.completed_phases.len(),
             total_agents: cp.agent_results.len(),
-            completed_agents: cp.agent_results.values().filter(|r| r.status == "ok").count(),
+            completed_agents: cp
+                .agent_results
+                .values()
+                .filter(|r| r.status == "ok")
+                .count(),
             total_tokens: cp.total_tokens,
             created_at: created,
             updated_at: updated,

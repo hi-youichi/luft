@@ -1,12 +1,12 @@
-﻿use crate::core::contract::backend::{AgentBackend, RunContext};
+use crate::core::contract::backend::{AgentBackend, RunContext};
 use crate::core::contract::event::{AgentEvent, RunStatus};
 use crate::core::contract::ids::{RunId, TokenUsage};
 use crate::core::journal::JournalStore;
-use crate::storage::{open_db, EventWriter};
 use crate::core::run_dir::{compose, derive_slug, ensure_unique};
 use crate::core::scheduler::{BackendRegistry, Scheduler, SchedulerConfig};
 use crate::core::state::{list_runs, CheckpointStatus, RunCheckpoint};
 use crate::runtime::{ExecLimits, Runtime, ScriptError};
+use crate::storage::{open_db, EventWriter};
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -56,10 +56,8 @@ pub async fn resolve_script(
             let planned = crate::planner::plan_workflow(nl, backend, &cfg).await?;
             Ok(planned.script)
         }
-        ScriptSource::Workflow(path) => {
-            std::fs::read_to_string(path)
-                .map_err(|e| anyhow::anyhow!("failed to read workflow file: {}", e))
-        }
+        ScriptSource::Workflow(path) => std::fs::read_to_string(path)
+            .map_err(|e| anyhow::anyhow!("failed to read workflow file: {}", e)),
         ScriptSource::Script(s) => Ok(s.to_string()),
     }
 }
@@ -87,7 +85,9 @@ pub fn check_resumable(run_dir_name: &str, base_dir: &Path) -> ResumeCheck {
             {
                 if matches!(
                     status,
-                    CheckpointStatus::Completed | CheckpointStatus::Cancelled | CheckpointStatus::Failed
+                    CheckpointStatus::Completed
+                        | CheckpointStatus::Cancelled
+                        | CheckpointStatus::Failed
                 ) {
                     return ResumeCheck::NotResumable(status);
                 }
@@ -177,10 +177,18 @@ pub fn resolve_resume(run_dir_name: &str, base_dir: &Path) -> Result<RunSpec> {
         checkpoint.status,
         CheckpointStatus::Completed | CheckpointStatus::Cancelled | CheckpointStatus::Failed
     ) {
-        anyhow::bail!("run {} is not resumable (status: {:?})", run_dir_name, checkpoint.status);
+        anyhow::bail!(
+            "run {} is not resumable (status: {:?})",
+            run_dir_name,
+            checkpoint.status
+        );
     }
-    let script = std::fs::read_to_string(run_dir.join("workflow.lua"))
-        .map_err(|_| anyhow::anyhow!("workflow.lua not found in run directory {}", run_dir.display()))?;
+    let script = std::fs::read_to_string(run_dir.join("workflow.lua")).map_err(|_| {
+        anyhow::anyhow!(
+            "workflow.lua not found in run directory {}",
+            run_dir.display()
+        )
+    })?;
     Ok(RunSpec {
         run_id: checkpoint.run_id,
         run_dir_name: run_dir_name.to_string(),
@@ -227,8 +235,9 @@ pub async fn prepare(
 
     // Journal: fresh runs init + persist the script (so they can be resumed);
     // resume runs open the journal to replay cached agents.
-let journal = Arc::new(
-        JournalStore::new(&run_dir).map_err(|e| anyhow::anyhow!("failed to open journal: {}", e))?,
+    let journal = Arc::new(
+        JournalStore::new(&run_dir)
+            .map_err(|e| anyhow::anyhow!("failed to open journal: {}", e))?,
     );
     if spec.resuming {
         journal
@@ -244,7 +253,14 @@ let journal = Arc::new(
     // SQLite structured persistence — shared across runs. Optional; if the DB
     // can't be opened (e.g. read-only filesystem) we keep going so journal +
     // JSONL remain the source of truth for resume.
-    let sqlite_writer = match open_db(&run_dir.parent().unwrap_or(base_dir).join(crate::storage::DEFAULT_DB_PATH)).await {
+    let sqlite_writer = match open_db(
+        &run_dir
+            .parent()
+            .unwrap_or(base_dir)
+            .join(crate::storage::DEFAULT_DB_PATH),
+    )
+    .await
+    {
         Ok(pool) => Some(EventWriter::new(pool)),
         Err(e) => {
             tracing::warn!(error = %e, "sqlite persistence disabled for this run");
@@ -310,7 +326,8 @@ let journal = Arc::new(
         let cp_path = run_dir.join("checkpoint.json");
         if let Ok(content) = std::fs::read_to_string(&cp_path) {
             if let Ok(cp) = serde_json::from_str::<RunCheckpoint>(&content) {
-                let names: Vec<String> = cp.completed_spans.iter().map(|s| s.name.clone()).collect();
+                let names: Vec<String> =
+                    cp.completed_spans.iter().map(|s| s.name.clone()).collect();
                 if !names.is_empty() {
                     runtime.set_completed_spans(&names)?;
                 }
@@ -333,9 +350,7 @@ pub async fn execute(
     // mlua is not Send-safe to drive from an async worker thread, and the SDK
     // primitives call Handle::block_on internally — both require a blocking
     // thread outside the async runtime.
-    let result = match tokio::task::spawn_blocking(move || runtime.execute(&script))
-        .await
-    {
+    let result = match tokio::task::spawn_blocking(move || runtime.execute(&script)).await {
         Ok(r) => {
             tracing::debug!(%run_id, "execute: blocking thread returned");
             r
@@ -352,11 +367,19 @@ pub async fn execute(
         }
     };
 
-    let status = if result.is_ok() { RunStatus::Completed } else { RunStatus::Failed };
+    let status = if result.is_ok() {
+        RunStatus::Completed
+    } else {
+        RunStatus::Failed
+    };
     if let Err(ref e) = result {
         tracing::warn!(%run_id, error = %e, "run finished with a script error");
     }
-    let report = result.as_ref().ok().cloned().unwrap_or(serde_json::Value::Null);
+    let report = result
+        .as_ref()
+        .ok()
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
     let _ = run_ctx.events.send(AgentEvent::RunDone {
         run_id,
         status,
@@ -382,7 +405,11 @@ mod tests {
 
     #[test]
     fn validate_source_none() {
-        let input = RunInput { nl: None, workflow: None, script: None };
+        let input = RunInput {
+            nl: None,
+            workflow: None,
+            script: None,
+        };
         assert!(matches!(
             validate_source(&input),
             Err(ValidateSourceError::NoneProvided)
@@ -404,19 +431,31 @@ mod tests {
 
     #[test]
     fn validate_source_nl_only() {
-        let input = RunInput { nl: Some("hi".into()), workflow: None, script: None };
+        let input = RunInput {
+            nl: Some("hi".into()),
+            workflow: None,
+            script: None,
+        };
         assert!(validate_source(&input).is_ok());
     }
 
     #[test]
     fn validate_source_workflow_only() {
-        let input = RunInput { nl: None, workflow: Some(PathBuf::from("wf.lua")), script: None };
+        let input = RunInput {
+            nl: None,
+            workflow: Some(PathBuf::from("wf.lua")),
+            script: None,
+        };
         assert!(validate_source(&input).is_ok());
     }
 
     #[test]
     fn validate_source_script_only() {
-        let input = RunInput { nl: None, workflow: None, script: Some("print(1)".into()) };
+        let input = RunInput {
+            nl: None,
+            workflow: None,
+            script: Some("print(1)".into()),
+        };
         assert!(validate_source(&input).is_ok());
     }
 
@@ -610,7 +649,10 @@ mod tests {
         let result = resolve_script(ScriptSource::Nl("do something"), backend)
             .await
             .unwrap();
-        assert!(result.contains("report("), "planned script must contain report()");
+        assert!(
+            result.contains("report("),
+            "planned script must contain report()"
+        );
         assert!(!result.contains("```"), "fences should be stripped");
     }
 
@@ -830,7 +872,11 @@ mod tests {
             "created_at": 0,
             "updated_at": 0,
         });
-        std::fs::write(dir.join("checkpoint.json"), serde_json::to_string(&cp).unwrap()).unwrap();
+        std::fs::write(
+            dir.join("checkpoint.json"),
+            serde_json::to_string(&cp).unwrap(),
+        )
+        .unwrap();
     }
 
     fn write_workflow_lua(dir: &std::path::Path, content: &str) {
@@ -857,8 +903,15 @@ mod tests {
     #[test]
     fn resolve_resume_not_found() {
         let dir = tempfile::tempdir().unwrap();
-        let err = format!("{}", resolve_resume("nonexistent", dir.path()).err().unwrap());
-        assert!(err.contains("not found"), "expected 'not found' error, got: {}", err);
+        let err = format!(
+            "{}",
+            resolve_resume("nonexistent", dir.path()).err().unwrap()
+        );
+        assert!(
+            err.contains("not found"),
+            "expected 'not found' error, got: {}",
+            err
+        );
     }
 
     #[test]
@@ -870,7 +923,11 @@ mod tests {
         write_workflow_lua(&run_dir, "x");
 
         let err = format!("{}", resolve_resume("my_run", dir.path()).err().unwrap());
-        assert!(err.contains("not resumable"), "expected 'not resumable' error, got: {}", err);
+        assert!(
+            err.contains("not resumable"),
+            "expected 'not resumable' error, got: {}",
+            err
+        );
     }
 
     #[test]
@@ -882,7 +939,11 @@ mod tests {
         write_workflow_lua(&run_dir, "x");
 
         let err = format!("{}", resolve_resume("my_run", dir.path()).err().unwrap());
-        assert!(err.contains("not resumable"), "expected 'not resumable' error, got: {}", err);
+        assert!(
+            err.contains("not resumable"),
+            "expected 'not resumable' error, got: {}",
+            err
+        );
     }
 
     #[test]
@@ -894,7 +955,11 @@ mod tests {
         write_workflow_lua(&run_dir, "x");
 
         let err = format!("{}", resolve_resume("my_run", dir.path()).err().unwrap());
-        assert!(err.contains("not resumable"), "expected 'not resumable' error, got: {}", err);
+        assert!(
+            err.contains("not resumable"),
+            "expected 'not resumable' error, got: {}",
+            err
+        );
     }
 
     #[test]
@@ -906,7 +971,11 @@ mod tests {
         // Intentionally do NOT write workflow.lua
 
         let err = format!("{}", resolve_resume("my_run", dir.path()).err().unwrap());
-        assert!(err.contains("workflow.lua"), "expected 'workflow.lua' error, got: {}", err);
+        assert!(
+            err.contains("workflow.lua"),
+            "expected 'workflow.lua' error, got: {}",
+            err
+        );
     }
 
     // =========================================================================
@@ -984,8 +1053,14 @@ mod tests {
         let _prepared = prepare(&spec, backend, dir.path(), &run_ctx).await.unwrap();
 
         // Fresh run: workflow.lua should have been written
-        assert!(run_dir.join("workflow.lua").exists(), "workflow.lua should exist");
-        assert!(run_dir.join("checkpoint.json").exists(), "checkpoint.json should exist");
+        assert!(
+            run_dir.join("workflow.lua").exists(),
+            "workflow.lua should exist"
+        );
+        assert!(
+            run_dir.join("checkpoint.json").exists(),
+            "checkpoint.json should exist"
+        );
 
         // Journal and runtime should be accessible
         let content = std::fs::read_to_string(run_dir.join("workflow.lua")).unwrap();
