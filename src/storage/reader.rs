@@ -202,10 +202,7 @@ pub async fn get_agent_overview(
 }
 
 /// All agents for a run.
-pub async fn get_run_agents(
-    pool: &DbPool,
-    run_id: RunId,
-) -> StorageResult<Vec<AgentOverview>> {
+pub async fn get_run_agents(pool: &DbPool, run_id: RunId) -> StorageResult<Vec<AgentOverview>> {
     let rows = sqlx::query(
         r#"SELECT agent_id, phase_id, model, status, prompt_preview,
                   input_tokens, output_tokens, elapsed_ms, started_ts, done_ts
@@ -259,12 +256,11 @@ pub async fn get_run_overview(pool: &DbPool, run_id: RunId) -> StorageResult<Run
 
     let agents = get_run_agents(pool, run_id).await?;
 
-    let count_rows = sqlx::query(
-        "SELECT kind, COUNT(*) AS c FROM turns WHERE run_id = ? GROUP BY kind",
-    )
-    .bind(run_id)
-    .fetch_all(pool)
-    .await?;
+    let count_rows =
+        sqlx::query("SELECT kind, COUNT(*) AS c FROM turns WHERE run_id = ? GROUP BY kind")
+            .bind(run_id)
+            .fetch_all(pool)
+            .await?;
 
     let mut turn_counts = Vec::new();
     let mut total_messages = 0i64;

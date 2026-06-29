@@ -49,8 +49,15 @@ impl EventWriter {
                 role,
                 parent_span_id: _,
             } => {
-                self.write_phase_started(*run_id, *phase_id, label, *planned, description.as_deref(), role.as_deref())
-                    .await?;
+                self.write_phase_started(
+                    *run_id,
+                    *phase_id,
+                    label,
+                    *planned,
+                    description.as_deref(),
+                    role.as_deref(),
+                )
+                .await?;
             }
             AgentEvent::AgentStarted {
                 run_id,
@@ -118,8 +125,13 @@ impl EventWriter {
             AgentEvent::BudgetSet { .. } => {
                 // Budget is a session-level concern; tracked in checkpoint.json.
             }
-            AgentEvent::ReportEmitted { run_id, phase_id, report } => {
-                self.write_report_emitted(*run_id, *phase_id, report).await?;
+            AgentEvent::ReportEmitted {
+                run_id,
+                phase_id,
+                report,
+            } => {
+                self.write_report_emitted(*run_id, *phase_id, report)
+                    .await?;
             }
             AgentEvent::ParallelStarted {
                 run_id,
@@ -283,7 +295,12 @@ impl EventWriter {
                 elapsed_ms,
             } => {
                 // Per-item token totals roll up into the pipeline_done event.
-                tracing::trace!(?status, ?tokens, elapsed_ms, "pipeline item done (skipping item-level write)");
+                tracing::trace!(
+                    ?status,
+                    ?tokens,
+                    elapsed_ms,
+                    "pipeline item done (skipping item-level write)"
+                );
             }
             AgentEvent::PipelineDone {
                 run_id,
@@ -309,7 +326,9 @@ impl EventWriter {
             AgentEvent::AcpRaw { .. } => {}
             // Phase span events are structural metadata; captured in audit log
             // and checkpoint, no dedicated SQL table needed.
-            AgentEvent::PhaseSpanStarted { .. } | AgentEvent::PhaseSpanDone { .. } | AgentEvent::PlanPreview { .. } => {}
+            AgentEvent::PhaseSpanStarted { .. }
+            | AgentEvent::PhaseSpanDone { .. }
+            | AgentEvent::PlanPreview { .. } => {}
         }
 
         // All events are appended to the audit log for replay.
@@ -414,14 +433,13 @@ impl EventWriter {
         delta: &ProgressDelta,
     ) -> StorageResult<()> {
         let now = Utc::now().to_rfc3339();
-        let phase_id: Option<i64> = sqlx::query_scalar(
-            "SELECT phase_id FROM agents WHERE run_id = ? AND agent_id = ?",
-        )
-        .bind(run_id)
-        .bind(agent_id)
-        .fetch_optional(&self.pool)
-        .await?
-        .flatten();
+        let phase_id: Option<i64> =
+            sqlx::query_scalar("SELECT phase_id FROM agents WHERE run_id = ? AND agent_id = ?")
+                .bind(run_id)
+                .bind(agent_id)
+                .fetch_optional(&self.pool)
+                .await?
+                .flatten();
 
         match delta {
             ProgressDelta::Message { text } => {
@@ -575,13 +593,11 @@ impl EventWriter {
         phase_id: PhaseId,
         report: &Json,
     ) -> StorageResult<()> {
-        sqlx::query(
-            "UPDATE runs SET report = ? WHERE run_id = ?",
-        )
-        .bind(serde_json::to_string(report)?)
-        .bind(run_id)
-        .execute(&self.pool)
-        .await?;
+        sqlx::query("UPDATE runs SET report = ? WHERE run_id = ?")
+            .bind(serde_json::to_string(report)?)
+            .bind(run_id)
+            .execute(&self.pool)
+            .await?;
 
         sqlx::query(
             "UPDATE phases SET done_ts = COALESCE(done_ts, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
@@ -694,26 +710,24 @@ impl EventWriter {
         Ok(())
     }
 
-async fn append_audit(&self, event: &AgentEvent) -> StorageResult<()> {
-    let (run_id, type_name) = audit_metadata(event);
-    if run_id.is_none() {
-        return Ok(());
+    async fn append_audit(&self, event: &AgentEvent) -> StorageResult<()> {
+        let (run_id, type_name) = audit_metadata(event);
+        if run_id.is_none() {
+            return Ok(());
+        }
+        // AcpRaw is intentionally not persisted (live observability stream).
+        if type_name == "acp_raw" {
+            return Ok(());
+        }
+        let payload = serde_json::to_string(event)?;
+        sqlx::query("INSERT INTO events (run_id, type, payload) VALUES (?, ?, ?)")
+            .bind(run_id.unwrap())
+            .bind(type_name)
+            .bind(payload)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
     }
-    // AcpRaw is intentionally not persisted (live observability stream).
-    if type_name == "acp_raw" {
-        return Ok(());
-    }
-    let payload = serde_json::to_string(event)?;
-    sqlx::query(
-        "INSERT INTO events (run_id, type, payload) VALUES (?, ?, ?)",
-    )
-    .bind(run_id.unwrap())
-    .bind(type_name)
-    .bind(payload)
-    .execute(&self.pool)
-    .await?;
-    Ok(())
-}
 }
 
 // ----------------------------------------------------------------------------
@@ -989,8 +1003,18 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(fetch_turn_count(w.pool(), run_id, "tool_call").await.unwrap(), 1);
-        assert_eq!(fetch_turn_count(w.pool(), run_id, "file_edit").await.unwrap(), 1);
+        assert_eq!(
+            fetch_turn_count(w.pool(), run_id, "tool_call")
+                .await
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            fetch_turn_count(w.pool(), run_id, "file_edit")
+                .await
+                .unwrap(),
+            1
+        );
     }
 
     #[tokio::test]
@@ -1028,7 +1052,10 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(fetch_turn_count(w.pool(), run_id, "tokens").await.unwrap(), 1);
+        assert_eq!(
+            fetch_turn_count(w.pool(), run_id, "tokens").await.unwrap(),
+            1
+        );
     }
 
     #[tokio::test]
@@ -1252,9 +1279,7 @@ mod tests {
         w.write_event(&AgentEvent::AgentProgress {
             run_id,
             agent_id,
-            delta: ProgressDelta::Message {
-                text: "hi".into(),
-            },
+            delta: ProgressDelta::Message { text: "hi".into() },
         })
         .await
         .unwrap();
@@ -1266,13 +1291,11 @@ mod tests {
             .unwrap();
 
         let turn_count = fetch_turn_count(w.pool(), run_id, "message").await.unwrap();
-        let agent_count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM agents WHERE run_id = ?",
-        )
-        .bind(run_id)
-        .fetch_one(w.pool())
-        .await
-        .unwrap();
+        let agent_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM agents WHERE run_id = ?")
+            .bind(run_id)
+            .fetch_one(w.pool())
+            .await
+            .unwrap();
         assert_eq!(turn_count, 0);
         assert_eq!(agent_count, 0);
     }
