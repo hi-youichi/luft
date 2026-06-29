@@ -10,9 +10,8 @@
 //! - `initialize`   -> returns protocol version v1
 //! - `session/new`  -> returns session id "sess-test"
 //! - `session/prompt` -> emits a `session/update` ToolCall notification with
-//!                       title "structured_output" and the raw input supplied
-//!                       via `--raw-input`, then returns a PromptResponse with
-//!                       stop_reason "end_turn".
+//!   title "structured_output" and the raw input supplied via `--raw-input`,
+//!   then returns a PromptResponse with stop_reason "end_turn".
 
 use std::io::{BufRead, Write};
 
@@ -22,7 +21,7 @@ fn main() {
             std::env::args()
                 .position(|a| a == "--raw-input")
                 .and_then(|idx| std::env::args().nth(idx + 1))
-                .ok_or_else(|| std::env::VarError::NotPresent)
+                .ok_or(std::env::VarError::NotPresent)
         })
         .unwrap_or_else(|_| r#"{"answer":"ok"}"#.to_string());
 
