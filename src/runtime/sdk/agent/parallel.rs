@@ -145,7 +145,7 @@ mod tests {
     use crate::core::journal::JournalStore;
     use crate::core::scheduler::{BackendRegistry, SchedulerConfig};
     use crate::core::Scheduler;
-    use crate::core::{MockBackend, MockBehavior, FailKind};
+    use crate::core::{FailKind, MockBackend, MockBehavior};
     use crate::runtime::sdk::task::build_task;
     use crate::runtime::sdk::ReportSink;
     use crate::runtime::sdk::SdkContext;
@@ -183,7 +183,13 @@ mod tests {
 
     fn make_cx_with_journal(
         behaviors: Vec<MockBehavior>,
-    ) -> (Lua, SdkContext, tokio::runtime::Runtime, Arc<JournalStore>, tempfile::TempDir) {
+    ) -> (
+        Lua,
+        SdkContext,
+        tokio::runtime::Runtime,
+        Arc<JournalStore>,
+        tempfile::TempDir,
+    ) {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let lua = Lua::new();
         let run_id = Uuid::now_v7();
@@ -208,8 +214,13 @@ mod tests {
         let journal = Arc::new(JournalStore::new(dir.path()).unwrap());
         journal.init_run(run_id, "test").unwrap();
 
-        let cx =
-            SdkContext::new(run_ctx, scheduler, report_sink, Some(journal.clone()), handle);
+        let cx = SdkContext::new(
+            run_ctx,
+            scheduler,
+            report_sink,
+            Some(journal.clone()),
+            handle,
+        );
         (lua, cx, rt, journal, dir)
     }
 
@@ -249,8 +260,13 @@ mod tests {
         let journal = Arc::new(JournalStore::new(dir.path()).unwrap());
         journal.init_run(run_id, "test").unwrap();
 
-        let cx =
-            SdkContext::new(run_ctx, scheduler, report_sink, Some(journal.clone()), handle);
+        let cx = SdkContext::new(
+            run_ctx,
+            scheduler,
+            report_sink,
+            Some(journal.clone()),
+            handle,
+        );
         (lua, cx, rt, journal, dir, backend)
     }
 
@@ -285,7 +301,11 @@ mod tests {
             .load(r#"parallel({1, 2}, function() error('boom') end)"#)
             .eval::<mlua::Value>()
             .unwrap_err();
-        assert!(err.to_string().contains("boom"), "unexpected error: {}", err);
+        assert!(
+            err.to_string().contains("boom"),
+            "unexpected error: {}",
+            err
+        );
     }
 
     // ── build_task rejects missing prompt ──────────────────────────
@@ -489,7 +509,8 @@ mod tests {
             .eval::<mlua::Value>()
             .unwrap_err();
         assert!(
-            err.to_string().contains("map function must return an options table"),
+            err.to_string()
+                .contains("map function must return an options table"),
             "unexpected error: {}",
             err,
         );
@@ -602,12 +623,11 @@ mod tests {
 
     #[test]
     fn all_items_cached() {
-        let (lua, cx, _rt, journal, _dir) =
-            make_cx_with_journal(vec![MockBehavior::Success {
-                output: serde_json::json!({}),
-                tokens: TokenUsage::default(),
-                delay: Duration::ZERO,
-            }]);
+        let (lua, cx, _rt, journal, _dir) = make_cx_with_journal(vec![MockBehavior::Success {
+            output: serde_json::json!({}),
+            tokens: TokenUsage::default(),
+            delay: Duration::ZERO,
+        }]);
         register(&lua, &cx).unwrap();
 
         // Pre-populate cache with the key that the Lua map fn will produce.

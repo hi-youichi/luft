@@ -112,7 +112,12 @@ pub async fn execute_convergence(
         });
     }
 
-    tracing::info!(n_items = items.len(), max_rounds = config.max_rounds, adversarial = config.adversarial, "converge started");
+    tracing::info!(
+        n_items = items.len(),
+        max_rounds = config.max_rounds,
+        adversarial = config.adversarial,
+        "converge started"
+    );
 
     let mut state = ConvergeState {
         items,
@@ -147,7 +152,12 @@ pub async fn execute_convergence(
 
         // Phase 2: Adversarial agents refute findings (if enabled)
         let (surviving_findings, vote_stats) = if config.adversarial {
-            tracing::debug!(round, n_findings = findings.len(), adversaries = config.adversaries_per_finding, "adversarial verification started");
+            tracing::debug!(
+                round,
+                n_findings = findings.len(),
+                adversaries = config.adversaries_per_finding,
+                "adversarial verification started"
+            );
             verify_findings(
                 &findings,
                 adversary_prompt,
@@ -212,7 +222,13 @@ pub async fn execute_convergence(
             .collect();
     }
 
-    tracing::info!(rounds = state.round_stats.len(), converged = state.converged, surviving = state.items.len(), total_findings = state.findings.len(), "converge finished");
+    tracing::info!(
+        rounds = state.round_stats.len(),
+        converged = state.converged,
+        surviving = state.items.len(),
+        total_findings = state.findings.len(),
+        "converge finished"
+    );
     Ok(ConvergeResult {
         surviving_items: state.items,
         findings: state.findings,
@@ -235,7 +251,8 @@ async fn generate_findings(
     let mut tasks = Vec::new();
     for item in items {
         for _ in 0..producers_per_item {
-            let prompt = prompt_template.replace("{item}", &serde_json::to_string(item).unwrap_or_default());
+            let prompt =
+                prompt_template.replace("{item}", &serde_json::to_string(item).unwrap_or_default());
             let agent_id = uuid::Uuid::now_v7();
             let task = crate::core::contract::backend::AgentTask {
                 agent_id,
@@ -346,7 +363,12 @@ async fn verify_findings(
         .map(|(f, _)| f)
         .collect();
 
-    tracing::debug!(surviving = surviving.len(), refuted = findings.len() - surviving.len(), approval_rate, "adversarial voting completed");
+    tracing::debug!(
+        surviving = surviving.len(),
+        refuted = findings.len() - surviving.len(),
+        approval_rate,
+        "adversarial voting completed"
+    );
 
     let stats = VoteStats { approval_rate };
 
@@ -395,7 +417,11 @@ pub fn register_converge_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<()> {
         let handle = handle.clone();
         // Parse options
         let config = parse_converge_options(&options);
-        tracing::debug!(adversarial = config.adversarial, max_rounds = config.max_rounds, "converge SDK invoked");
+        tracing::debug!(
+            adversarial = config.adversarial,
+            max_rounds = config.max_rounds,
+            "converge SDK invoked"
+        );
         let phase_id = phase_counter.load(Ordering::Relaxed);
         let span_id = span_counter.fetch_add(1, Ordering::Relaxed);
         let max_rounds = config.max_rounds;
@@ -413,7 +439,8 @@ pub fn register_converge_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<()> {
             .ok()
             .and_then(extract_string)
             .unwrap_or_else(|| {
-                "Review this finding and determine if it is valid or should be refuted: {finding}".to_string()
+                "Review this finding and determine if it is valid or should be refuted: {finding}"
+                    .to_string()
             });
 
         // Convert items to Vec
@@ -445,7 +472,13 @@ pub fn register_converge_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<()> {
 
         match result {
             Ok(ref res) => {
-                tracing::info!(rounds = res.rounds, converged = res.converged, surviving = res.surviving_items.len(), elapsed_ms, "converge SDK completed");
+                tracing::info!(
+                    rounds = res.rounds,
+                    converged = res.converged,
+                    surviving = res.surviving_items.len(),
+                    elapsed_ms,
+                    "converge SDK completed"
+                );
             }
             Err(ref e) => {
                 tracing::error!(error = %e, elapsed_ms, "converge SDK failed");
@@ -554,7 +587,7 @@ fn lua_value_to_json(value: &Value) -> Result<serde_json::Value, mlua::Error> {
                 Ok(serde_json::Value::Null)
             }
         }
-Value::String(s) => {
+        Value::String(s) => {
             let owned = s.clone();
             let s = match owned.to_str() {
                 Ok(s) => s.to_string(),
@@ -580,7 +613,11 @@ Value::String(s) => {
             let mut map = serde_json::Map::new();
             for (k, v) in t.pairs::<Value, Value>().flatten() {
                 let key = match k {
-                    Value::String(s) => s.clone().to_str().map(|s| s.to_string()).unwrap_or_default(),
+                    Value::String(s) => s
+                        .clone()
+                        .to_str()
+                        .map(|s| s.to_string())
+                        .unwrap_or_default(),
                     Value::Integer(i) => i.to_string(),
                     _ => continue,
                 };
@@ -667,9 +704,7 @@ mod tests {
 
     // ── Helper: create a quick scheduler for converge tests ──────
 
-    fn converge_scheduler(
-        backend: Arc<dyn AgentBackend>,
-    ) -> Arc<Scheduler> {
+    fn converge_scheduler(backend: Arc<dyn AgentBackend>) -> Arc<Scheduler> {
         let config = SchedulerConfig {
             max_concurrency: 4,
             quota_per_run: 1000,
@@ -773,10 +808,7 @@ mod tests {
         let lua = Lua::new();
         let t = lua.create_table().unwrap();
         t.set("model", "claude").unwrap();
-        assert_eq!(
-            parse_converge_options(&t).model.as_deref(),
-            Some("claude")
-        );
+        assert_eq!(parse_converge_options(&t).model.as_deref(), Some("claude"));
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -961,15 +993,11 @@ mod tests {
     fn test_lua_value_to_json_userdata_catch_all() {
         let lua = Lua::new();
         // Thread is a kind of userdata in Lua
-        let thread = lua.create_thread(
-            lua.load("return 1").into_function().unwrap(),
-        )
-        .unwrap();
+        let thread = lua
+            .create_thread(lua.load("return 1").into_function().unwrap())
+            .unwrap();
         let val = Value::Thread(thread);
-        assert_eq!(
-            lua_value_to_json(&val).unwrap(),
-            serde_json::Value::Null
-        );
+        assert_eq!(lua_value_to_json(&val).unwrap(), serde_json::Value::Null);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -1060,11 +1088,7 @@ mod tests {
     #[test]
     fn test_json_to_lua_value_nested() {
         let lua = Lua::new();
-        let val = json_to_lua_value(
-            &lua,
-            serde_json::json!({"a": {"b": [1, 2, 3]}}),
-        )
-        .unwrap();
+        let val = json_to_lua_value(&lua, serde_json::json!({"a": {"b": [1, 2, 3]}})).unwrap();
         assert!(matches!(val, Value::Table(_)));
     }
 
@@ -1217,7 +1241,10 @@ mod tests {
         assert_eq!(result.rounds, 0);
         assert!(!result.converged);
         assert!(result.findings.is_empty());
-        assert_eq!(result.surviving_items, vec![serde_json::json!({"key": "val"})]);
+        assert_eq!(
+            result.surviving_items,
+            vec![serde_json::json!({"key": "val"})]
+        );
         assert!(result.round_stats.is_empty());
     }
 
@@ -1356,7 +1383,7 @@ mod tests {
     // ═══════════════════════════════════════════════════════════════
 
     #[test]
-fn test_register_converge_sdk_empty_items() {
+    fn test_register_converge_sdk_empty_items() {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let lua = Lua::new();
         let scheduler = converge_scheduler(Arc::new(NoOpBackend));

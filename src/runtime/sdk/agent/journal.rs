@@ -68,7 +68,12 @@ mod tests {
             status: AgentStatus::Ok,
             output: serde_json::json!({ "r": 1 }),
             findings: vec![],
-            tokens_used: TokenUsage { input: 10, output: 5, cache_read: 0, cache_write: 0 },
+            tokens_used: TokenUsage {
+                input: 10,
+                output: 5,
+                cache_read: 0,
+                cache_write: 0,
+            },
             artifacts: vec![],
             logs: Default::default(),
         }

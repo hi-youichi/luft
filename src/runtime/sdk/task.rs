@@ -203,7 +203,8 @@ mod tests {
             evidence: vec![],
             data: serde_json::Value::Null,
         }];
-        let t = build_result_table(&lua, "ok", serde_json::json!({ "x": 1 }), 42, &findings).unwrap();
+        let t =
+            build_result_table(&lua, "ok", serde_json::json!({ "x": 1 }), 42, &findings).unwrap();
         assert_eq!(t.get::<String>("status").unwrap(), "ok");
         assert!(t.get::<bool>("ok").unwrap());
         assert_eq!(t.get::<i64>("tokens").unwrap(), 42);

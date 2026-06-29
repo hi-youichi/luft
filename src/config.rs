@@ -21,6 +21,7 @@ pub struct BackendConfig {
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct AcpConfigOverride {
     pub binary: Option<PathBuf>,
+    pub args: Option<Vec<String>>,
     pub log_level: Option<String>,
     pub connect_timeout_secs: Option<u64>,
     pub idle_timeout_secs: Option<u64>,
@@ -55,8 +56,8 @@ pub fn save_config(config: &MaestroConfig) -> Result<(), String> {
     std::fs::create_dir_all(&dir)
         .map_err(|e| format!("failed to create config dir {}: {e}", dir.display()))?;
     let path = config_path();
-    let content = toml::to_string_pretty(config)
-        .map_err(|e| format!("failed to serialize config: {e}"))?;
+    let content =
+        toml::to_string_pretty(config).map_err(|e| format!("failed to serialize config: {e}"))?;
     std::fs::write(&path, &content)
         .map_err(|e| format!("failed to write {}: {e}", path.display()))?;
     Ok(())

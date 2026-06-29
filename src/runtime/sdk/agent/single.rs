@@ -33,7 +33,10 @@ pub(super) fn register(lua: &Lua, cx: &SdkContext) -> mlua::Result<()> {
                     run_id,
                     agent_id: None,
                     level: LogLevel::Info,
-                    msg: format!("resume: skip cached agent ({}…)", &cache_key.hash[..8.min(cache_key.hash.len())]),
+                    msg: format!(
+                        "resume: skip cached agent ({}…)",
+                        &cache_key.hash[..8.min(cache_key.hash.len())]
+                    ),
                 });
                 let (status, output, tokens, findings) = slot_from_cache(cached);
                 return build_result_table(lua, &status, output, tokens, &findings);

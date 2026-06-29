@@ -88,7 +88,12 @@ impl Runtime {
         register_sdk(&lua, &cx)?;
         tracing::debug!(run_id = %run_id, "SDK primitives registered");
 
-        Ok(Self { lua, report_sink, events, run_id })
+        Ok(Self {
+            lua,
+            report_sink,
+            events,
+            run_id,
+        })
     }
 
     /// Execute the script and return the report value (if any).
@@ -140,7 +145,11 @@ impl Runtime {
         let elapsed = start.elapsed();
         let guard = self.report_sink.lock().unwrap();
         let has_report = guard.is_some();
-        tracing::info!(elapsed_ms = elapsed.as_millis() as u64, has_report, "script execution finished");
+        tracing::info!(
+            elapsed_ms = elapsed.as_millis() as u64,
+            has_report,
+            "script execution finished"
+        );
         Ok(guard.clone().unwrap_or(serde_json::Value::Null))
     }
 
@@ -185,7 +194,16 @@ fn register_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<()> {
 pub(crate) fn apply_sandbox(lua: &Lua) -> Result<(), ScriptError> {
     tracing::debug!("applying Lua sandbox restrictions");
     let globals = lua.globals();
-    for name in ["io", "os", "debug", "package", "require", "loadfile", "dofile", "loadstring"] {
+    for name in [
+        "io",
+        "os",
+        "debug",
+        "package",
+        "require",
+        "loadfile",
+        "dofile",
+        "loadstring",
+    ] {
         let _ = globals.set(name, Value::Nil);
     }
     Ok(())
@@ -299,7 +317,13 @@ fn register_validation_stubs(lua: &Lua) -> Result<(), ScriptError> {
     let stub_void = lua.create_function(|_, _: mlua::MultiValue| Ok(()))?;
 
     for name in [
-        "agent", "parallel", "workflow", "phase", "phase_begin", "phase_end", "budget",
+        "agent",
+        "parallel",
+        "workflow",
+        "phase",
+        "phase_begin",
+        "phase_end",
+        "budget",
     ] {
         globals.set(name, stub_ret.clone())?;
     }
@@ -348,7 +372,10 @@ pub fn validate_workflow(script: &str) -> Result<WorkflowValidation, ScriptError
     let warnings = Vec::new();
 
     if meta.is_none() {
-        errors.push("no `meta` table found (expected `meta = { reasoning = \"...\", phases = {...} }`)".into());
+        errors.push(
+            "no `meta` table found (expected `meta = { reasoning = \"...\", phases = {...} }`)"
+                .into(),
+        );
     }
     if !has_main {
         errors.push("no `main()` function defined".into());

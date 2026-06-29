@@ -115,8 +115,14 @@ mod tests {
     fn primitives_lua_to_json() {
         let lua = Lua::new();
         assert_eq!(value_to_json(Value::Nil).unwrap(), serde_json::Value::Null);
-        assert_eq!(value_to_json(Value::Boolean(true)).unwrap(), serde_json::json!(true));
-        assert_eq!(value_to_json(Value::Integer(42)).unwrap(), serde_json::json!(42));
+        assert_eq!(
+            value_to_json(Value::Boolean(true)).unwrap(),
+            serde_json::json!(true)
+        );
+        assert_eq!(
+            value_to_json(Value::Integer(42)).unwrap(),
+            serde_json::json!(42)
+        );
         let s = Value::String(lua.create_string("hi").unwrap());
         assert_eq!(value_to_json(s).unwrap(), serde_json::json!("hi"));
     }
@@ -127,7 +133,10 @@ mod tests {
         let t = lua.create_table().unwrap();
         t.set(1, 10).unwrap();
         t.set(2, 20).unwrap();
-        assert_eq!(value_to_json(Value::Table(t)).unwrap(), serde_json::json!([10, 20]));
+        assert_eq!(
+            value_to_json(Value::Table(t)).unwrap(),
+            serde_json::json!([10, 20])
+        );
     }
 
     #[test]
@@ -135,7 +144,10 @@ mod tests {
         let lua = Lua::new();
         let t = lua.create_table().unwrap();
         t.set("name", "x").unwrap();
-        assert_eq!(value_to_json(Value::Table(t)).unwrap(), serde_json::json!({ "name": "x" }));
+        assert_eq!(
+            value_to_json(Value::Table(t)).unwrap(),
+            serde_json::json!({ "name": "x" })
+        );
     }
 
     #[test]

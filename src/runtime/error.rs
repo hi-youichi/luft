@@ -17,7 +17,7 @@ impl Default for ExecLimits {
     fn default() -> Self {
         Self {
             instruction_limit: 1_000_000,
-            wall_clock_ms: Some(300_000), // 5 minutes
+            wall_clock_ms: Some(300_000),          // 5 minutes
             memory_limit_bytes: 128 * 1024 * 1024, // 128 MB
         }
     }

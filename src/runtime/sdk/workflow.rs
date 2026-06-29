@@ -41,24 +41,26 @@ pub(crate) fn register_workflow_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<
         // Inner work; the guard below emits WorkflowDone on both Ok and Err paths.
         let outcome: mlua::Result<serde_json::Value> = (|| {
             tracing::debug!(%path, "reading sub-workflow script");
-            let script = std::fs::read_to_string(&path)
-                .map_err(|e| {
-                    tracing::error!(%path, error = %e, "failed to read sub-workflow script");
-                    mlua::Error::RuntimeError(format!("workflow: cannot read '{}': {}", path, e))
-                })?;
+            let script = std::fs::read_to_string(&path).map_err(|e| {
+                tracing::error!(%path, error = %e, "failed to read sub-workflow script");
+                mlua::Error::RuntimeError(format!("workflow: cannot read '{}': {}", path, e))
+            })?;
             let sub = Runtime::new(
-                sched.clone(), run_ctx.clone(), sub_args.clone(), ExecLimits::default(),
-                journal.clone(), handle.clone(),
+                sched.clone(),
+                run_ctx.clone(),
+                sub_args.clone(),
+                ExecLimits::default(),
+                journal.clone(),
+                handle.clone(),
             )
             .map_err(|e| {
                 tracing::error!(%path, error = %e, "sub-workflow init error");
                 mlua::Error::RuntimeError(format!("workflow '{}' init error: {}", path, e))
             })?;
-            sub.execute(&script)
-                .map_err(|e| {
-                    tracing::error!(%path, error = %e, "sub-workflow execution error");
-                    mlua::Error::RuntimeError(format!("workflow '{}' error: {}", path, e))
-                })
+            sub.execute(&script).map_err(|e| {
+                tracing::error!(%path, error = %e, "sub-workflow execution error");
+                mlua::Error::RuntimeError(format!("workflow '{}' error: {}", path, e))
+            })
         })();
 
         let elapsed_ms = t0.elapsed().as_millis() as u64;
@@ -67,7 +69,11 @@ pub(crate) fn register_workflow_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<
             run_id,
             span_id,
             path: path.clone(),
-            report: outcome.as_ref().ok().cloned().unwrap_or(serde_json::Value::Null),
+            report: outcome
+                .as_ref()
+                .ok()
+                .cloned()
+                .unwrap_or(serde_json::Value::Null),
             elapsed_ms,
             error: outcome.as_ref().err().map(|e| e.to_string()),
         });
@@ -86,8 +92,8 @@ mod tests {
     use crate::core::{BackendRegistry, Scheduler, SchedulerConfig};
     use std::sync::Arc;
     use std::sync::Mutex;
-    use tokio::sync::broadcast;
     use tokio::runtime::Handle;
+    use tokio::sync::broadcast;
     use tokio_util::sync::CancellationToken;
 
     /// Build a minimal SdkContext and return it with an event receiver.
@@ -145,9 +151,10 @@ mod tests {
 
         let args_type: String = tokio::task::spawn_blocking(move || {
             let result: mlua::Value = lua.load(script).eval()?;
-            let t = result.as_table().cloned().ok_or_else(|| {
-                mlua::Error::RuntimeError("expected table result".into())
-            })?;
+            let t = result
+                .as_table()
+                .cloned()
+                .ok_or_else(|| mlua::Error::RuntimeError("expected table result".into()))?;
             t.get::<String>("args_type")
         })
         .await
@@ -165,12 +172,10 @@ mod tests {
 
         let script = r#"return workflow("/__maestro_nonexistent_test__", {})"#;
 
-        let err = tokio::task::spawn_blocking(move || {
-            lua.load(script).eval::<mlua::Value>()
-        })
-        .await
-        .unwrap()
-        .unwrap_err();
+        let err = tokio::task::spawn_blocking(move || lua.load(script).eval::<mlua::Value>())
+            .await
+            .unwrap()
+            .unwrap_err();
 
         let msg = err.to_string();
         assert!(
@@ -193,12 +198,10 @@ mod tests {
         let path = sub_path.to_string_lossy().to_string();
         let script = format!("return workflow(\"{}\", {{}})", lua_str(&path));
 
-        let err = tokio::task::spawn_blocking(move || {
-            lua.load(script).eval::<mlua::Value>()
-        })
-        .await
-        .unwrap()
-        .unwrap_err();
+        let err = tokio::task::spawn_blocking(move || lua.load(script).eval::<mlua::Value>())
+            .await
+            .unwrap()
+            .unwrap_err();
 
         let msg = err.to_string();
         assert!(
@@ -223,9 +226,10 @@ mod tests {
 
         let value: i64 = tokio::task::spawn_blocking(move || {
             let result: mlua::Value = lua.load(&script).eval()?;
-            let t = result.as_table().cloned().ok_or_else(|| {
-                mlua::Error::RuntimeError("expected table result".into())
-            })?;
+            let t = result
+                .as_table()
+                .cloned()
+                .ok_or_else(|| mlua::Error::RuntimeError("expected table result".into()))?;
             t.get::<i64>("value")
         })
         .await
@@ -250,14 +254,17 @@ mod tests {
         register_workflow_sdk(&lua, &cx).unwrap();
 
         let path = sub_path.to_string_lossy().to_string();
-        let script =
-            format!("return workflow(\"{}\", {{ name = \"hello\", count = 7 }})", lua_str(&path));
+        let script = format!(
+            "return workflow(\"{}\", {{ name = \"hello\", count = 7 }})",
+            lua_str(&path)
+        );
 
         let (name, count): (String, i64) = tokio::task::spawn_blocking(move || {
             let result: mlua::Value = lua.load(&script).eval()?;
-            let t = result.as_table().cloned().ok_or_else(|| {
-                mlua::Error::RuntimeError("expected table result".into())
-            })?;
+            let t = result
+                .as_table()
+                .cloned()
+                .ok_or_else(|| mlua::Error::RuntimeError("expected table result".into()))?;
             Ok::<_, mlua::Error>((t.get::<String>("name")?, t.get::<i64>("count")?))
         })
         .await
@@ -281,12 +288,10 @@ mod tests {
         let path = sub_path.to_string_lossy().to_string();
         let script = format!("workflow(\"{}\", {{}})", lua_str(&path));
 
-        tokio::task::spawn_blocking(move || {
-            lua.load(&script).eval::<mlua::Value>()
-        })
-        .await
-        .unwrap()
-        .unwrap();
+        tokio::task::spawn_blocking(move || lua.load(&script).eval::<mlua::Value>())
+            .await
+            .unwrap()
+            .unwrap();
 
         let mut found_started = false;
         let mut found_done = false;

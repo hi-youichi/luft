@@ -58,8 +58,8 @@ mod tests {
     use crate::core::contract::backend::RunContext;
     use crate::core::contract::ids::TokenUsage;
     use crate::core::scheduler::{BackendRegistry, SchedulerConfig};
-    use crate::core::{MockBackend, MockBehavior};
     use crate::core::Scheduler;
+    use crate::core::{MockBackend, MockBehavior};
     use crate::runtime::sdk::ReportSink;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
@@ -72,7 +72,12 @@ mod tests {
         (lua, cx, rt)
     }
 
-    fn test_setup_with_rx() -> (Lua, SdkContext, tokio::runtime::Runtime, broadcast::Receiver<AgentEvent>) {
+    fn test_setup_with_rx() -> (
+        Lua,
+        SdkContext,
+        tokio::runtime::Runtime,
+        broadcast::Receiver<AgentEvent>,
+    ) {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let lua = Lua::new();
         let run_id = Uuid::now_v7();
@@ -145,7 +150,10 @@ mod tests {
         let sink = cx.report_sink.lock().unwrap();
         let stored = sink.as_ref().expect("report sink should be Some");
         assert_eq!(stored["second"], true);
-        assert!(stored.get("first").is_none(), "previous value should be replaced");
+        assert!(
+            stored.get("first").is_none(),
+            "previous value should be replaced"
+        );
     }
 
     #[test]
@@ -153,7 +161,8 @@ mod tests {
         let (lua, cx, _rt) = test_setup();
         register_report_sdk(&lua, &cx).unwrap();
 
-        let result: String = lua.load(r#"return json.encode({ a = 1, b = 2 })"#)
+        let result: String = lua
+            .load(r#"return json.encode({ a = 1, b = 2 })"#)
             .eval()
             .unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
@@ -166,9 +175,7 @@ mod tests {
         let (lua, cx, _rt) = test_setup();
         register_report_sdk(&lua, &cx).unwrap();
 
-        let result: String = lua.load(r#"return json.encode(nil)"#)
-            .eval()
-            .unwrap();
+        let result: String = lua.load(r#"return json.encode(nil)"#).eval().unwrap();
         assert_eq!(result, "null");
     }
 
@@ -177,10 +184,10 @@ mod tests {
         let (lua, cx, _rt) = test_setup();
         register_report_sdk(&lua, &cx).unwrap();
 
-        let result: mlua::Value =
-            lua.load(r#"return json.decode('{"x": 10, "y": "hello"}')"#)
-                .eval()
-                .unwrap();
+        let result: mlua::Value = lua
+            .load(r#"return json.decode('{"x": 10, "y": "hello"}')"#)
+            .eval()
+            .unwrap();
         let json = value_to_json(result).unwrap();
         assert_eq!(json["x"], 10);
         assert_eq!(json["y"], "hello");
@@ -229,9 +236,18 @@ mod tests {
         // Verify the same path is exercised inside report() by calling it through
         // Lua with a value that mlua preserves as Value::Error.
         let globals = lua.globals();
-        if globals.set("__err", Value::Error(Box::new(mlua::Error::RuntimeError("bad".into())))).is_ok() {
+        if globals
+            .set(
+                "__err",
+                Value::Error(Box::new(mlua::Error::RuntimeError("bad".into()))),
+            )
+            .is_ok()
+        {
             assert!(lua.load("report(__err)").exec().is_err());
-            assert!(lua.load("return json.encode(__err)").eval::<String>().is_err());
+            assert!(lua
+                .load("return json.encode(__err)")
+                .eval::<String>()
+                .is_err());
         }
     }
 
@@ -244,8 +260,10 @@ mod tests {
         let (lua, cx, _rt) = test_setup();
         register_report_sdk(&lua, &cx).unwrap();
 
-        let result: mlua::Value =
-            lua.load(r#"return json.decode('[1, 2, 3]')"#).eval().unwrap();
+        let result: mlua::Value = lua
+            .load(r#"return json.decode('[1, 2, 3]')"#)
+            .eval()
+            .unwrap();
         let json = value_to_json(result).unwrap();
         assert_eq!(json, serde_json::json!([1, 2, 3]));
     }
@@ -255,8 +273,7 @@ mod tests {
         let (lua, cx, _rt) = test_setup();
         register_report_sdk(&lua, &cx).unwrap();
 
-        let result: String =
-            lua.load(r#"return json.decode('"hello"')"#).eval().unwrap();
+        let result: String = lua.load(r#"return json.decode('"hello"')"#).eval().unwrap();
         assert_eq!(result, "hello");
     }
 
@@ -265,8 +282,7 @@ mod tests {
         let (lua, cx, _rt) = test_setup();
         register_report_sdk(&lua, &cx).unwrap();
 
-        let result: i64 =
-            lua.load(r#"return json.decode('42')"#).eval().unwrap();
+        let result: i64 = lua.load(r#"return json.decode('42')"#).eval().unwrap();
         assert_eq!(result, 42);
     }
 
@@ -275,8 +291,7 @@ mod tests {
         let (lua, cx, _rt) = test_setup();
         register_report_sdk(&lua, &cx).unwrap();
 
-        let result: bool =
-            lua.load(r#"return json.decode('true')"#).eval().unwrap();
+        let result: bool = lua.load(r#"return json.decode('true')"#).eval().unwrap();
         assert!(result);
     }
 
@@ -285,8 +300,7 @@ mod tests {
         let (lua, cx, _rt) = test_setup();
         register_report_sdk(&lua, &cx).unwrap();
 
-        let result: mlua::Value =
-            lua.load(r#"return json.decode('null')"#).eval().unwrap();
+        let result: mlua::Value = lua.load(r#"return json.decode('null')"#).eval().unwrap();
         assert!(matches!(result, mlua::Value::Nil));
     }
 
@@ -303,7 +317,11 @@ mod tests {
 
         let event = rx.try_recv().expect("should receive ReportEmitted");
         match event {
-            AgentEvent::ReportEmitted { run_id, phase_id: _, report } => {
+            AgentEvent::ReportEmitted {
+                run_id,
+                phase_id: _,
+                report,
+            } => {
                 assert_eq!(run_id, cx.run_id());
                 assert_eq!(report["key"], "val");
             }

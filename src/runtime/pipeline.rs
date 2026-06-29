@@ -195,11 +195,7 @@ pub struct PipelineExecutor {
 
 impl PipelineExecutor {
     /// Create a new pipeline executor.
-    pub fn new(
-        config: PipelineConfig,
-        event_tx: Option<EventSender>,
-        run_id: uuid::Uuid,
-    ) -> Self {
+    pub fn new(config: PipelineConfig, event_tx: Option<EventSender>, run_id: uuid::Uuid) -> Self {
         Self {
             config,
             event_tx,
@@ -225,7 +221,12 @@ impl PipelineExecutor {
 
         let n_stages = self.config.stages.len();
         let n_items = items.len();
-        tracing::info!(n_stages, n_items, max_inflight = self.config.max_inflight, "pipeline execution started");
+        tracing::info!(
+            n_stages,
+            n_items,
+            max_inflight = self.config.max_inflight,
+            "pipeline execution started"
+        );
         let run_id = self.run_id;
 
         // Emit PipelineStarted event
@@ -343,7 +344,12 @@ impl PipelineExecutor {
             total_failed: failed_count,
         });
 
-        tracing::info!(total_elapsed_ms = total_elapsed, ok = ok_count, failed = failed_count, "pipeline execution finished");
+        tracing::info!(
+            total_elapsed_ms = total_elapsed,
+            ok = ok_count,
+            failed = failed_count,
+            "pipeline execution finished"
+        );
 
         Ok(PipelineResult {
             items: item_results,
@@ -393,7 +399,9 @@ pub(crate) fn register_pipeline_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<
             .into_iter()
             .map(value_to_json)
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| mlua::Error::RuntimeError(format!("pipeline: item conversion error: {}", e)))?;
+            .map_err(|e| {
+                mlua::Error::RuntimeError(format!("pipeline: item conversion error: {}", e))
+            })?;
 
         if items.is_empty() {
             let t = lua.create_table()?;
@@ -426,7 +434,9 @@ pub(crate) fn register_pipeline_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<
                 // throwaway one), so the value is valid for `handler.call`.
                 match handler.call::<Value>(JsonArg(data)) {
                     Ok(Value::Nil) => Ok(serde_json::Value::Null),
-                    Ok(v) => value_to_json(v).map_err(|e| format!("pipeline: result conversion: {}", e)),
+                    Ok(v) => {
+                        value_to_json(v).map_err(|e| format!("pipeline: result conversion: {}", e))
+                    }
                     Err(e) => Err(format!("pipeline: stage '{}' error: {}", label_c, e)),
                 }
             });
@@ -434,21 +444,25 @@ pub(crate) fn register_pipeline_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<
         }
 
         if stages.is_empty() {
-            return Err(mlua::Error::RuntimeError("pipeline: at least one stage required".into()));
+            return Err(mlua::Error::RuntimeError(
+                "pipeline: at least one stage required".into(),
+            ));
         }
 
         let max_inflight = params.get::<i64>("max_inflight").unwrap_or(5).max(1) as usize;
         let n_stages = stages.len();
-        let config = PipelineConfig { stages, max_inflight, ..Default::default() };
+        let config = PipelineConfig {
+            stages,
+            max_inflight,
+            ..Default::default()
+        };
 
         let executor = PipelineExecutor::new(config, Some(events), run_id);
         tracing::debug!(n_items = items.len(), n_stages, "pipeline SDK invoked");
-        let result = handle
-            .block_on(executor.execute(items))
-            .map_err(|e| {
-                tracing::error!(error = %e, "pipeline execution failed");
-                mlua::Error::RuntimeError(format!("pipeline: execution error: {}", e))
-            })?;
+        let result = handle.block_on(executor.execute(items)).map_err(|e| {
+            tracing::error!(error = %e, "pipeline execution failed");
+            mlua::Error::RuntimeError(format!("pipeline: execution error: {}", e))
+        })?;
 
         let t = lua.create_table()?;
         let items_t = lua.create_table()?;
@@ -489,16 +503,19 @@ mod tests {
     use serde_json::json;
 
     /// Stage handler that appends a marker and prepends the stage name.
-    fn append_marker(stage_name: &str) -> impl Fn(serde_json::Value) -> Result<serde_json::Value, String> + Send + Sync + 'static {
+    fn append_marker(
+        stage_name: &str,
+    ) -> impl Fn(serde_json::Value) -> Result<serde_json::Value, String> + Send + Sync + 'static
+    {
         let name = stage_name.to_string();
         move |data| {
             if let Some(obj) = data.as_object() {
                 let mut result = obj.clone();
                 result.insert("last_stage".to_string(), json!(name));
                 // Track visited stages
-                let mut visited: Vec<String> = serde_json::from_value(
-                    result.get("visited").cloned().unwrap_or(json!([]))
-                ).unwrap_or_default();
+                let mut visited: Vec<String> =
+                    serde_json::from_value(result.get("visited").cloned().unwrap_or(json!([])))
+                        .unwrap_or_default();
                 visited.push(name.clone());
                 result.insert("visited".to_string(), json!(visited));
                 Ok(serde_json::Value::Object(result))
@@ -571,7 +588,10 @@ mod tests {
         assert_eq!(result.stats.ok, 1);
         assert_eq!(result.stats.failed, 1);
 
-        assert_eq!(result.items[1].stage_results[1].status, StageStatus::Failed("intentional failure".to_string()));
+        assert_eq!(
+            result.items[1].stage_results[1].status,
+            StageStatus::Failed("intentional failure".to_string())
+        );
     }
 
     #[tokio::test]

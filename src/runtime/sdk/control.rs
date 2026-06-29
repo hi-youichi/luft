@@ -131,17 +131,20 @@ pub(crate) fn register_control_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<(
                 let mut stack = phase_span_stack.lock().unwrap();
                 match id {
                     Some(target) => {
-                        let pos = stack.iter().rposition(|s| s.id as i64 == target)
-                            .ok_or_else(|| mlua::Error::RuntimeError(
-                                format!("phase_end: span id {} not found in stack", target)
-                            ))?;
+                        let pos = stack
+                            .iter()
+                            .rposition(|s| s.id as i64 == target)
+                            .ok_or_else(|| {
+                                mlua::Error::RuntimeError(format!(
+                                    "phase_end: span id {} not found in stack",
+                                    target
+                                ))
+                            })?;
                         stack.split_off(pos).remove(0)
                     }
-                    None => {
-                        stack.pop().ok_or_else(|| mlua::Error::RuntimeError(
-                            "phase_end: span stack is empty".to_string()
-                        ))?
-                    }
+                    None => stack.pop().ok_or_else(|| {
+                        mlua::Error::RuntimeError("phase_end: span stack is empty".to_string())
+                    })?,
                 }
             };
             let elapsed_ms = span.started_at.elapsed().as_millis() as u64;
@@ -172,7 +175,12 @@ pub(crate) fn register_control_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<(
                 _ => LogLevel::Info,
             };
             tracing::trace!(?level, %msg, "script log");
-            let _ = events.send(AgentEvent::Log { run_id, agent_id: None, level, msg });
+            let _ = events.send(AgentEvent::Log {
+                run_id,
+                agent_id: None,
+                level,
+                msg,
+            });
             Ok(())
         })?;
         globals.set("log", log_fn)?;
@@ -181,26 +189,28 @@ pub(crate) fn register_control_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<(
     // ---- budget(time_ms?, max_rounds?) ------------------------------------
     {
         let events = cx.events();
-        let budget_fn = lua.create_function(move |lua, (time_limit, max_rounds): (Option<i64>, Option<i64>)| {
-            tracing::debug!(time_limit_ms = ?time_limit, ?max_rounds, "budget set");
-            let globals = lua.globals();
-            let budget_table = globals
-                .get::<Table>("__budget")
-                .unwrap_or_else(|_| lua.create_table().unwrap());
-            if let Some(tl) = time_limit {
-                budget_table.set("time_limit_ms", tl)?;
-            }
-            if let Some(mr) = max_rounds {
-                budget_table.set("max_rounds", mr)?;
-            }
-            globals.set("__budget", budget_table)?;
-            let _ = events.send(AgentEvent::BudgetSet {
-                run_id,
-                time_limit_ms: time_limit.map(|t| t.max(0) as u64),
-                max_rounds: max_rounds.map(|m| m.max(0) as u32),
-            });
-            Ok(())
-        })?;
+        let budget_fn = lua.create_function(
+            move |lua, (time_limit, max_rounds): (Option<i64>, Option<i64>)| {
+                tracing::debug!(time_limit_ms = ?time_limit, ?max_rounds, "budget set");
+                let globals = lua.globals();
+                let budget_table = globals
+                    .get::<Table>("__budget")
+                    .unwrap_or_else(|_| lua.create_table().unwrap());
+                if let Some(tl) = time_limit {
+                    budget_table.set("time_limit_ms", tl)?;
+                }
+                if let Some(mr) = max_rounds {
+                    budget_table.set("max_rounds", mr)?;
+                }
+                globals.set("__budget", budget_table)?;
+                let _ = events.send(AgentEvent::BudgetSet {
+                    run_id,
+                    time_limit_ms: time_limit.map(|t| t.max(0) as u64),
+                    max_rounds: max_rounds.map(|m| m.max(0) as u32),
+                });
+                Ok(())
+            },
+        )?;
         globals.set("budget", budget_fn)?;
     }
 
@@ -211,10 +221,10 @@ pub(crate) fn register_control_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<(
 mod tests {
     use super::*;
     use crate::core::contract::backend::RunContext;
-    use crate::core::scheduler::{BackendRegistry, SchedulerConfig};
-    use crate::core::{MockBackend, MockBehavior};
     use crate::core::contract::ids::TokenUsage;
+    use crate::core::scheduler::{BackendRegistry, SchedulerConfig};
     use crate::core::Scheduler;
+    use crate::core::{MockBackend, MockBehavior};
     use crate::runtime::sdk::ReportSink;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
@@ -238,13 +248,19 @@ mod tests {
             "mock",
             vec![MockBehavior::Success {
                 output: serde_json::json!({}),
-                tokens: TokenUsage { input: 1, output: 1, cache_read: 0, cache_write: 0 },
+                tokens: TokenUsage {
+                    input: 1,
+                    output: 1,
+                    cache_read: 0,
+                    cache_write: 0,
+                },
                 delay: Duration::from_millis(1),
             }],
         ));
         let scheduler: Arc<Scheduler> = Scheduler::new(
             SchedulerConfig::default(),
-            BackendRegistry::new().with(backend as Arc<dyn crate::core::contract::backend::AgentBackend>),
+            BackendRegistry::new()
+                .with(backend as Arc<dyn crate::core::contract::backend::AgentBackend>),
             None,
         );
         let cx = SdkContext::new(run_ctx, scheduler, report_sink, None, handle);
@@ -318,7 +334,10 @@ mod tests {
         lua.load(r#"budget(5000)"#).exec().unwrap();
         let t: mlua::Table = lua.globals().get("__budget").unwrap();
         assert_eq!(t.get::<i64>("time_limit_ms").unwrap(), 5000);
-        assert!(t.get::<i64>("max_rounds").is_err(), "max_rounds must not be set");
+        assert!(
+            t.get::<i64>("max_rounds").is_err(),
+            "max_rounds must not be set"
+        );
     }
 
     #[test]
@@ -329,7 +348,10 @@ mod tests {
         lua.load(r#"budget(nil, 10)"#).exec().unwrap();
         let t: mlua::Table = lua.globals().get("__budget").unwrap();
         assert_eq!(t.get::<i64>("max_rounds").unwrap(), 10);
-        assert!(t.get::<i64>("time_limit_ms").is_err(), "time_limit_ms must not be set");
+        assert!(
+            t.get::<i64>("time_limit_ms").is_err(),
+            "time_limit_ms must not be set"
+        );
     }
 
     #[test]
@@ -360,7 +382,10 @@ mod tests {
         register_control_sdk(&lua, &cx).unwrap();
         // __budget doesn't exist yet → unwrap_or_else creates it (line 68)
         let globals = lua.globals();
-        assert!(globals.get::<mlua::Table>("__budget").is_err(), "__budget must not exist yet");
+        assert!(
+            globals.get::<mlua::Table>("__budget").is_err(),
+            "__budget must not exist yet"
+        );
         lua.load(r#"budget(100, 2)"#).exec().unwrap();
         let t: mlua::Table = globals.get("__budget").unwrap();
         assert_eq!(t.get::<i64>("time_limit_ms").unwrap(), 100);
@@ -425,14 +450,18 @@ mod tests {
     fn phase_table_form_basic() {
         let (lua, cx, _rt) = test_setup();
         register_control_sdk(&lua, &cx).unwrap();
-        lua.load(r#"
+        lua.load(
+            r#"
             p = phase({
                 label = "生成分析",
                 planned = 3,
                 description = "多个 producer 并行分析",
                 role = "producer",
             })
-        "#).exec().unwrap();
+        "#,
+        )
+        .exec()
+        .unwrap();
         let id: i64 = lua.globals().get("p").unwrap();
         assert_eq!(id, 1);
     }
@@ -441,7 +470,9 @@ mod tests {
     fn phase_table_form_minimal() {
         let (lua, cx, _rt) = test_setup();
         register_control_sdk(&lua, &cx).unwrap();
-        lua.load(r#"p = phase({ label = "only label" })"#).exec().unwrap();
+        lua.load(r#"p = phase({ label = "only label" })"#)
+            .exec()
+            .unwrap();
         let id: i64 = lua.globals().get("p").unwrap();
         assert_eq!(id, 1);
     }
@@ -459,7 +490,9 @@ mod tests {
         let (lua, cx, _rt) = test_setup();
         register_control_sdk(&lua, &cx).unwrap();
         lua.load(r#"p1 = phase("classic")"#).exec().unwrap();
-        lua.load(r#"p2 = phase({ label = "table" })"#).exec().unwrap();
+        lua.load(r#"p2 = phase({ label = "table" })"#)
+            .exec()
+            .unwrap();
         lua.load(r#"p3 = phase("classic2", 5)"#).exec().unwrap();
         let p1: i64 = lua.globals().get("p1").unwrap();
         let p2: i64 = lua.globals().get("p2").unwrap();
@@ -469,4 +502,3 @@ mod tests {
         assert_eq!(p3, 3);
     }
 }
-
