@@ -46,7 +46,11 @@ mod tests {
             let dir = TempDir::new().unwrap();
             let orig_cwd = std::env::current_dir().unwrap();
             std::env::set_current_dir(dir.path()).unwrap();
-            TestEnv { _lock, _dir: dir, orig_cwd }
+            TestEnv {
+                _lock,
+                _dir: dir,
+                orig_cwd,
+            }
         }
     }
 

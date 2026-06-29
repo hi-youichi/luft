@@ -83,10 +83,18 @@ struct GenerateArgs {
     #[arg(help = "Natural language prompt describing the workflow to generate")]
     nl: String,
 
-    #[arg(short, long, help = "Write generated Lua script to this file (default: stdout)")]
+    #[arg(
+        short,
+        long,
+        help = "Write generated Lua script to this file (default: stdout)"
+    )]
     output: Option<PathBuf>,
 
-    #[arg(short, long, help = "Backend to use (default: auto-detect opencode, fallback mock)")]
+    #[arg(
+        short,
+        long,
+        help = "Backend to use (default: auto-detect opencode, fallback mock)"
+    )]
     backend: Option<String>,
 }
 
@@ -101,16 +109,30 @@ struct RunArgs {
     #[arg(short, long, help = "Resume from last checkpoint")]
     resume: bool,
 
-    #[arg(short, long, help = "Show script for confirmation before execution (default: auto-approve)")]
+    #[arg(
+        short,
+        long,
+        help = "Show script for confirmation before execution (default: auto-approve)"
+    )]
     confirm: bool,
 
-    #[arg(short, long, help = "Backend to use (default: auto-detect opencode, fallback mock)")]
+    #[arg(
+        short,
+        long,
+        help = "Backend to use (default: auto-detect opencode, fallback mock)"
+    )]
     backend: Option<String>,
 
-    #[arg(long, help = "Disable raw ACP session/update passthrough (acp_raw events)")]
+    #[arg(
+        long,
+        help = "Disable raw ACP session/update passthrough (acp_raw events)"
+    )]
     no_acp_raw: bool,
 
-    #[arg(long, help = "Write the event log to this file (in addition to normal output)")]
+    #[arg(
+        long,
+        help = "Write the event log to this file (in addition to normal output)"
+    )]
     log: Option<PathBuf>,
 
     #[arg(long, value_enum, default_value_t = commands::event_log::LogFormat::Pretty, help = "Event log format")]
@@ -135,12 +157,15 @@ struct RunArgs {
     #[arg(long, help = "Auto-fix script on execution failure (default: off)")]
     auto_fix: bool,
 
-    #[arg(long, default_value_t = 3, help = "Max fix attempts when auto-fix is enabled")]
+    #[arg(
+        long,
+        default_value_t = 3,
+        help = "Max fix attempts when auto-fix is enabled"
+    )]
     max_fix_attempts: u32,
 
     #[arg(long, help = "Disable writing agent artifact reports to disk")]
     no_artifacts: bool,
-
 }
 
 #[tokio::main]
@@ -166,10 +191,18 @@ async fn dispatch(cli: Cli) -> Result<()> {
         Commands::Logs { run_dir, limit } => commands::logs::logs_run_cmd(run_dir, limit)?,
         Commands::Backend(cmd) => match cmd {
             commands::backend::BackendSubcommand::List => commands::backend::list_backends(),
-            commands::backend::BackendSubcommand::Info { id } => commands::backend::info_backend(id),
-            commands::backend::BackendSubcommand::Check { id } => commands::backend::check_backend(id),
-            commands::backend::BackendSubcommand::Config { key, value } => commands::backend::config_backend(key, value),
-            commands::backend::BackendSubcommand::Set { id } => commands::backend::set_default_backend(id),
+            commands::backend::BackendSubcommand::Info { id } => {
+                commands::backend::info_backend(id)
+            }
+            commands::backend::BackendSubcommand::Check { id } => {
+                commands::backend::check_backend(id)
+            }
+            commands::backend::BackendSubcommand::Config { key, value } => {
+                commands::backend::config_backend(key, value)
+            }
+            commands::backend::BackendSubcommand::Set { id } => {
+                commands::backend::set_default_backend(id)
+            }
         },
         Commands::McpStructuredOutput(args) => commands::mcp_server::run(args)?,
         Commands::Lua(cmd) => match cmd {
@@ -216,8 +249,7 @@ mod tests {
         };
         let err = dispatch(cli).await.unwrap_err();
         assert!(
-            err.to_string().contains("planner")
-                || err.to_string().contains("real LLM backend"),
+            err.to_string().contains("planner") || err.to_string().contains("real LLM backend"),
             "expected planner or backend error, got: {}",
             err
         );
@@ -327,8 +359,7 @@ mod tests {
         };
         let err = dispatch(cli).await.unwrap_err();
         assert!(
-            err.to_string().contains("not found")
-                || err.to_string().contains("No such file"),
+            err.to_string().contains("not found") || err.to_string().contains("No such file"),
             "expected 'not found' error, got: {}",
             err
         );
@@ -354,16 +385,17 @@ mod tests {
     #[tokio::test]
     async fn dispatch_mcp_no_schema_file() {
         let cli = Cli {
-            command: Commands::McpStructuredOutput(
-                commands::mcp_server::McpStructuredOutputArgs {
-                    schema_file: PathBuf::from("/__nonexistent__/schema.json"),
-                },
-            ),
+            command: Commands::McpStructuredOutput(commands::mcp_server::McpStructuredOutputArgs {
+                schema_file: PathBuf::from("/__nonexistent__/schema.json"),
+            }),
             log_level: None,
         };
         let err = dispatch(cli).await.unwrap_err();
         assert!(
-            err.to_string().contains("No such file") || err.to_string().contains("os error 2") || err.to_string().contains("os error 3") || err.to_string().contains("cannot find the path"),
+            err.to_string().contains("No such file")
+                || err.to_string().contains("os error 2")
+                || err.to_string().contains("os error 3")
+                || err.to_string().contains("cannot find the path"),
             "expected filesystem error, got: {}",
             err
         );

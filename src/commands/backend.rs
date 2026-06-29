@@ -10,7 +10,7 @@ use clap::Subcommand;
 use serde::Serialize;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
-use crate::config::{MaestroConfig, load_config, save_config, config_path};
+use crate::config::{config_path, load_config, save_config, MaestroConfig};
 
 #[derive(Debug, Subcommand)]
 pub enum BackendSubcommand {
@@ -50,6 +50,7 @@ struct BackendInfo {
 
 #[derive(Serialize)]
 struct ConfigView {
+    args: Vec<String>,
     log_level: Option<String>,
     connect_timeout_secs: u64,
     idle_timeout_secs: u64,
@@ -102,7 +103,11 @@ pub fn list_backends() {
 }
 
 fn bool_mark(v: bool) -> &'static str {
-    if v { "\u{2713}" } else { "\u{2717}" }
+    if v {
+        "\u{2713}"
+    } else {
+        "\u{2717}"
+    }
 }
 
 pub fn info_backend(id: Option<String>) {
@@ -113,12 +118,11 @@ pub fn info_backend(id: Option<String>) {
             let caps = be.capabilities();
             let binary = match be_id.as_str() {
                 "mock" => "(built-in)".into(),
-                _ => {
-                    cfg.as_ref()
-                        .and_then(|c| c.backend.acp.binary.as_ref())
-                        .map(|p| p.display().to_string())
-                        .unwrap_or_else(|| be_id.clone())
-                }
+                _ => cfg
+                    .as_ref()
+                    .and_then(|c| c.backend.acp.binary.as_ref())
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|| be_id.clone()),
             };
             let acp_cfg = cfg.as_ref().map(|c| &c.backend.acp);
             let info = BackendInfo {
@@ -131,8 +135,13 @@ pub fn info_backend(id: Option<String>) {
                 },
                 binary,
                 config: ConfigView {
+                    args: acp_cfg
+                        .and_then(|c| c.args.clone())
+                        .unwrap_or_default(),
                     log_level: acp_cfg.and_then(|c| c.log_level.clone()),
-                    connect_timeout_secs: acp_cfg.and_then(|c| c.connect_timeout_secs).unwrap_or(10),
+                    connect_timeout_secs: acp_cfg
+                        .and_then(|c| c.connect_timeout_secs)
+                        .unwrap_or(10),
                     idle_timeout_secs: acp_cfg.and_then(|c| c.idle_timeout_secs).unwrap_or(300),
                     emit_raw_events: acp_cfg.and_then(|c| c.emit_raw_events).unwrap_or(true),
                 },
@@ -152,7 +161,8 @@ pub fn check_backend(id: Option<String>) {
         "loom-acp" | "opencode" => {
             // Check config override first, then PATH.
             let cfg = crate::config::load_config();
-            let binary = cfg.as_ref()
+            let binary = cfg
+                .as_ref()
                 .and_then(|c| c.backend.acp.binary.as_ref())
                 .map(|p| p.to_path_buf())
                 .unwrap_or_else(|| std::path::PathBuf::from(be_id.as_str()));
@@ -169,7 +179,8 @@ pub fn check_backend(id: Option<String>) {
             }
 
             // Real ACP initialize handshake to verify the binary is a working ACP agent.
-            let handshake_timeout = cfg.as_ref()
+            let handshake_timeout = cfg
+                .as_ref()
                 .and_then(|c| c.backend.acp.connect_timeout_secs)
                 .map(Duration::from_secs)
                 .unwrap_or(Duration::from_secs(10));
@@ -226,12 +237,16 @@ fn apply_config_update(cfg: &mut MaestroConfig, key: &str, value: &str) -> Resul
             Ok(())
         }
         "acp.connect_timeout_secs" => {
-            let n: u64 = value.parse().map_err(|_| format!("invalid number: {value}"))?;
+            let n: u64 = value
+                .parse()
+                .map_err(|_| format!("invalid number: {value}"))?;
             cfg.backend.acp.connect_timeout_secs = Some(n);
             Ok(())
         }
         "acp.idle_timeout_secs" => {
-            let n: u64 = value.parse().map_err(|_| format!("invalid number: {value}"))?;
+            let n: u64 = value
+                .parse()
+                .map_err(|_| format!("invalid number: {value}"))?;
             cfg.backend.acp.idle_timeout_secs = Some(n);
             Ok(())
         }
@@ -248,9 +263,15 @@ fn apply_config_update(cfg: &mut MaestroConfig, key: &str, value: &str) -> Resul
             cfg.backend.acp.binary = Some(value.into());
             Ok(())
         }
+        "acp.args" => {
+            cfg.backend.acp.args = Some(
+                value.split(',').map(|s| s.trim().to_string()).collect(),
+            );
+            Ok(())
+        }
         _ => Err(format!(
             "unknown config key: {key}\n  known keys: default, acp.log_level, acp.binary, \
-             acp.connect_timeout_secs, acp.idle_timeout_secs, acp.emit_raw_events"
+             acp.args, acp.connect_timeout_secs, acp.idle_timeout_secs, acp.emit_raw_events"
         )),
     }
 }
@@ -280,13 +301,22 @@ fn check_acp_handshake(binary: &Path, timeout: Duration, backend_id: &str) -> Re
         let local = tokio::task::LocalSet::new();
         local.block_on(&rt, async move {
             let mut cmd = tokio::process::Command::new(&binary);
-            if backend_id != "loom-acp" {
+            let cfg = crate::config::load_config();
+            let acp_args = cfg
+                .as_ref()
+                .and_then(|c| c.backend.acp.args.clone())
+                .unwrap_or_default();
+            if !acp_args.is_empty() {
+                cmd.args(&acp_args);
+            } else if backend_id != "loom-acp" {
                 cmd.arg("acp");
             }
             cmd.stdin(Stdio::piped())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::null());
-            let mut child = cmd.spawn().map_err(|e| format!("spawn {}: {e}", binary.display()))?;
+            let mut child = cmd
+                .spawn()
+                .map_err(|e| format!("spawn {}: {e}", binary.display()))?;
             let stdin = child.stdin.take().ok_or("no stdin")?;
             let stdout = child.stdout.take().ok_or("no stdout")?;
             let transport = ByteStreams::new(stdin.compat_write(), stdout.compat());
@@ -296,7 +326,9 @@ fn check_acp_handshake(binary: &Path, timeout: Duration, backend_id: &str) -> Re
                     .builder()
                     .name("maestro-check")
                     .connect_with(transport, {
-                        move |conn: agent_client_protocol::ConnectionTo<agent_client_protocol::Agent>| async move {
+                        move |conn: agent_client_protocol::ConnectionTo<
+                            agent_client_protocol::Agent,
+                        >| async move {
                             conn.send_request(InitializeRequest::new(ProtocolVersion::V1))
                                 .block_task()
                                 .await?;
@@ -319,5 +351,7 @@ fn check_acp_handshake(binary: &Path, timeout: Duration, backend_id: &str) -> Re
         })
     });
 
-    handle.join().map_err(|_| "internal error: handshake thread panicked")?
+    handle
+        .join()
+        .map_err(|_| "internal error: handshake thread panicked")?
 }

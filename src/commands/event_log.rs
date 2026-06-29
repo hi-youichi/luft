@@ -38,7 +38,10 @@ impl EventLogger {
             Some(p) => Box::new(File::options().create(true).append(true).open(p)?),
             None => Box::new(std::io::stdout()),
         };
-        Ok(Self { sink: BufWriter::new(inner), format })
+        Ok(Self {
+            sink: BufWriter::new(inner),
+            format,
+        })
     }
 
     /// Format and write one event as a line.
@@ -58,7 +61,10 @@ impl EventLogger {
 
     #[cfg(test)]
     pub fn new_with_writer(writer: Box<dyn Write + Send>, format: LogFormat) -> Self {
-        Self { sink: BufWriter::new(writer), format }
+        Self {
+            sink: BufWriter::new(writer),
+            format,
+        }
     }
 }
 
@@ -180,7 +186,12 @@ mod tests {
 
     #[test]
     fn jsonl_matches_serde_to_string() {
-        let evt = AgentEvent::PhaseDone { run_id: rid(), phase_id: 2, ok: 1, failed: 0 };
+        let evt = AgentEvent::PhaseDone {
+            run_id: rid(),
+            phase_id: 2,
+            ok: 1,
+            failed: 0,
+        };
         let dir = std::env::temp_dir().join(format!("maestro_evlog_{}", uuid::Uuid::now_v7()));
         let mut logger = EventLogger::new(Some(&dir), LogFormat::Jsonl).unwrap();
         logger.write(&evt).unwrap();
@@ -218,7 +229,11 @@ mod tests {
     #[test]
     fn event_logger_new_stdout_and_pretty() {
         let r = rid();
-        let evt = AgentEvent::RunStarted { run_id: r, task: "test".into(), ts: chrono::Utc::now() };
+        let evt = AgentEvent::RunStarted {
+            run_id: r,
+            task: "test".into(),
+            ts: chrono::Utc::now(),
+        };
         let mut logger = EventLogger::new(None, LogFormat::Pretty).unwrap();
         assert_eq!(format_event_line(&evt), "run started: test");
         logger.write(&evt).unwrap();
@@ -228,36 +243,319 @@ mod tests {
     #[test]
     fn format_covers_all_variants() {
         let r = rid();
-        let t = TokenUsage { input: 10, output: 5, cache_read: 0, cache_write: 0 };
+        let t = TokenUsage {
+            input: 10,
+            output: 5,
+            cache_read: 0,
+            cache_write: 0,
+        };
         let cases: Vec<(AgentEvent, &str)> = vec![
-            (AgentEvent::RunStarted { run_id: r, task: "x".into(), ts: chrono::Utc::now() }, "run started: x"),
-            (AgentEvent::PhaseStarted { run_id: r, phase_id: 1, label: "work".into(), planned: 3, parent_span_id: None, description: None, role: None }, "phase 1 started"),
-            (AgentEvent::AgentStarted { run_id: r, phase_id: 0, agent_id: r, prompt_preview: "".into(), model: None, description: None, role: None, name: None, agent_seq: 0 }, "agent "),
-            (AgentEvent::AgentStarted { run_id: r, phase_id: 0, agent_id: r, prompt_preview: "".into(), model: Some("claude".into()), description: None, role: None, name: None, agent_seq: 0 }, "model claude"),
-            (AgentEvent::AgentStarted { run_id: r, phase_id: 0, agent_id: r, prompt_preview: "".into(), model: None, description: None, role: None, name: Some("analyze-auth".into()), agent_seq: 0 }, "agent analyze-auth started"),
-            (AgentEvent::AgentStarted { run_id: r, phase_id: 0, agent_id: r, prompt_preview: "".into(), model: None, description: Some("审查 auth".into()), role: None, name: None, agent_seq: 0 }, "agent 审查 auth started"),
-            (AgentEvent::AgentStarted { run_id: r, phase_id: 0, agent_id: r, prompt_preview: "".into(), model: None, description: None, role: None, name: Some("analyze-auth".into()), agent_seq: 0 }, "agent analyze-auth started"),
-            (AgentEvent::AgentProgress { run_id: r, agent_id: r, delta: ProgressDelta::Message { text: "hello".into() } }, "agent "),
-            (AgentEvent::AcpRaw { run_id: r, agent_id: r, kind: "plan".into(), raw: serde_json::json!({}) }, "acp raw: plan"),
-            (AgentEvent::AgentDone { run_id: r, agent_id: r, status: AgentStatus::Error, tokens: TokenUsage::default(), elapsed_ms: 5, name: None, agent_seq: 0, output: serde_json::Value::Null, findings: Vec::new(), prompt: String::new() }, "agent "),
-            (AgentEvent::AgentDone { run_id: r, agent_id: r, status: AgentStatus::Ok, tokens: TokenUsage::default(), elapsed_ms: 5, name: Some("analyze-auth".into()), agent_seq: 0, output: serde_json::Value::Null, findings: Vec::new(), prompt: String::new() }, "agent analyze-auth done"),
-            (AgentEvent::PhaseDone { run_id: r, phase_id: 1, ok: 2, failed: 0 }, "phase 1 done: 2 ok"),
-            (AgentEvent::RunDone { run_id: r, status: RunStatus::Completed, total_tokens: TokenUsage::default(), report: serde_json::json!(null) }, "run done"),
-            (AgentEvent::Log { run_id: r, agent_id: None, level: LogLevel::Info, msg: "hello".into() }, "log [Info] hello"),
-            (AgentEvent::BudgetSet { run_id: r, time_limit_ms: Some(5000), max_rounds: Some(10) }, "budget set: time=Some(5000)ms"),
-            (AgentEvent::BudgetSet { run_id: r, time_limit_ms: None, max_rounds: None }, "budget set: time=None"),
-            (AgentEvent::ReportEmitted { run_id: r, phase_id: 0, report: serde_json::json!({}) }, "report emitted"),
-            (AgentEvent::ParallelStarted { run_id: r, phase_id: 0, span_id: 3, count: 5 }, "parallel#3 started: 5 items"),
-            (AgentEvent::ParallelDone { run_id: r, phase_id: 0, span_id: 2, ok: 3, failed: 0, results: serde_json::json!([]), elapsed_ms: 9 }, "parallel#2 done: 3 ok"),
-            (AgentEvent::WorkflowStarted { run_id: r, span_id: 2, path: "w.lua".into(), args: serde_json::json!({}) }, "workflow#2 started: w.lua"),
-            (AgentEvent::WorkflowDone { run_id: r, span_id: 2, path: "w.lua".into(), report: serde_json::json!(null), elapsed_ms: 4, error: None }, "workflow#2 done"),
-            (AgentEvent::ConvergeStarted { run_id: r, phase_id: 0, span_id: 1, items: 3, max_rounds: 5 }, "converge#1 started: 3 items, max 5 rounds"),
-            (AgentEvent::ConvergeDone { run_id: r, phase_id: 0, span_id: 1, rounds: 2, converged: true, surviving: 3, result: serde_json::json!([]), elapsed_ms: 10, error: Some("err".into()) }, "converge#1 failed"),
-            (AgentEvent::ConvergeDone { run_id: r, phase_id: 0, span_id: 1, rounds: 2, converged: true, surviving: 3, result: serde_json::json!([]), elapsed_ms: 10, error: None }, "converge#1 done: 2 rounds"),
-            (AgentEvent::PipelineStarted { run_id: r, total_stages: 3, items: 10 }, "pipeline started: 3 stages, 10 items"),
-            (AgentEvent::PipelineStageStarted { run_id: r, stage_index: 1, label: "build".into(), agents_in_stage: 2 }, "pipeline stage 1 started: build (2 agents)"),
-            (AgentEvent::PipelineItemDone { run_id: r, stage_index: 1, item_index: 0, status: AgentStatus::Ok, tokens: t, elapsed_ms: 5 }, "pipeline stage 1 item 0 done: Ok (5ms)"),
-            (AgentEvent::PipelineDone { run_id: r, stages_completed: 3, total_ok: 8, total_failed: 2 }, "pipeline done: 3 stages, 8 ok, 2 failed"),
+            (
+                AgentEvent::RunStarted {
+                    run_id: r,
+                    task: "x".into(),
+                    ts: chrono::Utc::now(),
+                },
+                "run started: x",
+            ),
+            (
+                AgentEvent::PhaseStarted {
+                    run_id: r,
+                    phase_id: 1,
+                    label: "work".into(),
+                    planned: 3,
+                    parent_span_id: None,
+                    description: None,
+                    role: None,
+                },
+                "phase 1 started",
+            ),
+            (
+                AgentEvent::AgentStarted {
+                    run_id: r,
+                    phase_id: 0,
+                    agent_id: r,
+                    prompt_preview: "".into(),
+                    model: None,
+                    description: None,
+                    role: None,
+                    name: None,
+                    agent_seq: 0,
+                },
+                "agent ",
+            ),
+            (
+                AgentEvent::AgentStarted {
+                    run_id: r,
+                    phase_id: 0,
+                    agent_id: r,
+                    prompt_preview: "".into(),
+                    model: Some("claude".into()),
+                    description: None,
+                    role: None,
+                    name: None,
+                    agent_seq: 0,
+                },
+                "model claude",
+            ),
+            (
+                AgentEvent::AgentStarted {
+                    run_id: r,
+                    phase_id: 0,
+                    agent_id: r,
+                    prompt_preview: "".into(),
+                    model: None,
+                    description: None,
+                    role: None,
+                    name: Some("analyze-auth".into()),
+                    agent_seq: 0,
+                },
+                "agent analyze-auth started",
+            ),
+            (
+                AgentEvent::AgentStarted {
+                    run_id: r,
+                    phase_id: 0,
+                    agent_id: r,
+                    prompt_preview: "".into(),
+                    model: None,
+                    description: Some("审查 auth".into()),
+                    role: None,
+                    name: None,
+                    agent_seq: 0,
+                },
+                "agent 审查 auth started",
+            ),
+            (
+                AgentEvent::AgentStarted {
+                    run_id: r,
+                    phase_id: 0,
+                    agent_id: r,
+                    prompt_preview: "".into(),
+                    model: None,
+                    description: None,
+                    role: None,
+                    name: Some("analyze-auth".into()),
+                    agent_seq: 0,
+                },
+                "agent analyze-auth started",
+            ),
+            (
+                AgentEvent::AgentProgress {
+                    run_id: r,
+                    agent_id: r,
+                    delta: ProgressDelta::Message {
+                        text: "hello".into(),
+                    },
+                },
+                "agent ",
+            ),
+            (
+                AgentEvent::AcpRaw {
+                    run_id: r,
+                    agent_id: r,
+                    kind: "plan".into(),
+                    raw: serde_json::json!({}),
+                },
+                "acp raw: plan",
+            ),
+            (
+                AgentEvent::AgentDone {
+                    run_id: r,
+                    agent_id: r,
+                    status: AgentStatus::Error,
+                    tokens: TokenUsage::default(),
+                    elapsed_ms: 5,
+                    name: None,
+                    agent_seq: 0,
+                    output: serde_json::Value::Null,
+                    findings: Vec::new(),
+                    prompt: String::new(),
+                },
+                "agent ",
+            ),
+            (
+                AgentEvent::AgentDone {
+                    run_id: r,
+                    agent_id: r,
+                    status: AgentStatus::Ok,
+                    tokens: TokenUsage::default(),
+                    elapsed_ms: 5,
+                    name: Some("analyze-auth".into()),
+                    agent_seq: 0,
+                    output: serde_json::Value::Null,
+                    findings: Vec::new(),
+                    prompt: String::new(),
+                },
+                "agent analyze-auth done",
+            ),
+            (
+                AgentEvent::PhaseDone {
+                    run_id: r,
+                    phase_id: 1,
+                    ok: 2,
+                    failed: 0,
+                },
+                "phase 1 done: 2 ok",
+            ),
+            (
+                AgentEvent::RunDone {
+                    run_id: r,
+                    status: RunStatus::Completed,
+                    total_tokens: TokenUsage::default(),
+                    report: serde_json::json!(null),
+                },
+                "run done",
+            ),
+            (
+                AgentEvent::Log {
+                    run_id: r,
+                    agent_id: None,
+                    level: LogLevel::Info,
+                    msg: "hello".into(),
+                },
+                "log [Info] hello",
+            ),
+            (
+                AgentEvent::BudgetSet {
+                    run_id: r,
+                    time_limit_ms: Some(5000),
+                    max_rounds: Some(10),
+                },
+                "budget set: time=Some(5000)ms",
+            ),
+            (
+                AgentEvent::BudgetSet {
+                    run_id: r,
+                    time_limit_ms: None,
+                    max_rounds: None,
+                },
+                "budget set: time=None",
+            ),
+            (
+                AgentEvent::ReportEmitted {
+                    run_id: r,
+                    phase_id: 0,
+                    report: serde_json::json!({}),
+                },
+                "report emitted",
+            ),
+            (
+                AgentEvent::ParallelStarted {
+                    run_id: r,
+                    phase_id: 0,
+                    span_id: 3,
+                    count: 5,
+                },
+                "parallel#3 started: 5 items",
+            ),
+            (
+                AgentEvent::ParallelDone {
+                    run_id: r,
+                    phase_id: 0,
+                    span_id: 2,
+                    ok: 3,
+                    failed: 0,
+                    results: serde_json::json!([]),
+                    elapsed_ms: 9,
+                },
+                "parallel#2 done: 3 ok",
+            ),
+            (
+                AgentEvent::WorkflowStarted {
+                    run_id: r,
+                    span_id: 2,
+                    path: "w.lua".into(),
+                    args: serde_json::json!({}),
+                },
+                "workflow#2 started: w.lua",
+            ),
+            (
+                AgentEvent::WorkflowDone {
+                    run_id: r,
+                    span_id: 2,
+                    path: "w.lua".into(),
+                    report: serde_json::json!(null),
+                    elapsed_ms: 4,
+                    error: None,
+                },
+                "workflow#2 done",
+            ),
+            (
+                AgentEvent::ConvergeStarted {
+                    run_id: r,
+                    phase_id: 0,
+                    span_id: 1,
+                    items: 3,
+                    max_rounds: 5,
+                },
+                "converge#1 started: 3 items, max 5 rounds",
+            ),
+            (
+                AgentEvent::ConvergeDone {
+                    run_id: r,
+                    phase_id: 0,
+                    span_id: 1,
+                    rounds: 2,
+                    converged: true,
+                    surviving: 3,
+                    result: serde_json::json!([]),
+                    elapsed_ms: 10,
+                    error: Some("err".into()),
+                },
+                "converge#1 failed",
+            ),
+            (
+                AgentEvent::ConvergeDone {
+                    run_id: r,
+                    phase_id: 0,
+                    span_id: 1,
+                    rounds: 2,
+                    converged: true,
+                    surviving: 3,
+                    result: serde_json::json!([]),
+                    elapsed_ms: 10,
+                    error: None,
+                },
+                "converge#1 done: 2 rounds",
+            ),
+            (
+                AgentEvent::PipelineStarted {
+                    run_id: r,
+                    total_stages: 3,
+                    items: 10,
+                },
+                "pipeline started: 3 stages, 10 items",
+            ),
+            (
+                AgentEvent::PipelineStageStarted {
+                    run_id: r,
+                    stage_index: 1,
+                    label: "build".into(),
+                    agents_in_stage: 2,
+                },
+                "pipeline stage 1 started: build (2 agents)",
+            ),
+            (
+                AgentEvent::PipelineItemDone {
+                    run_id: r,
+                    stage_index: 1,
+                    item_index: 0,
+                    status: AgentStatus::Ok,
+                    tokens: t,
+                    elapsed_ms: 5,
+                },
+                "pipeline stage 1 item 0 done: Ok (5ms)",
+            ),
+            (
+                AgentEvent::PipelineDone {
+                    run_id: r,
+                    stages_completed: 3,
+                    total_ok: 8,
+                    total_failed: 2,
+                },
+                "pipeline done: 3 stages, 8 ok, 2 failed",
+            ),
         ];
         for (evt, needle) in cases {
             let line = format_event_line(&evt);
@@ -268,10 +566,36 @@ mod tests {
     #[test]
     fn format_delta_covers_all_variants() {
         let cases: Vec<(ProgressDelta, &str)> = vec![
-            (ProgressDelta::Message { text: "hello world".into() }, "msg: hello world"),
-            (ProgressDelta::ToolCall { name: "bash".into(), summary: "ls".into() }, "tool: bash ls"),
-            (ProgressDelta::FileEdit { path: PathBuf::from("src/main.rs") }, "edit: src/main.rs"),
-            (ProgressDelta::Tokens { usage: TokenUsage { input: 10, output: 5, cache_read: 0, cache_write: 0 } }, "tokens: 15"),
+            (
+                ProgressDelta::Message {
+                    text: "hello world".into(),
+                },
+                "msg: hello world",
+            ),
+            (
+                ProgressDelta::ToolCall {
+                    name: "bash".into(),
+                    summary: "ls".into(),
+                },
+                "tool: bash ls",
+            ),
+            (
+                ProgressDelta::FileEdit {
+                    path: PathBuf::from("src/main.rs"),
+                },
+                "edit: src/main.rs",
+            ),
+            (
+                ProgressDelta::Tokens {
+                    usage: TokenUsage {
+                        input: 10,
+                        output: 5,
+                        cache_read: 0,
+                        cache_write: 0,
+                    },
+                },
+                "tokens: 15",
+            ),
         ];
         for (delta, needle) in cases {
             let line = format_delta(&delta);
@@ -285,13 +609,20 @@ mod tests {
         let delta = ProgressDelta::Message { text: long.clone() };
         let line = format_delta(&delta);
         assert!(line.starts_with("msg: "));
-        assert!(line.len() < 200, "line should be truncated, got length {}", line.len());
+        assert!(
+            line.len() < 200,
+            "line should be truncated, got length {}",
+            line.len()
+        );
         assert!(line.ends_with('\u{2026}'));
     }
 
     #[test]
     fn event_logger_new_invalid_path() {
-        let result = EventLogger::new(Some(&Path::new("/nonexistent_path_12345/foo.log")), LogFormat::Pretty);
+        let result = EventLogger::new(
+            Some(&Path::new("/nonexistent_path_12345/foo.log")),
+            LogFormat::Pretty,
+        );
         assert!(result.is_err());
     }
 
@@ -300,7 +631,10 @@ mod tests {
         struct FailWriter;
         impl Write for FailWriter {
             fn write(&mut self, _buf: &[u8]) -> std::io::Result<usize> {
-                Err(std::io::Error::new(std::io::ErrorKind::Other, "mock write error"))
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "mock write error",
+                ))
             }
             fn flush(&mut self) -> std::io::Result<()> {
                 Ok(())
@@ -308,7 +642,12 @@ mod tests {
         }
         let mut logger = EventLogger::new_with_writer(Box::new(FailWriter), LogFormat::Pretty);
         let r = rid();
-        let evt = AgentEvent::Log { run_id: r, agent_id: None, level: LogLevel::Info, msg: "test".into() };
+        let evt = AgentEvent::Log {
+            run_id: r,
+            agent_id: None,
+            level: LogLevel::Info,
+            msg: "test".into(),
+        };
         // BufWriter buffers small writes; the inner error surfaces on flush.
         logger.write(&evt).unwrap();
         let result = logger.flush();
@@ -323,12 +662,20 @@ mod tests {
                 Ok(buf.len())
             }
             fn flush(&mut self) -> std::io::Result<()> {
-                Err(std::io::Error::new(std::io::ErrorKind::Other, "mock flush error"))
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "mock flush error",
+                ))
             }
         }
         let mut logger = EventLogger::new_with_writer(Box::new(FailFlushWriter), LogFormat::Pretty);
         let r = rid();
-        let evt = AgentEvent::Log { run_id: r, agent_id: None, level: LogLevel::Info, msg: "test".into() };
+        let evt = AgentEvent::Log {
+            run_id: r,
+            agent_id: None,
+            level: LogLevel::Info,
+            msg: "test".into(),
+        };
         logger.write(&evt).unwrap();
         let result = logger.flush();
         assert!(result.is_err());
@@ -337,8 +684,14 @@ mod tests {
     #[test]
     fn event_logger_write_pretty_flush_buffer() {
         let r = rid();
-        let dir = std::env::temp_dir().join(format!("maestro_evlog_pretty_{}", uuid::Uuid::now_v7()));
-        let evt = AgentEvent::PipelineDone { run_id: r, stages_completed: 2, total_ok: 5, total_failed: 1 };
+        let dir =
+            std::env::temp_dir().join(format!("maestro_evlog_pretty_{}", uuid::Uuid::now_v7()));
+        let evt = AgentEvent::PipelineDone {
+            run_id: r,
+            stages_completed: 2,
+            total_ok: 5,
+            total_failed: 1,
+        };
         let mut logger = EventLogger::new(Some(&dir), LogFormat::Pretty).unwrap();
         logger.write(&evt).unwrap();
         logger.flush().unwrap();

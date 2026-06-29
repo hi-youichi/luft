@@ -73,8 +73,7 @@ fn print_verbose(file: &str, result: &WorkflowValidation) {
 
     match &result.meta {
         Some(meta) => {
-            let phase_labels: Vec<&str> =
-                meta.phases.iter().map(|p| p.label.as_str()).collect();
+            let phase_labels: Vec<&str> = meta.phases.iter().map(|p| p.label.as_str()).collect();
             println!(
                 "Meta: {} phase(s): {}",
                 meta.phases.len(),
@@ -95,10 +94,7 @@ fn print_verbose(file: &str, result: &WorkflowValidation) {
 
     println!("\nmain():    {}", yn(result.has_main));
     println!("report():  {}", yn(result.has_report_call));
-    println!(
-        "phase_begin/end paired: {}",
-        yn(result.span_pairing_ok)
-    );
+    println!("phase_begin/end paired: {}", yn(result.span_pairing_ok));
 
     if !result.warnings.is_empty() {
         println!("\nWarnings:");
@@ -173,7 +169,8 @@ mod tests {
 
     #[test]
     fn missing_main_fails() {
-        let f = write_tmp("meta = { reasoning = \"x\", phases = {} }\nfunction run() report(1) end");
+        let f =
+            write_tmp("meta = { reasoning = \"x\", phases = {} }\nfunction run() report(1) end");
         let args = LuaValidateArgs {
             file: f.path().to_path_buf(),
             verbose: false,
@@ -193,9 +190,8 @@ mod tests {
 
     #[test]
     fn missing_report_fails() {
-        let f = write_tmp(
-            "meta = { reasoning = \"x\", phases = {} }\nfunction main() local x = 1 end",
-        );
+        let f =
+            write_tmp("meta = { reasoning = \"x\", phases = {} }\nfunction main() local x = 1 end");
         let args = LuaValidateArgs {
             file: f.path().to_path_buf(),
             verbose: false,

@@ -37,14 +37,20 @@ mod dirs {
     pub fn config_dir() -> Option<PathBuf> {
         #[cfg(target_os = "macos")]
         {
-            std::env::var("HOME").ok().map(|h| PathBuf::from(h).join("Library").join("Application Support"))
+            std::env::var("HOME")
+                .ok()
+                .map(|h| PathBuf::from(h).join("Library").join("Application Support"))
         }
         #[cfg(not(target_os = "macos"))]
         {
             std::env::var("XDG_CONFIG_HOME")
                 .ok()
                 .map(PathBuf::from)
-                .or_else(|| std::env::var("HOME").ok().map(|h| PathBuf::from(h).join(".config")))
+                .or_else(|| {
+                    std::env::var("HOME")
+                        .ok()
+                        .map(|h| PathBuf::from(h).join(".config"))
+                })
         }
     }
 }
@@ -66,7 +72,11 @@ mod tests {
 
     /// On Windows, `dirs::config_dir()` uses `APPDATA`; on Unix it uses `HOME`.
     fn config_env_var() -> &'static str {
-        if cfg!(windows) { "APPDATA" } else { "HOME" }
+        if cfg!(windows) {
+            "APPDATA"
+        } else {
+            "HOME"
+        }
     }
 
     impl HomeEnv {
@@ -76,7 +86,11 @@ mod tests {
             let key = config_env_var();
             let orig_home = std::env::var(key).ok();
             std::env::set_var(key, dir.path());
-            HomeEnv { _lock, _dir: dir, orig_home }
+            HomeEnv {
+                _lock,
+                _dir: dir,
+                orig_home,
+            }
         }
     }
 
@@ -207,7 +221,11 @@ mod tests {
         let dir = TempDir::new().unwrap();
         std::env::set_var(key, dir.path());
         {
-            let _env = HomeEnv { _lock: lock, _dir: dir, orig_home: None };
+            let _env = HomeEnv {
+                _lock: lock,
+                _dir: dir,
+                orig_home: None,
+            };
         }
         match &orig {
             Some(h) => std::env::set_var(key, h),
@@ -222,7 +240,10 @@ mod tests {
         let lock = HOME_LOCK.lock().unwrap();
         let orig = std::env::var(key).ok();
         {
-            let _guard = UnsetHomeGuard { _lock: lock, orig_home: None };
+            let _guard = UnsetHomeGuard {
+                _lock: lock,
+                orig_home: None,
+            };
         }
         match &orig {
             Some(h) => std::env::set_var(key, h),

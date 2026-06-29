@@ -213,11 +213,7 @@ mod tests {
         let base_dir = runs_base_dir();
         std::fs::create_dir_all(&base_dir).unwrap();
         let run_dir_name = "path-is-file-not-dir";
-        std::fs::write(
-            base_dir.join(run_dir_name),
-            "i am a file, not a directory",
-        )
-        .unwrap();
+        std::fs::write(base_dir.join(run_dir_name), "i am a file, not a directory").unwrap();
         let result = status_run_cmd(run_dir_name.to_string());
         assert!(result.is_err(), "expected Err when run_dir is a file");
         let msg = format!("{}", result.unwrap_err());

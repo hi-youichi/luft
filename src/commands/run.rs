@@ -26,7 +26,10 @@ pub async fn run_workflow(args: RunArgs) -> Result<()> {
         );
     }
     if is_nl && args.backend.is_none() {
-        eprintln!("\u{2139}  no --backend specified, auto-detected: {}", backend_id);
+        eprintln!(
+            "\u{2139}  no --backend specified, auto-detected: {}",
+            backend_id
+        );
     }
     let base_dir = runs_base_dir();
 
@@ -71,7 +74,11 @@ pub async fn run_workflow(args: RunArgs) -> Result<()> {
         }
     }
 
-    let max_att = if args.auto_fix { args.max_fix_attempts.max(1) } else { 1 };
+    let max_att = if args.auto_fix {
+        args.max_fix_attempts.max(1)
+    } else {
+        1
+    };
     let mut current_script = spec.script.clone();
 
     for attempt in 1..=max_att {
@@ -286,12 +293,18 @@ fn print_report(report: &serde_json::Value) {
                 println!("{s}");
             } else {
                 println!();
-                println!("{}", serde_json::to_string_pretty(report).unwrap_or_default());
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(report).unwrap_or_default()
+                );
             }
         }
         other => {
             println!();
-            println!("{}", serde_json::to_string_pretty(other).unwrap_or_default());
+            println!(
+                "{}",
+                serde_json::to_string_pretty(other).unwrap_or_default()
+            );
         }
     }
 }
@@ -335,7 +348,10 @@ async fn try_fix_script(script: &str, error: &str, backend_id: &str) -> Result<S
         events: tx,
     };
 
-    let result = backend.run(task, ctx).await.map_err(|e| anyhow::anyhow!("{:?}", e))?;
+    let result = backend
+        .run(task, ctx)
+        .await
+        .map_err(|e| anyhow::anyhow!("{:?}", e))?;
 
     if result.status != maestro::core::contract::backend::AgentStatus::Ok {
         anyhow::bail!("backend returned status {:?}", result.status);
@@ -343,8 +359,7 @@ async fn try_fix_script(script: &str, error: &str, backend_id: &str) -> Result<S
 
     let content = match &result.output {
         serde_json::Value::String(s) => s.clone(),
-        other => serde_json::to_string_pretty(other)
-            .unwrap_or_else(|_| other.to_string()),
+        other => serde_json::to_string_pretty(other).unwrap_or_else(|_| other.to_string()),
     };
 
     // Simple Lua code extraction: find ```lua ... ``` block
@@ -578,9 +593,16 @@ mod tests {
         };
         let rt = empty_script_runtime(&run_ctx).await;
 
-        run_headless(run_ctx, rt, "".to_string(), Some(output.clone()), None, None)
-            .await
-            .unwrap();
+        run_headless(
+            run_ctx,
+            rt,
+            "".to_string(),
+            Some(output.clone()),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
 
         assert!(output.exists());
         let content = std::fs::read_to_string(&output).unwrap();
@@ -614,8 +636,15 @@ mod tests {
         };
         let rt = empty_script_runtime(&run_ctx).await;
 
-        let result = run_headless(run_ctx, rt, "not valid lua <<<>>>".to_string(), None, None, None)
-            .await;
+        let result = run_headless(
+            run_ctx,
+            rt,
+            "not valid lua <<<>>>".to_string(),
+            None,
+            None,
+            None,
+        )
+        .await;
         assert!(result.is_err(), "expected Err on script failure");
         let err = result.unwrap_err().to_string();
         assert!(err.contains("syntax error") || err.contains("Syntax"));

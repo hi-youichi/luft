@@ -43,7 +43,11 @@ mod tests {
             let dir = TempDir::new().unwrap();
             let orig_cwd = std::env::current_dir().unwrap();
             std::env::set_current_dir(dir.path()).unwrap();
-            TestEnv { _lock, _dir: dir, orig_cwd }
+            TestEnv {
+                _lock,
+                _dir: dir,
+                orig_cwd,
+            }
         }
     }
 
@@ -73,14 +77,20 @@ mod tests {
     fn run_not_found() {
         let _env = TestEnv::new();
         let err = logs_run_cmd("nonexistent".into(), None).unwrap_err();
-        assert!(err.to_string().contains("run not found: nonexistent"), "got: {err}");
+        assert!(
+            err.to_string().contains("run not found: nonexistent"),
+            "got: {err}"
+        );
     }
 
     #[test]
     fn base_dir_does_not_exist() {
         let _env = TestEnv::new();
         let err = logs_run_cmd("some-run".into(), None).unwrap_err();
-        assert!(err.to_string().contains("run not found: some-run"), "got: {err}");
+        assert!(
+            err.to_string().contains("run not found: some-run"),
+            "got: {err}"
+        );
     }
 
     #[test]
@@ -163,12 +173,24 @@ mod tests {
     fn multiple_event_types() {
         let _env = TestEnv::new();
         let run_id = rid();
+        use maestro::core::contract::backend::AgentStatus;
         use maestro::core::contract::event::*;
         use maestro::core::contract::ids::TokenUsage;
-        use maestro::core::contract::backend::AgentStatus;
         let events = vec![
-            AgentEvent::RunStarted { run_id, task: "t".into(), ts: chrono::Utc::now() },
-            AgentEvent::PhaseStarted { run_id, phase_id: 0, label: "phase 0".into(), planned: 2, parent_span_id: None, description: None, role: None },
+            AgentEvent::RunStarted {
+                run_id,
+                task: "t".into(),
+                ts: chrono::Utc::now(),
+            },
+            AgentEvent::PhaseStarted {
+                run_id,
+                phase_id: 0,
+                label: "phase 0".into(),
+                planned: 2,
+                parent_span_id: None,
+                description: None,
+                role: None,
+            },
             AgentEvent::AgentStarted {
                 run_id,
                 phase_id: 0,
@@ -183,13 +205,20 @@ mod tests {
             AgentEvent::AgentProgress {
                 run_id,
                 agent_id: rid(),
-                delta: ProgressDelta::Message { text: "working...".into() },
+                delta: ProgressDelta::Message {
+                    text: "working...".into(),
+                },
             },
             AgentEvent::AgentDone {
                 run_id,
                 agent_id: rid(),
                 status: AgentStatus::Ok,
-                tokens: TokenUsage { input: 10, output: 5, cache_read: 0, cache_write: 0 },
+                tokens: TokenUsage {
+                    input: 10,
+                    output: 5,
+                    cache_read: 0,
+                    cache_write: 0,
+                },
                 elapsed_ms: 500,
                 name: None,
                 agent_seq: 0,
@@ -197,11 +226,21 @@ mod tests {
                 findings: Vec::new(),
                 prompt: String::new(),
             },
-            AgentEvent::PhaseDone { run_id, phase_id: 0, ok: 1, failed: 0 },
+            AgentEvent::PhaseDone {
+                run_id,
+                phase_id: 0,
+                ok: 1,
+                failed: 0,
+            },
             AgentEvent::RunDone {
                 run_id,
                 status: RunStatus::Completed,
-                total_tokens: TokenUsage { input: 10, output: 5, cache_read: 0, cache_write: 0 },
+                total_tokens: TokenUsage {
+                    input: 10,
+                    output: 5,
+                    cache_read: 0,
+                    cache_write: 0,
+                },
                 report: serde_json::json!({"result": "done"}),
             },
             AgentEvent::Log {

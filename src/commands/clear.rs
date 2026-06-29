@@ -32,8 +32,8 @@ pub fn clear_runs_cmd(days: Option<u64>) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::GLOBAL_CWD_LOCK;
+    use super::*;
     use maestro::core::state::{get_run_store, CheckpointStatus};
     use std::path::PathBuf;
     use std::sync::MutexGuard;
@@ -51,7 +51,11 @@ mod tests {
             let dir = TempDir::new().unwrap();
             let orig_cwd = std::env::current_dir().unwrap();
             std::env::set_current_dir(dir.path()).unwrap();
-            TestEnv { _lock, _dir: dir, orig_cwd }
+            TestEnv {
+                _lock,
+                _dir: dir,
+                orig_cwd,
+            }
         }
     }
 

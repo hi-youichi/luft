@@ -134,11 +134,8 @@ mod tests {
 
     #[tokio::test]
     async fn generate_script_with_backend_output_to_stdout() {
-        let result = generate_script_with_backend(
-            args("test task", None, None),
-            valid_lua_backend(),
-        )
-        .await;
+        let result =
+            generate_script_with_backend(args("test task", None, None), valid_lua_backend()).await;
         assert!(result.is_ok());
     }
 
@@ -155,7 +152,10 @@ mod tests {
         assert!(result.is_ok(), "expected Ok, got: {:?}", result.err());
 
         let written = std::fs::read_to_string(&path).unwrap();
-        assert!(written.contains("report({ok = true})"), "file content missing expected lua: {written}");
+        assert!(
+            written.contains("report({ok = true})"),
+            "file content missing expected lua: {written}"
+        );
     }
 
     #[tokio::test]
@@ -187,12 +187,9 @@ mod tests {
             }],
         ));
 
-        let err = generate_script_with_backend(
-            args("test task", None, None),
-            null_backend,
-        )
-        .await
-        .unwrap_err();
+        let err = generate_script_with_backend(args("test task", None, None), null_backend)
+            .await
+            .unwrap_err();
         let msg = err.to_string();
         assert!(
             msg.contains("planner exhausted"),

@@ -6,8 +6,8 @@
 //! run, writes a run-level summary.
 
 use std::collections::HashMap;
-use std::fs;
 use std::fmt::Write as _;
+use std::fs;
 use std::io::Write as _;
 use std::path::PathBuf;
 
@@ -102,9 +102,7 @@ impl ArtifactWriter {
             }
 
             AgentEvent::PhaseStarted {
-                phase_id,
-                label,
-                ..
+                phase_id, label, ..
             } => {
                 self.phases.insert(*phase_id, label.clone());
             }
@@ -127,7 +125,11 @@ impl ArtifactWriter {
                 }
             }
 
-            AgentEvent::AgentProgress { run_id: _, agent_id, delta } => {
+            AgentEvent::AgentProgress {
+                run_id: _,
+                agent_id,
+                delta,
+            } => {
                 if let Some(stats) = self.agents.get_mut(agent_id) {
                     match delta {
                         ProgressDelta::Message { .. } => stats.messages += 1,
@@ -201,9 +203,7 @@ impl ArtifactWriter {
             }
 
             AgentEvent::PipelineStageStarted {
-                stage_index,
-                label,
-                ..
+                stage_index, label, ..
             } => {
                 if let Some(ctx) = &mut self.pipeline_ctx {
                     ctx.current_stage = *stage_index;
@@ -222,9 +222,7 @@ impl ArtifactWriter {
                 ..
             } => {
                 if let Some(ctx) = &mut self.pipeline_ctx {
-                    if let Some(item) =
-                        ctx.items.iter_mut().find(|i| i.item_index == *item_index)
-                    {
+                    if let Some(item) = ctx.items.iter_mut().find(|i| i.item_index == *item_index) {
                         if let Some(slot) = item.stage_results.get_mut(*stage_index) {
                             *slot = Some((status.clone(), *tokens, *elapsed_ms));
                         }
@@ -238,10 +236,7 @@ impl ArtifactWriter {
                 }
             }
 
-            AgentEvent::ParallelStarted {
-                count,
-                ..
-            } => {
+            AgentEvent::ParallelStarted { count, .. } => {
                 let idx = self.parallel_count;
                 self.parallel_count += 1;
                 self.parallel_ctxs.push(ParallelContext {
@@ -313,11 +308,7 @@ impl ArtifactWriter {
         Ok(())
     }
 
-    fn render_agent_markdown(
-        &self,
-        record: &AgentDoneRecord,
-        stats: &AgentStats,
-    ) -> String {
+    fn render_agent_markdown(&self, record: &AgentDoneRecord, stats: &AgentStats) -> String {
         let mut s = String::with_capacity(2048);
 
         // Title
@@ -335,17 +326,23 @@ impl ArtifactWriter {
         writeln!(s, "## Metadata\n").unwrap();
         writeln!(s, "| Field    | Value                     |").unwrap();
         writeln!(s, "|----------|---------------------------|").unwrap();
-        writeln!(s, "| Seq      | {}                         |", record.agent_seq).unwrap();
+        writeln!(
+            s,
+            "| Seq      | {}                         |",
+            record.agent_seq
+        )
+        .unwrap();
         match &record.name {
             Some(n) => writeln!(s, "| Name     | {}                         |", n).unwrap(),
             None => writeln!(s, "| Name     | -                         |").unwrap(),
         }
+        writeln!(s, "| Agent ID | {:.12}... |", record.agent_id).unwrap();
         writeln!(
             s,
-            "| Agent ID | {:.12}... |",
-            record.agent_id
-        ).unwrap();
-        writeln!(s, "| Status   | {:?}                       |", record.status).unwrap();
+            "| Status   | {:?}                       |",
+            record.status
+        )
+        .unwrap();
         match &stats.model {
             Some(m) => writeln!(s, "| Model    | {} |", m).unwrap(),
             None => writeln!(s, "| Model    | -                         |").unwrap(),
@@ -355,17 +352,14 @@ impl ArtifactWriter {
             None => writeln!(s, "| Phase    | -                         |").unwrap(),
         }
         if let Some(stage) = stats.pipeline_stage {
-            writeln!(
-                s,
-                "| Pipeline | Stage {}                  |",
-                stage
-            ).unwrap();
+            writeln!(s, "| Pipeline | Stage {}                  |", stage).unwrap();
         }
         writeln!(
             s,
             "| Elapsed  | {:.1}s                     |\n",
             record.elapsed_ms as f64 / 1000.0
-        ).unwrap();
+        )
+        .unwrap();
 
         // Token Usage
         writeln!(s, "## Token Usage\n").unwrap();
@@ -374,16 +368,13 @@ impl ArtifactWriter {
         writeln!(s, "| Input       | {:>6}  |", record.tokens.input).unwrap();
         writeln!(s, "| Output      | {:>6}  |", record.tokens.output).unwrap();
         writeln!(s, "| Cache Read  | {:>6}  |", record.tokens.cache_read).unwrap();
-        writeln!(
-            s,
-            "| Cache Write | {:>6}  |",
-            record.tokens.cache_write
-        ).unwrap();
+        writeln!(s, "| Cache Write | {:>6}  |", record.tokens.cache_write).unwrap();
         writeln!(
             s,
             "| **Total**   | **{:>6}** |\n",
             record.tokens.input + record.tokens.output
-        ).unwrap();
+        )
+        .unwrap();
 
         // Execution
         writeln!(s, "## Execution\n").unwrap();
@@ -456,9 +447,7 @@ impl ArtifactWriter {
     // ── Pipeline summary ───────────────────────────────────
 
     fn write_pipeline_summary(&self, ctx: &PipelineContext) -> std::io::Result<()> {
-        let dir = self
-            .base
-            .join(format!("pipeline_{}", ctx.pipeline_index));
+        let dir = self.base.join(format!("pipeline_{}", ctx.pipeline_index));
         fs::create_dir_all(&dir)?;
         let path = dir.join("_summary.md");
         let mut f = fs::File::create(&path)?;
@@ -524,7 +513,15 @@ impl ArtifactWriter {
             writeln!(s).unwrap();
         }
 
-        writeln!(s, "\n**Totals**: OK {} / {} . Failed {} / {}\n", total_ok, total_ok + total_failed, total_failed, total_ok + total_failed).unwrap();
+        writeln!(
+            s,
+            "\n**Totals**: OK {} / {} . Failed {} / {}\n",
+            total_ok,
+            total_ok + total_failed,
+            total_failed,
+            total_ok + total_failed
+        )
+        .unwrap();
 
         s
     }
@@ -541,9 +538,7 @@ impl ArtifactWriter {
         let Some(ctx) = pctx else {
             return Ok(());
         };
-        let dir = self
-            .base
-            .join(format!("parallel_{}", ctx.parallel_index));
+        let dir = self.base.join(format!("parallel_{}", ctx.parallel_index));
         fs::create_dir_all(&dir)?;
         let path = dir.join("_summary.md");
         let mut f = fs::File::create(&path)?;
@@ -574,8 +569,7 @@ impl ArtifactWriter {
         };
         let path = self.base.join("_report.md");
         let mut f = fs::File::create(&path)?;
-        let pretty = serde_json::to_string_pretty(report)
-            .unwrap_or_else(|_| report.to_string());
+        let pretty = serde_json::to_string_pretty(report).unwrap_or_else(|_| report.to_string());
         write!(f, "# Final Report\n\n```json\n{}\n```\n", pretty)?;
         Ok(())
     }
@@ -652,7 +646,11 @@ impl ArtifactWriter {
                 "| # | Name | Agent ID | Status | Tokens | Rounds | Tools | Report |"
             )
             .unwrap();
-            writeln!(s, "|---|------|----------|--------|--------|--------|-------|--------|").unwrap();
+            writeln!(
+                s,
+                "|---|------|----------|--------|--------|--------|-------|--------|"
+            )
+            .unwrap();
 
             let mut sorted = self.completed_agents.clone();
             sorted.sort_by_key(|a| a.agent_seq);
@@ -689,12 +687,7 @@ impl ArtifactWriter {
             writeln!(s, "|---|------|--------|").unwrap();
             for a in &errors {
                 let name = a.name.clone().unwrap_or_else(|| "-".into());
-                writeln!(
-                    s,
-                    "| {:0>2} | {} | {:?} |",
-                    a.agent_seq, name, a.status
-                )
-                .unwrap();
+                writeln!(s, "| {:0>2} | {} | {:?} |", a.agent_seq, name, a.status).unwrap();
             }
             writeln!(s).unwrap();
         }
@@ -702,8 +695,8 @@ impl ArtifactWriter {
         // Final report
         if let Some(report) = &self.final_report {
             writeln!(s, "## Final Report\n").unwrap();
-            let pretty = serde_json::to_string_pretty(report)
-                .unwrap_or_else(|_| report.to_string());
+            let pretty =
+                serde_json::to_string_pretty(report).unwrap_or_else(|_| report.to_string());
             writeln!(s, "```json\n{}\n```\n", pretty).unwrap();
         }
 

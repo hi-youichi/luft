@@ -69,11 +69,22 @@ impl PhaseRenderer {
     pub fn handle(&mut self, evt: &AgentEvent) {
         match evt {
             AgentEvent::RunStarted { task, .. } => self.on_run_started(task),
-            AgentEvent::PhaseStarted { phase_id, label, planned, .. } => {
+            AgentEvent::PhaseStarted {
+                phase_id,
+                label,
+                planned,
+                ..
+            } => {
                 self.on_phase_started(*phase_id, label, *planned);
             }
             AgentEvent::AgentStarted {
-                phase_id, agent_id, name, description, role, model, ..
+                phase_id,
+                agent_id,
+                name,
+                description,
+                role,
+                model,
+                ..
             } => {
                 self.on_agent_started(
                     *phase_id,
@@ -84,61 +95,124 @@ impl PhaseRenderer {
                     model.as_deref(),
                 );
             }
-            AgentEvent::AgentDone { agent_id, status, tokens, elapsed_ms, .. } => {
+            AgentEvent::AgentDone {
+                agent_id,
+                status,
+                tokens,
+                elapsed_ms,
+                ..
+            } => {
                 self.on_agent_done(*agent_id, status.clone(), *tokens, *elapsed_ms);
             }
-            AgentEvent::PhaseDone { phase_id, ok, failed, .. } => {
+            AgentEvent::PhaseDone {
+                phase_id,
+                ok,
+                failed,
+                ..
+            } => {
                 self.on_phase_done(*phase_id, *ok, *failed);
             }
-            AgentEvent::RunDone { status, total_tokens, .. } => {
+            AgentEvent::RunDone {
+                status,
+                total_tokens,
+                ..
+            } => {
                 self.on_run_done(*status, *total_tokens);
             }
             // Structural events — one-line summaries within current phase
-            AgentEvent::ParallelDone { span_id, ok, failed, elapsed_ms, .. } => {
+            AgentEvent::ParallelDone {
+                span_id,
+                ok,
+                failed,
+                elapsed_ms,
+                ..
+            } => {
                 self.summary(&format!(
                     "parallel#{} · {} ok, {} failed ({})",
-                    span_id, ok, failed, fmt_dur(*elapsed_ms),
+                    span_id,
+                    ok,
+                    failed,
+                    fmt_dur(*elapsed_ms),
                 ));
             }
             AgentEvent::ConvergeDone {
-                span_id, rounds, converged, surviving, elapsed_ms, error, ..
+                span_id,
+                rounds,
+                converged,
+                surviving,
+                elapsed_ms,
+                error,
+                ..
             } => {
                 let msg = match error {
                     Some(e) => format!(
                         "converge#{} · failed ({}): {}",
-                        span_id, fmt_dur(*elapsed_ms), e,
+                        span_id,
+                        fmt_dur(*elapsed_ms),
+                        e,
                     ),
                     None => format!(
                         "converge#{} · {} rounds → {} ({} surviving, {})",
                         span_id,
                         rounds,
-                        if *converged { "converged ✓" } else { "not converged ✗" },
+                        if *converged {
+                            "converged ✓"
+                        } else {
+                            "not converged ✗"
+                        },
                         surviving,
                         fmt_dur(*elapsed_ms),
                     ),
                 };
                 self.summary(&msg);
             }
-            AgentEvent::PipelineDone { stages_completed, total_ok, total_failed, .. } => {
+            AgentEvent::PipelineDone {
+                stages_completed,
+                total_ok,
+                total_failed,
+                ..
+            } => {
                 self.summary(&format!(
                     "pipeline · {} stages, {} ok, {} failed",
                     stages_completed, total_ok, total_failed,
                 ));
             }
-            AgentEvent::WorkflowDone { span_id, path, elapsed_ms, error, .. } => {
+            AgentEvent::WorkflowDone {
+                span_id,
+                path,
+                elapsed_ms,
+                error,
+                ..
+            } => {
                 let msg = match error {
                     Some(_) => format!(
                         "workflow#{} · {} failed ({})",
-                        span_id, path, fmt_dur(*elapsed_ms),
+                        span_id,
+                        path,
+                        fmt_dur(*elapsed_ms),
                     ),
                     None => format!("workflow#{} · {} ({})", span_id, path, fmt_dur(*elapsed_ms)),
                 };
                 self.summary(&msg);
             }
-            AgentEvent::PhaseSpanDone { span_id, name, elapsed_ms, status, .. } => {
-                self.summary(&format!("span#{} · {} ({}, {})", span_id, name, status, fmt_dur(*elapsed_ms)));
+            AgentEvent::PhaseSpanDone {
+                span_id,
+                name,
+                elapsed_ms,
+                status,
+                ..
+            } => {
+                self.summary(&format!(
+                    "span#{} · {} ({}, {})",
+                    span_id,
+                    name,
+                    status,
+                    fmt_dur(*elapsed_ms)
+                ));
             }
-            AgentEvent::PlanPreview { reasoning, phases, .. } => {
+            AgentEvent::PlanPreview {
+                reasoning, phases, ..
+            } => {
                 self.on_plan_preview(reasoning, phases);
             }
             // Intentionally ignored (decision: no AgentProgress / AcpRaw / Log / etc.)
@@ -154,7 +228,11 @@ impl PhaseRenderer {
         self.print("");
     }
 
-    fn on_plan_preview(&self, reasoning: &str, phases: &[maestro::core::contract::event::PlanPhase]) {
+    fn on_plan_preview(
+        &self,
+        reasoning: &str,
+        phases: &[maestro::core::contract::event::PlanPhase],
+    ) {
         if !reasoning.is_empty() {
             self.print(&format!("│  {}", style(reasoning).dim()));
         }
@@ -164,7 +242,11 @@ impl PhaseRenderer {
                 "│  {} {}{}",
                 style(format!("{}.", i + 1)).dim(),
                 p.label,
-                if p.dynamic { style(marker).yellow() } else { style("") },
+                if p.dynamic {
+                    style(marker).yellow()
+                } else {
+                    style("")
+                },
             ));
         }
         self.print(&format!("│  {}", style("─".repeat(40)).dim()));
@@ -173,11 +255,14 @@ impl PhaseRenderer {
     fn on_phase_started(&mut self, phase_id: PhaseId, label: &str, planned: usize) {
         let index = self.phase_order.len() + 1;
         self.phase_order.push(phase_id);
-        self.phases.insert(phase_id, PhaseEntry {
-            index,
-            start: Instant::now(),
-            agents: HashMap::new(),
-        });
+        self.phases.insert(
+            phase_id,
+            PhaseEntry {
+                index,
+                start: Instant::now(),
+                agents: HashMap::new(),
+            },
+        );
 
         let count = if planned > 0 {
             format!(" ({} agents)", planned)
@@ -228,15 +313,31 @@ impl PhaseRenderer {
             );
             pb.enable_steady_tick(Duration::from_millis(80));
             let display = match (&display_desc, model) {
-                (Some(d), Some(m)) => format!("{} · {} · {}", label, style(d).dim(), style(m).dim()),
+                (Some(d), Some(m)) => {
+                    format!("{} · {} · {}", label, style(d).dim(), style(m).dim())
+                }
                 (Some(d), None) => format!("{} · {}", label, style(d).dim()),
                 (None, Some(m)) => format!("{} · {}", label, style(m).dim()),
                 (None, None) => label.clone(),
             };
             pb.set_message(display);
-            phase.agents.insert(agent_id, AgentEntry { label, description: display_desc, pb: Some(pb) });
+            phase.agents.insert(
+                agent_id,
+                AgentEntry {
+                    label,
+                    description: display_desc,
+                    pb: Some(pb),
+                },
+            );
         } else {
-            phase.agents.insert(agent_id, AgentEntry { label, description: display_desc, pb: None });
+            phase.agents.insert(
+                agent_id,
+                AgentEntry {
+                    label,
+                    description: display_desc,
+                    pb: None,
+                },
+            );
         }
     }
 
@@ -273,7 +374,13 @@ impl PhaseRenderer {
             .as_deref()
             .map(|d| format!(" · {}", style(d).dim()))
             .unwrap_or_default();
-        let line = format!("│   {} {}{} · {}", icon, entry.label, desc_part, style(detail).dim());
+        let line = format!(
+            "│   {} {}{} · {}",
+            icon,
+            entry.label,
+            desc_part,
+            style(detail).dim()
+        );
 
         // TTY: clear the spinner line, then print the final result.
         // Non-TTY: just print the line.
