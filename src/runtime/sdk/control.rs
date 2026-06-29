@@ -24,7 +24,7 @@ pub(crate) fn register_control_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<(
         let events = cx.events();
         let phase_counter = cx.phase_counter.clone();
         let phase_span_stack = cx.phase_span_stack.clone();
-        let phase_fn = lua.create_function(move |_, (first, second): (Value, Option<f64>)| {
+        let phase_fn = lua.create_function(move |lua, (first, second): (Value, Option<f64>)| {
             let (label, planned, description, role) = match first {
                 Value::String(s) => {
                     let label = s.to_str()?.to_string();
@@ -35,7 +35,21 @@ pub(crate) fn register_control_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<(
                             else { v as usize }
                         })
                         .unwrap_or(0);
-                    (label, planned, None, None)
+                    let description = lua
+                        .globals()
+                        .get::<Table>("meta")
+                        .ok()
+                        .and_then(|m| m.get::<Table>("phases").ok())
+                        .and_then(|phases| {
+                            for (_, t) in phases.pairs::<Value, Table>().flatten() {
+                                let l: Option<String> = t.get("label").ok();
+                                if l.as_deref() == Some(label.as_str()) {
+                                    return t.get("description").ok();
+                                }
+                            }
+                            None
+                        });
+                    (label, planned, description, None)
                 }
                 Value::Table(t) => {
                     let label: String = t.get("label")

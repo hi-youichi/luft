@@ -285,7 +285,14 @@ pub(crate) fn extract_meta(lua: &Lua) -> Result<Option<WorkflowMeta>, ScriptErro
             })
             .unwrap_or_else(|| "<unlabeled>".to_string());
         let dynamic: bool = t.get("dynamic").ok().unwrap_or(false);
-        phases.push(PlanPhase { label, dynamic });
+        let description: Option<String> = t
+            .get("description")
+            .ok()
+            .and_then(|v: Value| match v {
+                Value::String(s) => s.to_str().ok().map(|s| s.to_string()),
+                _ => None,
+            });
+        phases.push(PlanPhase { label, dynamic, description });
     }
 
     Ok(Some(WorkflowMeta { reasoning, phases }))

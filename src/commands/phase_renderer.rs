@@ -27,7 +27,7 @@ use std::time::{Duration, Instant};
 use console::style;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use maestro::core::contract::backend::AgentStatus;
-use maestro::core::contract::event::{AgentEvent, RunStatus};
+use maestro::core::contract::event::{AgentEvent, ProgressDelta, RunStatus};
 use maestro::core::contract::ids::{AgentId, PhaseId, TokenUsage};
 
 // ── Data model ────────────────────────────────────────────
@@ -41,6 +41,8 @@ struct AgentEntry {
 struct PhaseEntry {
     index: usize,
     start: Instant,
+    _label: String,
+    _description: Option<String>,
     agents: HashMap<AgentId, AgentEntry>,
 }
 
@@ -73,9 +75,10 @@ impl PhaseRenderer {
                 phase_id,
                 label,
                 planned,
+                description,
                 ..
             } => {
-                self.on_phase_started(*phase_id, label, *planned);
+                self.on_phase_started(*phase_id, label, *planned, description.as_deref());
             }
             AgentEvent::AgentStarted {
                 phase_id,
@@ -215,7 +218,12 @@ impl PhaseRenderer {
             } => {
                 self.on_plan_preview(reasoning, phases);
             }
-            // Intentionally ignored (decision: no AgentProgress / AcpRaw / Log / etc.)
+            AgentEvent::AgentProgress {
+                agent_id, delta, ..
+            } => {
+                self.on_agent_progress(agent_id, delta);
+            }
+            // Intentionally ignored (decision: no AcpRaw / Log / etc.)
             _ => {}
         }
     }
@@ -238,10 +246,16 @@ impl PhaseRenderer {
         }
         for (i, p) in phases.iter().enumerate() {
             let marker = if p.dynamic { " ◇ dynamic" } else { "" };
+            let desc_part = p
+                .description
+                .as_deref()
+                .map(|d| format!(" · {}", style(d).dim()))
+                .unwrap_or_default();
             self.print(&format!(
-                "│  {} {}{}",
+                "│  {} {}{}{}",
                 style(format!("{}.", i + 1)).dim(),
                 p.label,
+                desc_part,
                 if p.dynamic {
                     style(marker).yellow()
                 } else {
@@ -252,7 +266,7 @@ impl PhaseRenderer {
         self.print(&format!("│  {}", style("─".repeat(40)).dim()));
     }
 
-    fn on_phase_started(&mut self, phase_id: PhaseId, label: &str, planned: usize) {
+    fn on_phase_started(&mut self, phase_id: PhaseId, label: &str, planned: usize, description: Option<&str>) {
         let index = self.phase_order.len() + 1;
         self.phase_order.push(phase_id);
         self.phases.insert(
@@ -260,6 +274,8 @@ impl PhaseRenderer {
             PhaseEntry {
                 index,
                 start: Instant::now(),
+                _label: label.to_string(),
+                _description: description.map(str::to_string),
                 agents: HashMap::new(),
             },
         );
@@ -269,10 +285,14 @@ impl PhaseRenderer {
         } else {
             String::new()
         };
+        let desc_part = description
+            .map(|d| format!(" · {}", style(d).dim()))
+            .unwrap_or_default();
         self.print(&format!(
-            "├── {} · {}{}",
+            "├── {} · {}{}{}",
             style(format!("Phase {}", index)).bold(),
             label,
+            desc_part,
             count,
         ));
     }
@@ -388,6 +408,36 @@ impl PhaseRenderer {
             pb.finish_and_clear();
         }
         self.print(&line);
+    }
+
+    fn on_agent_progress(&self, agent_id: &AgentId, delta: &ProgressDelta) {
+        let entry = self
+            .phases
+            .values()
+            .find_map(|p| p.agents.get(agent_id));
+        let (pb, label) = match entry {
+            Some(e) => (&e.pb, &e.label),
+            None => return,
+        };
+        let pb = match pb {
+            Some(pb) => pb,
+            None => return,
+        };
+        match delta {
+            ProgressDelta::Tokens { usage } => {
+                let msg = format!("{} · {} tok", label, usage.total());
+                pb.set_message(msg);
+            }
+            ProgressDelta::Message { text } => {
+                let preview = if text.len() > 40 {
+                    format!("{}…", &text[..37])
+                } else {
+                    text.clone()
+                };
+                pb.set_message(format!("{} · {}", label, style(preview).dim()));
+            }
+            _ => {}
+        }
     }
 
     fn on_phase_done(&mut self, phase_id: PhaseId, ok: usize, failed: usize) {

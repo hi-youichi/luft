@@ -168,6 +168,8 @@ pub fn handle_update(
         );
         *acc.tokens.lock().unwrap() = usage;
         emit(events, run_id, agent_id, ProgressDelta::Tokens { usage });
+    } else {
+        tracing::trace!("no usage data in update");
     }
 }
 
