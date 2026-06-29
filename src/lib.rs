@@ -1,4 +1,4 @@
-﻿//! Maestro — multi-agent orchestration runtime (v0.1).
+//! Maestro — multi-agent orchestration runtime (v0.1).
 //!
 //! See [`docs/architecture.md`] for architecture overview and
 //! [`docs/sdk-reference.md`] for Lua SDK primitives.
@@ -19,4 +19,3 @@ pub mod planner;
 pub mod runtime;
 pub mod service;
 pub mod storage;
-

@@ -1,0 +1,329 @@
+{
+  "overall_score": 6,
+  "executive_summary": "The src/adapters/ module bridges Maestro's orchestration core with the ACP (Agent Client Protocol) subprocess lifecycle across five files with clear, non-overlapping roles: a thin facade (mod.rs), the primary subprocess adapter (acp_adapter.rs), a non-interactive permission decider (permission.rs), a result aggregator (result_collector.rs), and an update-to-event translator (update_mapper.rs). The module compiles, runs, and is reasonably tested — this is production code with good bones, not prototype debris. permission.rs is exemplary: a pure decide() function with 21 tests, zero non-test unwraps/panics, and explicit testing of deny-list precedence.\n\nWhat drags the score to 6 is not any single file but a set of cross-cutting patterns that compound across files without a single owner. The Accumulator data class (update_mapper.rs:16-26) has 3 public Mutex fields accessed via .lock().unwrap() at 10 scattered production sites across 2 files, with no encapsulation and no poisoning recovery strategy. The strongly-typed ACP StopReason enum is Debug-formatted into a String at acp_adapter.rs:364, stored in a Mutex<Option<String>>, then substring-matched via contains(\"EndTurn\") at result_collector.rs:57-66 — destroying type safety across the entire chain. The string \"structured_output\" is hardcoded as a policy bypass key, capture trigger, and capability flag in 5 occurrences across 3 files, with inconsistent exact-vs-substring matching that is a latent bug. And connect_timeout is a dead config path: declared, defaulted, overridable via config file, settable via CLI, documented in architecture docs — but never consumed at the one site that matters (the initialize handshake at acp_adapter.rs:331). The module grew organically without periodic consolidation; the cross-file patterns are the debt.\n\nThe single biggest risk is the unconditional structured_output policy bypass at permission.rs:39: any tool literally named \"structured_output\" is auto-approved, bypassing deny-list enforcement, with no comment explaining why. An attacker who registers an MCP tool with that name gets automatic approval regardless of the deny policy. This should be fixed first — it is a 15-minute change with high security impact.",
+  "top_10_smells": [
+    {
+      "rank": 1,
+      "title": "Unconditional structured_output policy bypass evades deny-list",
+      "file": "src/adapters/permission.rs:39",
+      "category": "Rust-Specific",
+      "severity": "high",
+      "impact": "Any MCP tool literally named \"structured_output\" is auto-approved at permission.rs:39, bypassing ALL policy checks including deny-list enforcement. There is no comment explaining why. Combined with the fact that detection uses inconsistent exact-match (L39: tool == \"structured_output\") vs substring-match (L116: raw.contains(\"structured_output\")), a tool whose serialized JSON merely contains the substring could also be misclassified. This is a latent security issue in a permission gate.",
+      "fix": "Extract const STRUCTURED_OUTPUT_TOOL. Move the deny-list check BEFORE the structured_output bypass so deny rules cannot be evaded. Add a // WHY comment. Centralize detection via is_structured_output(title) helper to fix exact-vs-substring inconsistency.",
+      "effort": "S"
+    },
+    {
+      "rank": 2,
+      "title": "Accumulator Data Class with 10 scattered .lock().unwrap() sites",
+      "file": "src/adapters/update_mapper.rs:16-26, src/adapters/acp_adapter.rs:364,372,422-425",
+      "category": "Rust-Specific",
+      "severity": "high",
+      "impact": "Accumulator has 3 public Mutex fields (message, tokens, structured_output) and zero behavior. All mutation and consumption happens via direct .lock().unwrap() at 10 production sites across 2 files. A poisoned mutex (from any panic while holding a lock) cascades into a second panic at result-collection time, masking the original error. Any change to locking strategy (parking_lot, poison recovery) requires touching all 10 sites. The struct is a passive data bag shared across 3 control-flow contexts with no single owner.",
+      "fix": "Make fields private. Add methods: push_message, set_tokens, capture_structured_output, take_result. All 10 lock sites collapse into method calls. Swapping Mutex implementation becomes a one-line change. Poisoning is handled internally.",
+      "effort": "M"
+    },
+    {
+      "rank": 3,
+      "title": "run_acp_session: 243-line Long Method with 5 phases and 3 levels of async nesting",
+      "file": "src/adapters/acp_adapter.rs:186-429",
+      "category": "Bloaters",
+      "severity": "high",
+      "impact": "A single async fn handles subprocess spawn, schema temp-file prep, ACP client construction with two move-closure callbacks plus a connect_with handshake closure, cancel/idle race handling, and result collection. The conn_fut block alone (L265-385) is ~120 lines with 3 levels of async-move nesting. This is unmaintainable: any change to one phase risks breaking others, and the control flow is impossible to hold in working memory.",
+      "fix": "Extract named helpers: spawn_acp_child(&config) -> Child, prepare_schema_guard(&task) -> Option<(SchemaFileGuard, String)>, build_acp_client(acc, stop, activity_tx, events, policy, schema_path) -> ClientFut, drive_handshake(conn, cwd, prompt, schema_path) -> Result<()>, collect_result(acc, stop_holder) -> AgentResult.",
+      "effort": "L"
+    },
+    {
+      "rank": 4,
+      "title": "connect_timeout: dead config path spanning 4 files, never consumed",
+      "file": "src/adapters/acp_adapter.rs:49, src/backend.rs:50-52, src/commands/backend.rs:235, src/commands/generate.rs:131",
+      "category": "Dispensables",
+      "severity": "high",
+      "impact": "connect_timeout is declared (L49), defaulted to 10s (L113), settable via config file (backend.rs), settable via CLI 'set acp.connect_timeout_secs', and explicitly acknowledged as not wired (generate.rs:131). But the initialize handshake at L331 has no timeout wrapper. API consumers believe handshake timeout is enforced; it is not. This is Speculative Generality promising a feature that does not exist.",
+      "fix": "Either wire it: wrap L331 with tokio::time::timeout(config.connect_timeout, ...).await.map_err(|_| BackendError::Timeout). Or remove the field, default, config override, CLI setter, and test — eliminating the dead path across 4 files.",
+      "effort": "S"
+    },
+    {
+      "rank": 5,
+      "title": "Visibility: all 14 public items use bare pub, zero pub(crate) in entire module",
+      "file": "src/adapters/ (module-wide)",
+      "category": "Rust-Specific",
+      "severity": "high",
+      "impact": "Not a single pub(crate) exists in the module. At least 8 of 14 public items have zero external consumers: register_acp_backend (0 prod callers), default_opencode (0 prod callers), Decision/PermissionInputs/decide/extract_inputs (sole consumer: acp_adapter.rs), extract_findings_from_output (sole consumer: result_collector.rs L22), Accumulator/handle_update. Overexposed API surface invites external coupling on explicitly v0.1 types.",
+      "fix": "Change pub to pub(crate) for all items consumed only within src/adapters/ or src/backend.rs. Keep pub only for AcpAdapter and AcpConfig (the facade types).",
+      "effort": "S"
+    },
+    {
+      "rank": 6,
+      "title": "StopReason type-safety erosion: enum Debug-formatted then substring-matched",
+      "file": "src/adapters/acp_adapter.rs:364, src/adapters/result_collector.rs:15,57-66",
+      "category": "Rust-Specific",
+      "severity": "medium",
+      "impact": "The strongly-typed ACP PromptResponse.stop_reason enum is Debug-formatted to String via format!(\"{:?}\", pr.stop_reason) at L364, stored in Arc<Mutex<Option<String>>>, passed as &str to result_collector::collect, then matched via s.contains(\"EndTurn\")/s.contains(\"Cancel\"). Any string containing those substrings silently maps to Ok/Cancelled. Unknown variants fall through to AgentStatus::Error with no warning. The original enum variant identity is destroyed at the first boundary.",
+      "fix": "Define a Maestro-native StopReason enum (Ok, Cancelled, Error) in core. Map pr.stop_reason at the acp_adapter.rs boundary via From<acp::StopReason>. Pass StopReason (not String) to collect. Replace substring matching with a typed match.",
+      "effort": "M"
+    },
+    {
+      "rank": 7,
+      "title": "handle_update: 140-line Long Method with 8 match arms mixing concerns",
+      "file": "src/adapters/update_mapper.rs:33-172",
+      "category": "Bloaters",
+      "severity": "high",
+      "impact": "Each match arm mixes JSON extraction, tracing, accumulator mutation, and event emission. The structured_output capture logic is nearly identical between ToolCall (L87-100) and ToolCallUpdate (L117-130) arms but copy-pasted rather than extracted. The kind-extraction pattern is also duplicated (L44-46 vs L153-157). Hard to test individual arms in isolation.",
+      "fix": "Extract each arm into a named helper (handle_message_chunk, handle_tool_call, handle_tool_call_update, etc.). Extract try_capture_structured_output(v, acc) for the duplicated capture logic. Extract session_update_kind(update) for the duplicated kind extraction.",
+      "effort": "M"
+    },
+    {
+      "rank": 8,
+      "title": "Inappropriate Intimacy: serializing foreign ACP types to JSON then string-sniffing",
+      "file": "src/adapters/permission.rs:100-122",
+      "category": "Couplers",
+      "severity": "medium",
+      "impact": "extract_inputs serializes RequestPermissionRequest to serde_json::Value, converts to string, then uses raw.contains(\"mcp\") for classification. This couples the policy layer to the serialized shape of an external ACP schema type. Any rename/restructure silently breaks classification. A false positive is trivial: any command containing the substring \"mcp\" flips is_mcp on.",
+      "fix": "Access RequestPermissionRequest typed fields (toolCall.rawInput) directly via generated schema accessors, or define a focused deserializing struct instead of round-tripping through Value.",
+      "effort": "M"
+    },
+    {
+      "rank": 9,
+      "title": "Magic string \"structured_output\" hardcoded in 5 sites across 3 files",
+      "file": "src/adapters/permission.rs:39,116; src/adapters/update_mapper.rs:87,117; src/adapters/acp_adapter.rs:149",
+      "category": "Rust-Specific",
+      "severity": "medium",
+      "impact": "The tool name \"structured_output\" is used as a policy bypass key (permission.rs), a capture trigger (update_mapper.rs), and a capability flag (acp_adapter.rs) with no shared constant. Detection is inconsistent: permission.rs uses exact == at L39 but substring contains at L116; update_mapper.rs uses title.contains at L87/L117. Renaming the tool requires a 3-file grep-and-replace with no compile-time safety.",
+      "fix": "Define const STRUCTURED_OUTPUT_TOOL: &str in a shared location. Centralize detection via fn is_structured_output(title: &str) -> bool. This is folded into R1 (policy bypass fix).",
+      "effort": "S"
+    },
+    {
+      "rank": 10,
+      "title": "Missing #[must_use]: dropped Decision silently approves, dropped AgentResult silently lost",
+      "file": "src/adapters/permission.rs:13,37; src/adapters/result_collector.rs:14,69",
+      "category": "Rust-Specific",
+      "severity": "medium",
+      "impact": "Zero #[must_use] attributes exist in the entire module. Decision is an enum where dropping a Deny silently turns into a no-op (the caller never acts on the denial). collect() returns the entire agent run result; discarding it silently loses all output with no compile-time warning.",
+      "fix": "Add #[must_use] to Decision enum, decide fn, collect fn, and extract_inputs fn.",
+      "effort": "S"
+    }
+  ],
+  "by_file": [
+    {
+      "file": "src/adapters/mod.rs",
+      "score": 7,
+      "top_issues": [
+        "Dead Code: register_acp_backend has zero production callers (backend.rs bypasses it). Delete or downgrade to pub(crate).",
+        "Speculative Generality: pub helper on the module surface anticipating an external caller that never materialized.",
+        "Duplicate Code: backend_is_retrievable_after_register test is strictly weaker than registers_backend_with_opencode_id."
+      ]
+    },
+    {
+      "file": "src/adapters/acp_adapter.rs",
+      "score": 6,
+      "top_issues": [
+        "Long Method: run_acp_session (L186-429) is 243 lines with 5 phases and 3 levels of async-move nesting.",
+        "Dead Code: connect_timeout is plumbed through 4 files but never consumed at the handshake site (L331).",
+        "Unwrap Abuse: 6 .lock().unwrap() sites in production paths; poisoned mutex cascades into masked panics."
+      ]
+    },
+    {
+      "file": "src/adapters/permission.rs",
+      "score": 7,
+      "top_issues": [
+        "Magic Numbers: unconditional \"structured_output\" bypass (L39) evades deny-list with no comment — highest-risk finding.",
+        "Inappropriate Intimacy: serializes foreign ACP type to JSON then string-sniffs via raw.contains(\"mcp\").",
+        "Public Surface Bloat: all 4 items pub but sole consumer is acp_adapter.rs:305-308."
+      ]
+    },
+    {
+      "file": "src/adapters/result_collector.rs",
+      "score": 7,
+      "top_issues": [
+        "Stringly-Typed: stop_reason passed as &str and matched via loose substring contains() — loses enum type safety.",
+        "Public Surface Bloat: extract_findings_from_output is pub but sole caller is collect() at L22.",
+        "Missing #[must_use]: collect() returns the entire agent run result with no compile-time drop protection."
+      ]
+    },
+    {
+      "file": "src/adapters/update_mapper.rs",
+      "score": 7,
+      "top_issues": [
+        "Long Method: handle_update (L33-172) is ~140 lines with 8 match arms mixing JSON extraction, tracing, mutation, and emission.",
+        "Data Class: Accumulator has 3 public Mutex fields and zero behavior — all mutation via direct .lock().unwrap().",
+        "Duplicate Code: structured_output capture logic copy-pasted between ToolCall (L87) and ToolCallUpdate (L117) arms."
+      ]
+    }
+  ],
+  "by_category": {
+    "Bloaters": 3,
+    "OO-Abusers": 0,
+    "Change-Preventers": 0,
+    "Dispensables": 12,
+    "Couplers": 1,
+    "Rust-Specific": 10
+  },
+  "rust_specific_issues": [
+    {
+      "issue": "Unwrap Abuse: 10 .lock().unwrap() sites across 2 files with no poisoning recovery strategy. A panic in any callback holding a lock poisons the mutex; the next access panics again, masking the original error. Neither file uses unwrap_or_else(|e| e.into_inner()) or parking_lot::Mutex.",
+      "files": [
+        "src/adapters/acp_adapter.rs:364,372,422,423,424,425",
+        "src/adapters/update_mapper.rs:61,97,127,169"
+      ],
+      "fix": "Encapsulate all Mutex access behind Accumulator methods (push_message, set_tokens, capture_structured_output, take_result). Make fields private. Handle poisoning once inside each method via .lock().unwrap_or_else(|e| e.into_inner()). This eliminates all 10 unwrap sites and centralizes the locking strategy."
+    },
+    {
+      "issue": "Stringly-Typed: ACP StopReason enum Debug-formatted to String at acp_adapter.rs:364, stored in Arc<Mutex<Option<String>>>, then substring-matched via contains(\"EndTurn\")/contains(\"Cancel\") at result_collector.rs:57-66. Type safety is destroyed at the boundary and imperfectly reconstructed via fragile string matching.",
+      "files": [
+        "src/adapters/acp_adapter.rs:364 (format!(\"{:?}\", pr.stop_reason))",
+        "src/adapters/result_collector.rs:15,57-66 (status_from_stop_reason substring matching)"
+      ],
+      "fix": "Define Maestro-native StopReason enum (Ok, Cancelled, Error). Implement From<acp::StopReason> at the acp_adapter boundary. Change stop_holder to Arc<Mutex<Option<StopReason>>>. Change collect() signature to accept StopReason. Replace substring matching with typed match."
+    },
+    {
+      "issue": "Public Surface Bloat: all 14 public items across 5 files use bare pub. Zero pub(crate). At least 8 items have no external consumer: register_acp_backend (0 prod callers), default_opencode (0 prod callers), Decision/PermissionInputs/decide/extract_inputs (sole consumer: acp_adapter.rs), extract_findings_from_output (sole consumer: result_collector.rs:22), Accumulator/handle_update.",
+      "files": [
+        "src/adapters/mod.rs:22",
+        "src/adapters/acp_adapter.rs:134",
+        "src/adapters/permission.rs:13,23,37,100",
+        "src/adapters/result_collector.rs:69",
+        "src/adapters/update_mapper.rs:16,33"
+      ],
+      "fix": "Change pub to pub(crate) for all items consumed only within src/adapters/ or src/backend.rs. Keep pub only for AcpAdapter and AcpConfig (re-exported facade types). The compiler verifies safety."
+    },
+    {
+      "issue": "Magic Numbers / Stringly-Typed: hardcoded string literals act as silent policy keys. \"structured_output\" (exact match at permission.rs:39, substring at L116), \"write_text_file\" (L112), kind == \"edit\" (L112), raw.contains(\"mcp\") (L116). No shared constants, no comments explaining why.",
+      "files": [
+        "src/adapters/permission.rs:39,112,113,114,115,116",
+        "src/adapters/update_mapper.rs:87,117",
+        "src/adapters/acp_adapter.rs:149"
+      ],
+      "fix": "Extract const STRUCTURED_OUTPUT_TOOL, const WRITE_TEXT_FILE_TOOL, etc. Centralize detection via helper functions. Add // WHY comments at policy bypass sites."
+    },
+    {
+      "issue": "Missing #[must_use]: zero #[must_use] attributes in the entire module. Decision (dropping a Deny = silent approval), collect() (dropping = lost agent result), extract_inputs, extract_findings_from_output all return non-trivial values with no compile-time drop protection.",
+      "files": [
+        "src/adapters/permission.rs:13 (Decision enum), :37 (decide fn), :100 (extract_inputs fn)",
+        "src/adapters/result_collector.rs:14 (collect fn), :69 (extract_findings_from_output fn)"
+      ],
+      "fix": "Add #[must_use] to the Decision enum, both decide and extract_inputs fns in permission.rs, and both collect and extract_findings_from_output fns in result_collector.rs."
+    }
+  ],
+  "refactor_recommendations": [
+    {
+      "order": 1,
+      "title": "Fix structured_output policy bypass and extract shared constant",
+      "rationale": "Highest security impact, lowest effort. The unconditional bypass at permission.rs:39 allows any tool named \"structured_output\" to evade deny-list enforcement. This is a latent security issue in a permission gate. Fixing it also centralizes the magic string and resolves the exact-vs-substring matching inconsistency.",
+      "steps": [
+        "Extract const STRUCTURED_OUTPUT_TOOL: &str = \"structured_output\" in acp_adapter.rs or a new constants module.",
+        "Add fn is_structured_output(title: &str) -> bool for consistent detection.",
+        "Move the deny-list check in permission.rs::decide BEFORE the structured_output bypass (L39), so deny rules always take precedence.",
+        "Add a // WHY comment at the bypass site explaining why structured_output is exempted from most policy.",
+        "Replace all 5 hardcoded \"structured_output\" string literals across 3 files with the constant/helper.",
+        "Run existing tests; add a test confirming deny_list_wins_over_structured_output."
+      ],
+      "prerequisites": []
+    },
+    {
+      "order": 2,
+      "title": "Add #[must_use] to all non-trivial return types",
+      "rationale": "Trivial mechanical change with high correctness payoff. A dropped Decision::Deny silently approves; a dropped AgentResult silently loses the entire agent run. The compiler should catch these.",
+      "steps": [
+        "Add #[must_use] to Decision enum (permission.rs:13).",
+        "Add #[must_use] to decide fn (permission.rs:37).",
+        "Add #[must_use] to extract_inputs fn (permission.rs:100).",
+        "Add #[must_use] to collect fn (result_collector.rs:14).",
+        "Add #[must_use] to extract_findings_from_output fn (result_collector.rs:69).",
+        "Run cargo check — fix any newly-revealed intentional drops."
+      ],
+      "prerequisites": []
+    },
+    {
+      "order": 3,
+      "title": "Narrow visibility: pub to pub(crate) for 8+ overexposed items",
+      "rationale": "Mechanical change, compiler-verified. Tightens the API to match actual usage and prevents external coupling on v0.1 internal types. No behavioral change.",
+      "steps": [
+        "Change pub to pub(crate): register_acp_backend (mod.rs:22), default_opencode (acp_adapter.rs:134).",
+        "Change pub to pub(crate): Decision, PermissionInputs, decide, extract_inputs (permission.rs:13,23,37,100).",
+        "Change pub to pub(crate): extract_findings_from_output (result_collector.rs:69).",
+        "Change pub to pub(crate): Accumulator, handle_update (update_mapper.rs:16,33).",
+        "Change pub to pub(crate) on Accumulator's 3 Mutex fields after R5 (encapsulation) lands.",
+        "Keep pub only on AcpAdapter and AcpConfig (facade types).",
+        "Run cargo check to verify no external consumers break."
+      ],
+      "prerequisites": []
+    },
+    {
+      "order": 4,
+      "title": "Wire or remove dead connect_timeout config path",
+      "rationale": "Eliminates a misleading dead config path spanning 4 files. Either the feature works or it does not exist — no middle ground that lies to API consumers.",
+      "steps": [
+        "DECISION: wire it in (recommended — the plumbing already exists).",
+        "Wrap acp_adapter.rs:331 handshake: tokio::time::timeout(config.connect_timeout, conn.send_request(InitializeRequest::new(ProtocolVersion::V1)).block_task()).await.map_err(|_| BackendError::Timeout)??",
+        "Add a test for handshake timeout (mock a slow initialize response).",
+        "Remove the acknowledgment comment in generate.rs:131.",
+        "ALTERNATIVE if not wiring: remove the field (L49), default (L113), config override (backend.rs:50-52), CLI setter (commands/backend.rs:235), and test (L473)."
+      ],
+      "prerequisites": []
+    },
+    {
+      "order": 5,
+      "title": "Encapsulate Accumulator: private fields + accessor methods",
+      "rationale": "Eliminates all 10 .lock().unwrap() sites, fixes the Data Class smell, and centralizes locking strategy. This is the single highest-leverage structural refactor: it makes the struct impossible to misuse and allows swapping Mutex implementation in one place.",
+      "steps": [
+        "Add methods to Accumulator: push_message(&self, text: &str), set_tokens(&self, usage: TokenUsage), capture_structured_output(&self, v: serde_json::Value), take_message(&self) -> String, take_tokens(&self) -> TokenUsage, take_structured_output(&self) -> Option<Value>, take_result(&self) -> (String, TokenUsage, Option<Value>).",
+        "Make all 3 Mutex fields private.",
+        "Handle poison recovery inside each method: .lock().unwrap_or_else(|e| e.into_inner()).",
+        "Update update_mapper.rs handle_update to call methods instead of touching Mutex fields (L61,97,127,169).",
+        "Update acp_adapter.rs to call methods instead of touching Mutex fields (L364,372,422-425).",
+        "Change stop_holder to be owned by Accumulator or a separate typed wrapper (supports R6).",
+        "Run all tests."
+      ],
+      "prerequisites": ["R3 (visibility narrowing) preferred first so fields can be made private."]
+    },
+    {
+      "order": 6,
+      "title": "Introduce native StopReason enum with boundary mapping",
+      "rationale": "Restores type safety across the acp_adapter → result_collector chain. Eliminates fragile Debug-format dependency and substring matching. Unknown variants become a compile-time concern rather than a silent fallthrough to Error.",
+      "steps": [
+        "Define pub(crate) enum StopReason { Ok, Cancelled, Error } in core or adapters.",
+        "Implement From<acp::PromptResponse.stop_reason type> for StopReason at the acp_adapter.rs boundary (L364).",
+        "Change stop_holder type from Arc<Mutex<Option<String>>> to Arc<Mutex<Option<StopReason>>> (or fold into Accumulator after R5).",
+        "Change result_collector::collect signature: stop_reason: &str → stop_reason: StopReason.",
+        "Replace status_from_stop_reason substring matching (L57-66) with a direct match on typed variants.",
+        "Delete status_from_stop_reason — the mapping is now a trivial impl on StopReason.",
+        "Run all tests; update assertions that checked for string Debug format."
+      ],
+      "prerequisites": ["R5 (Accumulator encapsulation) preferred first so stop_holder is handled cleanly."]
+    },
+    {
+      "order": 7,
+      "title": "Create shared acp_json helper module",
+      "rationale": "Deduplicates the 'serialize macro-generated ACP type to serde_json::Value then sniff fields' pattern independently reimplemented in 3 files. Makes the design decision explicit and documented in one place. Eliminates the char-for-char identical find_str/find_str_field copy.",
+      "steps": [
+        "Create src/adapters/acp_json.rs with: fn to_value_or_null<T: Serialize>(v: &T) -> serde_json::Value, fn find_str_recursive(v: &Value, key: &str) -> Option<String>, fn find_object(v: &Value, key: &str) -> Option<&Map<String, Value>>, fn session_update_kind(update: &SessionUpdate) -> String.",
+        "Add a module-level doc comment explaining: 'ACP types are macro-generated and lack stable field accessors. We inspect them via serde_json::Value serialization. This module centralizes that strategy.'",
+        "Replace permission.rs find_str_field (L125-136) and inline to_value (L101) with acp_json helpers.",
+        "Replace update_mapper.rs find_str (L199-210), to_json (L182-184), json_find_text (L187), and kind extraction (L44-46, L153-157) with acp_json helpers.",
+        "Replace acp_adapter.rs inline to_value + .get (L282) with acp_json helpers.",
+        "Run all tests."
+      ],
+      "prerequisites": []
+    },
+    {
+      "order": 8,
+      "title": "Decompose Long Methods: run_acp_session (243 lines) and handle_update (140 lines)",
+      "rationale": "Biggest maintainability win but largest effort. Both methods exceed the 50-line threshold by 3x and mix independently testable concerns. Extracting named helpers makes each phase testable in isolation and reduces the cognitive load of any future change.",
+      "steps": [
+        "run_acp_session: extract spawn_acp_child(&config) -> Result<Child>, prepare_schema_guard(&task) -> Option<(SchemaFileGuard, String)>, build_acp_client(acc, stop, activity_tx, events, policy, schema_path) -> ClientFut, drive_handshake(conn, cwd, prompt, schema_path) -> Result<()>, collect_result(acc, stop_holder) -> AgentResult.",
+        "handle_update: extract handle_message_chunk(acc, chunk), handle_tool_call(acc, call), handle_tool_call_update(acc, update), handle_usage_update(acc, usage), plus try_capture_structured_output(v, acc) for the duplicated capture logic.",
+        "Add unit tests for each extracted helper independently (especially drive_handshake and try_capture_structured_output).",
+        "Verify the extracted run_acp_session reads as a linear sequence of named phases.",
+        "Run full test suite + manual smoke test of an ACP session."
+      ],
+      "prerequisites": ["R5 (Accumulator encapsulation) and R6 (StopReason enum) preferred first — they simplify the extraction signatures."]
+    }
+  ],
+  "positive_observations": [
+    "Clean module boundaries: five files with non-overlapping roles (facade, primary adapter, policy, collector, translation). The separation of concerns is textbook and each file has a clear single responsibility.",
+    "permission.rs is exemplary: pure decide() function with no side effects, 21 tests covering null fallbacks, array/object JSON traversal, and priority ordering. Zero unwrap/expect/panic in non-test code. Serialization fallback uses unwrap_or(Value::Null). Deny-list precedence over accept_edits is explicitly tested.",
+    "No panic, expect, unsafe, or TODO markers anywhere in production code across all 5 files. The module is defensive in its error handling at the individual-statement level.",
+    "result_collector.rs is clean and well-tested (240 lines, score 7). The primary concern is a single stringly-typed stop_reason issue — everything else is minor.",
+    "The Accumulator concurrency model (Arc<Mutex<T>> on a LocalSet) is fundamentally sound for single-task async. The problem is not the architecture but the lack of encapsulation around it — a fixable structural issue, not a design flaw."
+  ]
+}

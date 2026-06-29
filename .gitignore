@@ -50,6 +50,7 @@ coverage/
 .DS_Store
 Thumbs.db
 desktop.ini
+%SystemDrive%
 
 # ── IDE / editor ──────────────────────────────────────
 .idea/
