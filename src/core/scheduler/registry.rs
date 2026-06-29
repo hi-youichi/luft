@@ -37,25 +37,18 @@ impl BackendRegistry {
     }
 
     pub fn get(&self, id: &str) -> Result<Arc<dyn AgentBackend>, SchedulerError> {
-        self.backends
-            .get(id)
-            .cloned()
-            .ok_or_else(|| {
-                tracing::error!(id, "backend not found in registry");
-                SchedulerError::UnknownBackend(id.to_owned())
-            })
+        self.backends.get(id).cloned().ok_or_else(|| {
+            tracing::error!(id, "backend not found in registry");
+            SchedulerError::UnknownBackend(id.to_owned())
+        })
     }
 
     /// First registered backend (v0.1 single-backend default routing).
     pub fn default_backend(&self) -> Result<Arc<dyn AgentBackend>, SchedulerError> {
-        self.backends
-            .values()
-            .next()
-            .cloned()
-            .ok_or_else(|| {
-                tracing::error!("no backend registered");
-                SchedulerError::NoBackendRegistered
-            })
+        self.backends.values().next().cloned().ok_or_else(|| {
+            tracing::error!("no backend registered");
+            SchedulerError::NoBackendRegistered
+        })
     }
 }
 
@@ -78,7 +71,11 @@ mod tests {
         fn capabilities(&self) -> AgentCapabilities {
             AgentCapabilities::default()
         }
-        async fn run(&self, _task: AgentTask, _ctx: RunContext) -> Result<AgentResult, BackendError> {
+        async fn run(
+            &self,
+            _task: AgentTask,
+            _ctx: RunContext,
+        ) -> Result<AgentResult, BackendError> {
             unimplemented!("registry tests never invoke run()")
         }
     }

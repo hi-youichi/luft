@@ -82,7 +82,11 @@ impl Scheduler {
 
     /// Initialise per-run state. Must be called before any `run_agent`.
     /// Returns the broadcast receiver; further consumers use `resubscribe()`.
-    pub fn init_run(&self, run_id: RunId, event_capacity: usize) -> broadcast::Receiver<AgentEvent> {
+    pub fn init_run(
+        &self,
+        run_id: RunId,
+        event_capacity: usize,
+    ) -> broadcast::Receiver<AgentEvent> {
         let (tx, rx) = broadcast::channel(event_capacity);
         self.init_run_with(run_id, tx);
         rx
@@ -138,13 +142,21 @@ impl Scheduler {
                 .runs
                 .get(&run_id)
                 .ok_or(SchedulerError::RunNotFound(run_id))?;
-            (rs.quota_used.clone(), rs.run_cancel.clone(), rs.events.clone())
+            (
+                rs.quota_used.clone(),
+                rs.run_cancel.clone(),
+                rs.events.clone(),
+            )
         };
 
         // Quota.
         let used = quota_used.fetch_add(1, Ordering::Relaxed) + 1;
         if used > self.config.quota_per_run {
-            tracing::warn!(used, limit = self.config.quota_per_run, "run quota exceeded");
+            tracing::warn!(
+                used,
+                limit = self.config.quota_per_run,
+                "run quota exceeded"
+            );
             let _ = events.send(AgentEvent::AgentDone {
                 run_id,
                 agent_id: task.agent_id,
@@ -225,49 +237,88 @@ impl Scheduler {
             match res {
                 Ok(result) => {
                     if let Some(ref schema) = task.output_schema {
-                        if let Err(e) = validate_output(&result.output, schema) {
+                        let fallback = result.output.get("_agent_fallback_text").is_some();
+                        let validation_err = if fallback {
+                            Some(
+                                "agent returned text instead of calling structured_output tool"
+                                    .to_string(),
+                            )
+                        } else {
+                            validate_output(&result.output, schema)
+                                .err()
+                                .map(|e| e.to_string())
+                        };
+
+                        if let Some(error) = validation_err {
                             schema_retry_count += 1;
                             if schema_retry_count > self.config.retry.schema_retry_max {
                                 tracing::error!(
-                                    error = %e,
+                                    error = %error,
                                     attempts = schema_retry_count,
                                     "agent output failed schema validation, retries exhausted"
                                 );
-                                break Err(SchedulerError::SchemaValidation(e.to_string()));
+                                break Err(SchedulerError::SchemaValidation(error));
                             }
                             tracing::warn!(
-                                error = %e,
+                                error = %error,
                                 attempt = schema_retry_count,
                                 "schema validation failed, retrying with feedback"
                             );
-                            let schema_json = serde_json::to_string_pretty(schema)
-                                .unwrap_or_default();
-                            let last_output = serde_json::to_string_pretty(&result.output)
-                                .unwrap_or_default();
-                            task.prompt = format!(
-                                "{original_prompt}\n\n\
-                                 ---\n\
-                                 Your previous response did not match the required schema.\n\
-                                 Error: {error}\n\
-                                 \n\
-                                 Your output was:\n\
-                                 ```json\n{last_output}\n```\n\
-                                 \n\
-                                 Required JSON Schema:\n\
-                                 ```json\n{schema}\n```\n\
-                                 \n\
-                                 Call the `structured_output` tool with a JSON object that\n\
-                                 matches this schema exactly. Include ALL required fields.",
-                                original_prompt = original_prompt,
-                                error = e,
-                                last_output = last_output,
-                                schema = schema_json,
-                            );
+                            let schema_json =
+                                serde_json::to_string_pretty(schema).unwrap_or_default();
+                            let last_output = if fallback {
+                                result
+                                    .output
+                                    .get("text")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string()
+                            } else {
+                                serde_json::to_string_pretty(&result.output).unwrap_or_default()
+                            };
+                            task.prompt = if fallback {
+                                format!(
+                                    "{original_prompt}\n\n\
+                                     ---\n\
+                                     You returned your result as plain text instead of calling the `structured_output` tool.\n\
+                                     You MUST call the `structured_output` tool to submit your result.\n\
+                                     Do NOT return the result as a text message.\n\
+                                     \n\
+                                     Your text output was:\n\
+                                     ```\n{last_output}\n```\n\
+                                     \n\
+                                     Required JSON Schema:\n\
+                                     ```json\n{schema}\n```",
+                                    original_prompt = original_prompt,
+                                    last_output = last_output,
+                                    schema = schema_json,
+                                )
+                            } else {
+                                format!(
+                                    "{original_prompt}\n\n\
+                                     ---\n\
+                                     Your previous response did not match the required schema.\n\
+                                     Error: {error}\n\
+                                     \n\
+                                     Your output was:\n\
+                                     ```json\n{last_output}\n```\n\
+                                     \n\
+                                     Required JSON Schema:\n\
+                                     ```json\n{schema}\n```\n\
+                                     \n\
+                                     Call the `structured_output` tool with a JSON object that\n\
+                                     matches this schema exactly. Include ALL required fields.",
+                                    original_prompt = original_prompt,
+                                    error = error,
+                                    last_output = last_output,
+                                    schema = schema_json,
+                                )
+                            };
                             continue;
                         }
                     }
-                    break Ok(result)
-                },
+                    break Ok(result);
+                }
                 Err(e) => {
                     if agent_token.is_cancelled() || matches!(e, BackendError::Cancelled) {
                         tracing::debug!("agent cancelled");
@@ -280,7 +331,10 @@ impl Scheduler {
                     attempt += 1;
                     if attempt > self.config.retry.max_attempts {
                         tracing::error!(attempts = attempt, error = %e, "agent exhausted retries");
-                        break Err(SchedulerError::Exhausted { attempts: attempt, source: e });
+                        break Err(SchedulerError::Exhausted {
+                            attempts: attempt,
+                            source: e,
+                        });
                     }
                     let backoff = self.config.retry.backoff(attempt);
                     tracing::warn!(
@@ -333,7 +387,8 @@ impl Scheduler {
             let tokens_used = tokens;
             let agent_id = task.agent_id;
             let phase_id = task.phase_id;
-            cb.on_agent_done(agent_id, phase_id, agent_status, output, tokens_used).await;
+            cb.on_agent_done(agent_id, phase_id, agent_status, output, tokens_used)
+                .await;
         }
 
         drop(permit);
@@ -349,9 +404,9 @@ impl Scheduler {
         run_id: RunId,
         tasks: Vec<(AgentTask, Option<String>)>,
     ) -> Vec<Result<AgentResult, SchedulerError>> {
-        let futs = tasks
-            .into_iter()
-            .map(|(task, backend)| async move { self.run_agent(run_id, task, backend.as_deref()).await });
+        let futs = tasks.into_iter().map(|(task, backend)| async move {
+            self.run_agent(run_id, task, backend.as_deref()).await
+        });
         futures::future::join_all(futs).await
     }
 
@@ -443,6 +498,25 @@ mod tests {
         }
     }
 
+    fn mk_task_with_schema(prompt: &str) -> AgentTask {
+        let mut task = mk_task(prompt);
+        task.output_schema = Some(serde_json::json!({
+            "type": "object",
+            "properties": {
+                "answer": { "type": "string" }
+            },
+            "required": ["answer"]
+        }));
+        task
+    }
+
+    fn fallback_output(text: &str) -> serde_json::Value {
+        serde_json::json!({
+            "_agent_fallback_text": true,
+            "text": text,
+        })
+    }
+
     fn ok_result(id: AgentId) -> AgentResult {
         AgentResult {
             agent_id: id,
@@ -474,7 +548,11 @@ mod tests {
         fn capabilities(&self) -> AgentCapabilities {
             AgentCapabilities::default()
         }
-        async fn run(&self, task: AgentTask, _ctx: RunContext) -> Result<AgentResult, BackendError> {
+        async fn run(
+            &self,
+            task: AgentTask,
+            _ctx: RunContext,
+        ) -> Result<AgentResult, BackendError> {
             let c = self.cur.fetch_add(1, Ordering::SeqCst) + 1;
             self.peak.fetch_max(c, Ordering::SeqCst);
             tokio::time::sleep(self.delay).await;
@@ -506,7 +584,11 @@ mod tests {
         let results = sched.run_parallel(run_id, tasks).await;
 
         assert!(results.iter().all(|r| r.is_ok()));
-        assert!(peak.load(Ordering::SeqCst) <= 2, "peak {}", peak.load(Ordering::SeqCst));
+        assert!(
+            peak.load(Ordering::SeqCst) <= 2,
+            "peak {}",
+            peak.load(Ordering::SeqCst)
+        );
     }
 
     #[tokio::test]
@@ -561,7 +643,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_no_retry_on_non_retryable() {
-        let backend = Arc::new(MockBackend::new("mock", vec![MockBehavior::fail(FailKind::Protocol)]));
+        let backend = Arc::new(MockBackend::new(
+            "mock",
+            vec![MockBehavior::fail(FailKind::Protocol)],
+        ));
         let probe = backend.clone();
         let sched = sched_with(backend, fast_config(4, 1000));
         let run_id = Uuid::now_v7();
@@ -574,15 +659,111 @@ mod tests {
 
     #[tokio::test]
     async fn test_retry_exhausted() {
-        let backend = Arc::new(MockBackend::new("mock", vec![MockBehavior::fail(FailKind::Spawn)]));
+        let backend = Arc::new(MockBackend::new(
+            "mock",
+            vec![MockBehavior::fail(FailKind::Spawn)],
+        ));
         let probe = backend.clone();
         let sched = sched_with(backend, fast_config(4, 1000));
         let run_id = Uuid::now_v7();
         let _rx = sched.init_run(run_id, 64);
 
         let r = sched.run_agent(run_id, mk_task("x"), None).await;
-        assert!(matches!(r, Err(SchedulerError::Exhausted { attempts: 3, .. })), "{r:?}");
+        assert!(
+            matches!(r, Err(SchedulerError::Exhausted { attempts: 3, .. })),
+            "{r:?}"
+        );
         assert_eq!(probe.call_count(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_schema_fallback_then_succeeds() {
+        let backend = Arc::new(MockBackend::new(
+            "mock",
+            vec![
+                MockBehavior::Success {
+                    output: fallback_output("i forgot the tool"),
+                    tokens: TokenUsage::default(),
+                    delay: Duration::ZERO,
+                },
+                MockBehavior::Success {
+                    output: serde_json::json!({"answer": "ok"}),
+                    tokens: TokenUsage::default(),
+                    delay: Duration::ZERO,
+                },
+            ],
+        ));
+        let probe = backend.clone();
+        let sched = sched_with(backend, fast_config(4, 1000));
+        let run_id = Uuid::now_v7();
+        let mut rx = sched.init_run(run_id, 64);
+
+        let task = mk_task_with_schema("respond");
+        let r = sched.run_agent(run_id, task, None).await;
+        assert!(r.is_ok(), "{r:?}");
+        assert_eq!(probe.call_count(), 2);
+
+        let mut prompt_with_feedback = None;
+        while let Ok(event) = rx.try_recv() {
+            if let AgentEvent::AgentDone { prompt, .. } = event {
+                prompt_with_feedback = Some(prompt);
+            }
+        }
+        let prompt = prompt_with_feedback.expect("AgentDone event with prompt");
+        assert!(prompt.contains("structured_output"));
+        assert!(prompt.contains("Required JSON Schema"));
+    }
+
+    #[tokio::test]
+    async fn test_schema_mismatch_then_succeeds() {
+        let backend = Arc::new(MockBackend::new(
+            "mock",
+            vec![
+                MockBehavior::Success {
+                    output: serde_json::json!({"wrong": "field"}),
+                    tokens: TokenUsage::default(),
+                    delay: Duration::ZERO,
+                },
+                MockBehavior::Success {
+                    output: serde_json::json!({"answer": "ok"}),
+                    tokens: TokenUsage::default(),
+                    delay: Duration::ZERO,
+                },
+            ],
+        ));
+        let probe = backend.clone();
+        let sched = sched_with(backend, fast_config(4, 1000));
+        let run_id = Uuid::now_v7();
+        let _rx = sched.init_run(run_id, 64);
+
+        let task = mk_task_with_schema("respond");
+        let r = sched.run_agent(run_id, task, None).await;
+        assert!(r.is_ok(), "{r:?}");
+        assert_eq!(probe.call_count(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_schema_fallback_exhausted() {
+        let backend = Arc::new(MockBackend::new(
+            "mock",
+            vec![MockBehavior::Success {
+                output: fallback_output("still no tool"),
+                tokens: TokenUsage::default(),
+                delay: Duration::ZERO,
+            }],
+        ));
+        let probe = backend.clone();
+        let sched = sched_with(backend, fast_config(4, 1000));
+        let run_id = Uuid::now_v7();
+        let _rx = sched.init_run(run_id, 64);
+
+        let task = mk_task_with_schema("respond");
+        let r = sched.run_agent(run_id, task, None).await;
+        assert!(
+            matches!(r, Err(SchedulerError::SchemaValidation(_))),
+            "{r:?}"
+        );
+        assert_eq!(probe.call_count(), 2);
     }
 
     #[tokio::test]

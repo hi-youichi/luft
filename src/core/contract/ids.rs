@@ -58,7 +58,12 @@ mod tests {
 
     #[test]
     fn test_total_basic() {
-        let t = TokenUsage { input: 10, output: 20, cache_read: 5, cache_write: 3 };
+        let t = TokenUsage {
+            input: 10,
+            output: 20,
+            cache_read: 5,
+            cache_write: 3,
+        };
         assert_eq!(t.total(), 30);
     }
 
@@ -70,20 +75,40 @@ mod tests {
 
     #[test]
     fn test_total_only_input() {
-        let t = TokenUsage { input: 100, output: 0, cache_read: 0, cache_write: 0 };
+        let t = TokenUsage {
+            input: 100,
+            output: 0,
+            cache_read: 0,
+            cache_write: 0,
+        };
         assert_eq!(t.total(), 100);
     }
 
     #[test]
     fn test_total_only_output() {
-        let t = TokenUsage { input: 0, output: 200, cache_read: 0, cache_write: 0 };
+        let t = TokenUsage {
+            input: 0,
+            output: 200,
+            cache_read: 0,
+            cache_write: 0,
+        };
         assert_eq!(t.total(), 200);
     }
 
     #[test]
     fn test_add() {
-        let a = TokenUsage { input: 10, output: 20, cache_read: 5, cache_write: 3 };
-        let b = TokenUsage { input: 3, output: 7, cache_read: 2, cache_write: 1 };
+        let a = TokenUsage {
+            input: 10,
+            output: 20,
+            cache_read: 5,
+            cache_write: 3,
+        };
+        let b = TokenUsage {
+            input: 3,
+            output: 7,
+            cache_read: 2,
+            cache_write: 1,
+        };
         let result = a + b;
         assert_eq!(result.input, 13);
         assert_eq!(result.output, 27);
@@ -93,7 +118,12 @@ mod tests {
 
     #[test]
     fn test_add_zero() {
-        let a = TokenUsage { input: 10, output: 20, cache_read: 5, cache_write: 3 };
+        let a = TokenUsage {
+            input: 10,
+            output: 20,
+            cache_read: 5,
+            cache_write: 3,
+        };
         let zero = TokenUsage::default();
         let result = a + zero;
         assert_eq!(result.input, 10);
@@ -104,8 +134,18 @@ mod tests {
 
     #[test]
     fn test_add_large() {
-        let a = TokenUsage { input: u64::MAX, output: 0, cache_read: 0, cache_write: 0 };
-        let b = TokenUsage { input: 0, output: u64::MAX, cache_read: 0, cache_write: 0 };
+        let a = TokenUsage {
+            input: u64::MAX,
+            output: 0,
+            cache_read: 0,
+            cache_write: 0,
+        };
+        let b = TokenUsage {
+            input: 0,
+            output: u64::MAX,
+            cache_read: 0,
+            cache_write: 0,
+        };
         let result = a + b;
         assert_eq!(result.input, u64::MAX);
         assert_eq!(result.output, u64::MAX);
@@ -113,8 +153,18 @@ mod tests {
 
     #[test]
     fn test_add_assign() {
-        let mut a = TokenUsage { input: 10, output: 20, cache_read: 5, cache_write: 3 };
-        let b = TokenUsage { input: 3, output: 7, cache_read: 2, cache_write: 1 };
+        let mut a = TokenUsage {
+            input: 10,
+            output: 20,
+            cache_read: 5,
+            cache_write: 3,
+        };
+        let b = TokenUsage {
+            input: 3,
+            output: 7,
+            cache_read: 2,
+            cache_write: 1,
+        };
         a += b;
         assert_eq!(a.input, 13);
         assert_eq!(a.output, 27);
@@ -124,7 +174,12 @@ mod tests {
 
     #[test]
     fn test_add_assign_zero() {
-        let mut a = TokenUsage { input: 10, output: 20, cache_read: 5, cache_write: 3 };
+        let mut a = TokenUsage {
+            input: 10,
+            output: 20,
+            cache_read: 5,
+            cache_write: 3,
+        };
         a += TokenUsage::default();
         assert_eq!(a.input, 10);
         assert_eq!(a.output, 20);
@@ -134,9 +189,24 @@ mod tests {
 
     #[test]
     fn test_add_assign_chained() {
-        let mut a = TokenUsage { input: 1, output: 2, cache_read: 3, cache_write: 4 };
-        let b = TokenUsage { input: 10, output: 20, cache_read: 30, cache_write: 40 };
-        let c = TokenUsage { input: 100, output: 200, cache_read: 300, cache_write: 400 };
+        let mut a = TokenUsage {
+            input: 1,
+            output: 2,
+            cache_read: 3,
+            cache_write: 4,
+        };
+        let b = TokenUsage {
+            input: 10,
+            output: 20,
+            cache_read: 30,
+            cache_write: 40,
+        };
+        let c = TokenUsage {
+            input: 100,
+            output: 200,
+            cache_read: 300,
+            cache_write: 400,
+        };
         a += b;
         a += c;
         assert_eq!(a.input, 111);
@@ -147,7 +217,12 @@ mod tests {
 
     #[test]
     fn test_serialize_roundtrip() {
-        let t = TokenUsage { input: 1, output: 2, cache_read: 3, cache_write: 4 };
+        let t = TokenUsage {
+            input: 1,
+            output: 2,
+            cache_read: 3,
+            cache_write: 4,
+        };
         let json = serde_json::to_string(&t).unwrap();
         let deserialized: TokenUsage = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized, t);
@@ -157,14 +232,22 @@ mod tests {
     fn test_serialize_default() {
         let t = TokenUsage::default();
         let json = serde_json::to_string(&t).unwrap();
-        assert_eq!(json, r#"{"input":0,"output":0,"cache_read":0,"cache_write":0}"#);
+        assert_eq!(
+            json,
+            r#"{"input":0,"output":0,"cache_read":0,"cache_write":0}"#
+        );
         let deserialized: TokenUsage = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized, t);
     }
 
     #[test]
     fn test_debug_format() {
-        let t = TokenUsage { input: 1, output: 2, cache_read: 3, cache_write: 4 };
+        let t = TokenUsage {
+            input: 1,
+            output: 2,
+            cache_read: 3,
+            cache_write: 4,
+        };
         let debug = format!("{:?}", t);
         assert!(debug.contains("input: 1"));
         assert!(debug.contains("output: 2"));
@@ -174,14 +257,24 @@ mod tests {
 
     #[test]
     fn test_clone() {
-        let t = TokenUsage { input: 10, output: 20, cache_read: 5, cache_write: 3 };
+        let t = TokenUsage {
+            input: 10,
+            output: 20,
+            cache_read: 5,
+            cache_write: 3,
+        };
         let cloned = t;
         assert_eq!(cloned, t);
     }
 
     #[test]
     fn test_copy() {
-        let t = TokenUsage { input: 10, output: 20, cache_read: 5, cache_write: 3 };
+        let t = TokenUsage {
+            input: 10,
+            output: 20,
+            cache_read: 5,
+            cache_write: 3,
+        };
         let copied = t;
         let also_t = t; // should not move — Copy semantics
         assert_eq!(copied, also_t);
@@ -189,22 +282,50 @@ mod tests {
 
     #[test]
     fn test_add_commutative() {
-        let a = TokenUsage { input: 5, output: 10, cache_read: 2, cache_write: 1 };
-        let b = TokenUsage { input: 3, output: 7, cache_read: 4, cache_write: 6 };
+        let a = TokenUsage {
+            input: 5,
+            output: 10,
+            cache_read: 2,
+            cache_write: 1,
+        };
+        let b = TokenUsage {
+            input: 3,
+            output: 7,
+            cache_read: 4,
+            cache_write: 6,
+        };
         assert_eq!(a + b, b + a);
     }
 
     #[test]
     fn test_total_excludes_cache() {
-        let t = TokenUsage { input: 10, output: 20, cache_read: 100, cache_write: 200 };
+        let t = TokenUsage {
+            input: 10,
+            output: 20,
+            cache_read: 100,
+            cache_write: 200,
+        };
         assert_eq!(t.total(), 30);
     }
 
     #[test]
     fn test_add_assign_identity() {
-        let mut a = TokenUsage { input: 5, output: 5, cache_read: 5, cache_write: 5 };
+        let mut a = TokenUsage {
+            input: 5,
+            output: 5,
+            cache_read: 5,
+            cache_write: 5,
+        };
         a += TokenUsage::default();
-        assert_eq!(a, TokenUsage { input: 5, output: 5, cache_read: 5, cache_write: 5 });
+        assert_eq!(
+            a,
+            TokenUsage {
+                input: 5,
+                output: 5,
+                cache_read: 5,
+                cache_write: 5
+            }
+        );
     }
 
     #[test]

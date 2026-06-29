@@ -15,10 +15,7 @@ pub enum MockBehavior {
     },
     /// Fail with a fresh [`BackendError`] of the given kind (errors aren't
     /// `Clone`, so we reconstruct on each call).
-    Fail {
-        kind: FailKind,
-        delay: Duration,
-    },
+    Fail { kind: FailKind, delay: Duration },
     /// Never returns until cancelled; then yields `BackendError::Cancelled`.
     Hang,
 }
@@ -60,7 +57,10 @@ pub struct MockBackend {
 
 impl MockBackend {
     pub fn new(id: &'static str, behaviors: Vec<MockBehavior>) -> Self {
-        assert!(!behaviors.is_empty(), "MockBackend needs at least one behavior");
+        assert!(
+            !behaviors.is_empty(),
+            "MockBackend needs at least one behavior"
+        );
         Self {
             id,
             behaviors,

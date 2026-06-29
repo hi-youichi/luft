@@ -12,12 +12,14 @@ pub mod state;
 
 pub use contract::*;
 pub use journal::{
-    AgentCacheKey, JournalError, JournalStore,
-    ResumeContext, RunCreationMode, CompositeJournalCallback, gc_runs,
+    gc_runs, AgentCacheKey, CompositeJournalCallback, JournalError, JournalStore, ResumeContext,
+    RunCreationMode,
 };
-pub use scheduler::{BackendRegistry, JournalCallback, RetryPolicy, Scheduler, SchedulerConfig, SchedulerError};
-pub use mock_backend::{MockBackend, MockBehavior, FailKind};
+pub use mock_backend::{FailKind, MockBackend, MockBehavior};
+pub use scheduler::{
+    BackendRegistry, JournalCallback, RetryPolicy, Scheduler, SchedulerConfig, SchedulerError,
+};
 pub use state::{
-    RunCheckpoint, RunStore, CheckpointStatus, PhaseSummary, AgentResultCache,
-    get_run_store, list_runs,
+    get_run_store, list_runs, AgentResultCache, CheckpointStatus, PhaseSummary, RunCheckpoint,
+    RunStore,
 };

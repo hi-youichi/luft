@@ -19,8 +19,8 @@ use crate::core::contract::backend::AgentStatus;
 use crate::core::contract::event::{AgentEvent, EventSender};
 use crate::core::contract::finding::Finding;
 use crate::core::contract::ids::{AgentId, PhaseId, RunId, TokenUsage};
-use crate::core::state::{AgentResultCache, RunCheckpoint, RunStore};
 use crate::core::scheduler::{BackendRegistry, SchedulerConfig};
+use crate::core::state::{AgentResultCache, RunCheckpoint, RunStore};
 use blake3::Hasher;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -458,13 +458,19 @@ pub enum RunCreationMode {
 impl RunCreationMode {
     /// Resolve the creation mode to concrete parameters.
     /// For Auto mode, checks journal directory for resumable runs.
-    pub fn resolve(self, journal_dir: &Path) -> Result<(RunId, Option<RunCheckpoint>), JournalError> {
+    pub fn resolve(
+        self,
+        journal_dir: &Path,
+    ) -> Result<(RunId, Option<RunCheckpoint>), JournalError> {
         match self {
             RunCreationMode::New { task: _ } => {
                 let run_id = uuid::Uuid::now_v7();
                 Ok((run_id, None))
             }
-            RunCreationMode::Resume { run_id, run_dir_name } => {
+            RunCreationMode::Resume {
+                run_id,
+                run_dir_name,
+            } => {
                 let store = JournalStore::new(&journal_dir.join(&run_dir_name))?;
                 let checkpoint = store.open(run_id)?;
                 Ok((run_id, Some(checkpoint)))
@@ -475,9 +481,7 @@ impl RunCreationMode {
                 for dir_name in run_dirs.iter().rev() {
                     let checkpoint_path = journal_dir.join(dir_name).join("checkpoint.json");
                     if let Ok(content) = std::fs::read_to_string(&checkpoint_path) {
-                        if let Ok(checkpoint) =
-                            serde_json::from_str::<RunCheckpoint>(&content)
-                        {
+                        if let Ok(checkpoint) = serde_json::from_str::<RunCheckpoint>(&content) {
                             if matches!(
                                 checkpoint.status,
                                 crate::core::state::CheckpointStatus::Running
@@ -574,12 +578,22 @@ mod tests {
         // 2. Cache an agent result
         let agent_id = uuid::Uuid::now_v7();
         let key = AgentCacheKey::new("test prompt", Some("gpt-4"), 1);
-        journal.cache_agent(
-            &key, agent_id, 1, AgentStatus::Ok,
-            serde_json::json!({"result": "ok"}),
-            vec![],
-            TokenUsage { input: 100, output: 50, cache_read: 0, cache_write: 0 },
-        ).unwrap();
+        journal
+            .cache_agent(
+                &key,
+                agent_id,
+                1,
+                AgentStatus::Ok,
+                serde_json::json!({"result": "ok"}),
+                vec![],
+                TokenUsage {
+                    input: 100,
+                    output: 50,
+                    cache_read: 0,
+                    cache_write: 0,
+                },
+            )
+            .unwrap();
 
         // 3. Verify cache
         assert!(journal.has_completed(&key));
@@ -626,12 +640,38 @@ mod tests {
         let k2 = AgentCacheKey::new("task 2", None, 1);
         let k3 = AgentCacheKey::new("task 3", None, 1);
 
-        journal.cache_agent(&k1, uuid::Uuid::now_v7(), 1, AgentStatus::Ok,
-            serde_json::json!({"done": 1}), vec![],
-            TokenUsage { input: 10, output: 5, cache_read: 0, cache_write: 0 }).unwrap();
-        journal.cache_agent(&k2, uuid::Uuid::now_v7(), 1, AgentStatus::Ok,
-            serde_json::json!({"done": 2}), vec![],
-            TokenUsage { input: 10, output: 5, cache_read: 0, cache_write: 0 }).unwrap();
+        journal
+            .cache_agent(
+                &k1,
+                uuid::Uuid::now_v7(),
+                1,
+                AgentStatus::Ok,
+                serde_json::json!({"done": 1}),
+                vec![],
+                TokenUsage {
+                    input: 10,
+                    output: 5,
+                    cache_read: 0,
+                    cache_write: 0,
+                },
+            )
+            .unwrap();
+        journal
+            .cache_agent(
+                &k2,
+                uuid::Uuid::now_v7(),
+                1,
+                AgentStatus::Ok,
+                serde_json::json!({"done": 2}),
+                vec![],
+                TokenUsage {
+                    input: 10,
+                    output: 5,
+                    cache_read: 0,
+                    cache_write: 0,
+                },
+            )
+            .unwrap();
 
         // Verify cache hits
         assert!(journal.has_completed(&k1));
@@ -653,9 +693,21 @@ mod tests {
             let j = JournalStore::new(dir.path()).unwrap();
             j.init_run(run_id, "Crash test").unwrap();
             let key = AgentCacheKey::new("important work", None, 0);
-            j.cache_agent(&key, uuid::Uuid::now_v7(), 0, AgentStatus::Ok,
-                serde_json::json!({"survived": true}), vec![],
-                TokenUsage { input: 1, output: 1, cache_read: 0, cache_write: 0 }).unwrap();
+            j.cache_agent(
+                &key,
+                uuid::Uuid::now_v7(),
+                0,
+                AgentStatus::Ok,
+                serde_json::json!({"survived": true}),
+                vec![],
+                TokenUsage {
+                    input: 1,
+                    output: 1,
+                    cache_read: 0,
+                    cache_write: 0,
+                },
+            )
+            .unwrap();
         } // j dropped — simulates crash
 
         // Part 2: Re-open and verify data survived

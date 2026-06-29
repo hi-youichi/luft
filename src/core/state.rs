@@ -116,7 +116,9 @@ impl RunStore {
     pub fn upsert_agent_result(&self, cache: &AgentResultCache) -> Result<(), std::io::Error> {
         let mut guard = self.checkpoint.write().unwrap();
         if let Some(ref mut checkpoint) = *guard {
-            checkpoint.agent_results.insert(cache.agent_id, cache.clone());
+            checkpoint
+                .agent_results
+                .insert(cache.agent_id, cache.clone());
             checkpoint.updated_at = current_timestamp();
             let cp = checkpoint.clone();
             drop(guard);
@@ -179,9 +181,7 @@ impl RunStore {
 
         // Open events file
         let events_path = self.run_dir.join("events.jsonl");
-        let events_file = OpenOptions::new()
-            .read(true)
-            .open(events_path)?;
+        let events_file = OpenOptions::new().read(true).open(events_path)?;
 
         let mut checkpoint_guard = self.checkpoint.write().unwrap();
         *checkpoint_guard = Some(checkpoint.clone());
@@ -214,7 +214,12 @@ impl RunStore {
         let mut checkpoint_guard = self.checkpoint.write().unwrap();
         if let Some(ref mut checkpoint) = *checkpoint_guard {
             match event {
-                AgentEvent::AgentDone { agent_id, status, tokens, .. } => {
+                AgentEvent::AgentDone {
+                    agent_id,
+                    status,
+                    tokens,
+                    ..
+                } => {
                     let existing = checkpoint.agent_results.get(agent_id);
                     let cache = AgentResultCache {
                         agent_id: *agent_id,
@@ -223,9 +228,7 @@ impl RunStore {
                         output: existing
                             .map(|c| c.output.clone())
                             .unwrap_or(serde_json::Value::Null),
-                        findings: existing
-                            .map(|c| c.findings.clone())
-                            .unwrap_or_default(),
+                        findings: existing.map(|c| c.findings.clone()).unwrap_or_default(),
                         tokens: tokens.total(),
                         completed_at: existing
                             .map(|c| c.completed_at)
@@ -242,7 +245,14 @@ impl RunStore {
                         checkpoint.current_phase = *phase_id;
                     }
                 }
-                AgentEvent::PhaseSpanDone { span_id, name, parent_id, depth, elapsed_ms, .. } => {
+                AgentEvent::PhaseSpanDone {
+                    span_id,
+                    name,
+                    parent_id,
+                    depth,
+                    elapsed_ms,
+                    ..
+                } => {
                     checkpoint.completed_spans.push(PhaseSpanSummary {
                         id: *span_id,
                         name: name.clone(),
@@ -252,12 +262,22 @@ impl RunStore {
                         completed_at: current_timestamp(),
                     });
                 }
-                AgentEvent::RunDone { status, total_tokens, .. } => {
+                AgentEvent::RunDone {
+                    status,
+                    total_tokens,
+                    ..
+                } => {
                     checkpoint.status = match status {
-                        crate::core::contract::event::RunStatus::Completed => CheckpointStatus::Completed,
+                        crate::core::contract::event::RunStatus::Completed => {
+                            CheckpointStatus::Completed
+                        }
                         crate::core::contract::event::RunStatus::Failed => CheckpointStatus::Failed,
-                        crate::core::contract::event::RunStatus::Cancelled => CheckpointStatus::Cancelled,
-                        crate::core::contract::event::RunStatus::Partial => CheckpointStatus::Running,
+                        crate::core::contract::event::RunStatus::Cancelled => {
+                            CheckpointStatus::Cancelled
+                        }
+                        crate::core::contract::event::RunStatus::Partial => {
+                            CheckpointStatus::Running
+                        }
                     };
                     // Only overwrite if a real total was supplied; otherwise keep
                     // the figure accumulated from AgentDone events.

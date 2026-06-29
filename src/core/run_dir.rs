@@ -156,19 +156,13 @@ mod tests {
     #[test]
     fn ensure_unique_no_collision() {
         let dir = tempfile::tempdir().unwrap();
-        assert_eq!(
-            ensure_unique(dir.path(), "clean_123"),
-            "clean_123"
-        );
+        assert_eq!(ensure_unique(dir.path(), "clean_123"), "clean_123");
     }
 
     #[test]
     fn ensure_unique_with_collision() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("clean_123")).unwrap();
-        assert_eq!(
-            ensure_unique(dir.path(), "clean_123"),
-            "clean_123_2"
-        );
+        assert_eq!(ensure_unique(dir.path(), "clean_123"), "clean_123_2");
     }
 }

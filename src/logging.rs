@@ -37,7 +37,11 @@ mod tests {
     #[test]
     fn init_default_level() {
         let _ = tracing_subscriber::registry()
-            .with(tracing_subscriber::fmt::layer().with_writer(std::io::stderr).with_target(false))
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .with_writer(std::io::stderr)
+                    .with_target(false),
+            )
             .try_init();
 
         assert!(init(None, "error").is_ok());
@@ -78,18 +82,26 @@ mod tests {
     /// None, the filter comes from the env var.
     #[test]
     fn init_uses_rust_log_env_var() {
-        unsafe { std::env::set_var("RUST_LOG", "error"); }
+        unsafe {
+            std::env::set_var("RUST_LOG", "error");
+        }
         let result = init(None, "info");
-        unsafe { std::env::remove_var("RUST_LOG"); }
+        unsafe {
+            std::env::remove_var("RUST_LOG");
+        }
         assert!(result.is_ok());
     }
 
     /// Explicit level overrides RUST_LOG env var.
     #[test]
     fn init_explicit_level_overrides_rust_log() {
-        unsafe { std::env::set_var("RUST_LOG", "info"); }
+        unsafe {
+            std::env::set_var("RUST_LOG", "info");
+        }
         let result = init(Some("trace"), "error");
-        unsafe { std::env::remove_var("RUST_LOG"); }
+        unsafe {
+            std::env::remove_var("RUST_LOG");
+        }
         assert!(result.is_ok());
     }
 
@@ -97,16 +109,22 @@ mod tests {
     /// falls back to RUST_LOG.
     #[test]
     fn init_invalid_level_uses_rust_log_fallback() {
-        unsafe { std::env::set_var("RUST_LOG", "warn"); }
+        unsafe {
+            std::env::set_var("RUST_LOG", "warn");
+        }
         let result = init(Some(":::"), "error");
-        unsafe { std::env::remove_var("RUST_LOG"); }
+        unsafe {
+            std::env::remove_var("RUST_LOG");
+        }
         assert!(result.is_ok());
     }
 
     /// No RUST_LOG env var, no explicit level → uses default.
     #[test]
     fn init_no_rust_log_uses_default() {
-        unsafe { std::env::remove_var("RUST_LOG"); }
+        unsafe {
+            std::env::remove_var("RUST_LOG");
+        }
         assert!(init(None, "warn").is_ok());
     }
 
