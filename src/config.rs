@@ -64,6 +64,11 @@ pub fn save_config(config: &MaestroConfig) -> Result<(), String> {
 }
 
 /// Resolve default backend: explicit arg > config default > auto-detect.
+///
+/// Auto-detect logic:
+/// - 0 real backends → "mock" (silent fallback)
+/// - 1 real backend  → use it
+/// - ≥2 real backends → prompt user, persist choice to config
 pub fn resolve_default_backend(user_specified: Option<&str>) -> String {
     if let Some(id) = user_specified.filter(|s| !s.is_empty()) {
         return id.to_string();
@@ -73,5 +78,26 @@ pub fn resolve_default_backend(user_specified: Option<&str>) -> String {
             return id;
         }
     }
-    crate::backend::detect_backend().to_string()
+    let available = crate::backend::detect_available_backends();
+    match available.len() {
+        0 => "mock".to_string(),
+        1 => available[0].to_string(),
+        _ => match crate::backend::prompt_backend_selection(&available) {
+            Ok(selected) => {
+                let mut cfg = load_config().unwrap_or_default();
+                cfg.backend.default = Some(selected.clone());
+                if let Err(e) = save_config(&cfg) {
+                    eprintln!("warning: could not save config: {e}");
+                }
+                selected
+            }
+            Err(e) => {
+                eprintln!(
+                    "warning: backend selection failed ({e}), using {}",
+                    available[0]
+                );
+                available[0].to_string()
+            }
+        },
+    }
 }

@@ -93,7 +93,7 @@ struct GenerateArgs {
     #[arg(
         short,
         long,
-        help = "Backend to use (default: auto-detect opencode, fallback mock)"
+        help = "Backend to use (default: auto-detect or prompt)"
     )]
     backend: Option<String>,
 }
@@ -119,7 +119,7 @@ struct RunArgs {
     #[arg(
         short,
         long,
-        help = "Backend to use (default: auto-detect opencode, fallback mock)"
+        help = "Backend to use (default: auto-detect or prompt)"
     )]
     backend: Option<String>,
 
@@ -276,6 +276,7 @@ mod tests {
                 auto_fix: false,
                 max_fix_attempts: 3,
                 no_artifacts: false,
+                verbose: false,
             }),
             log_level: None,
         };
@@ -305,6 +306,7 @@ mod tests {
                 auto_fix: false,
                 max_fix_attempts: 3,
                 no_artifacts: false,
+                verbose: false,
             }),
             log_level: None,
         };

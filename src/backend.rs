@@ -2,7 +2,8 @@
 
 use anyhow::Result;
 use maestro::core::{AgentBackend, MockBackend, MockBehavior, TokenUsage};
-use std::path::PathBuf;
+use std::io::{self, BufRead, Write};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 /// Construct a backend by id. `emit_raw_events` toggles the ACP backend's raw
@@ -67,6 +68,61 @@ pub fn detect_backend() -> &'static str {
     }
 }
 
+/// Detect all available real LLM backends (excludes mock).
+/// Checks PATH and config override for each known backend binary.
+pub fn detect_available_backends() -> Vec<&'static str> {
+    let cfg = crate::config::load_config();
+    let override_binary = cfg.as_ref().and_then(|c| c.backend.acp.binary.as_deref());
+
+    ["opencode", "loom-acp"]
+        .into_iter()
+        .filter(|id| is_binary_available(id, override_binary))
+        .collect()
+}
+
+/// Check whether a backend's binary is available on PATH or at an absolute
+/// config-overridden path.
+fn is_binary_available(id: &str, override_binary: Option<&Path>) -> bool {
+    let binary = override_binary
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(id));
+    if binary.is_absolute() {
+        binary.exists()
+    } else {
+        which_exists(binary.to_str().unwrap_or(id))
+    }
+}
+
+/// Prompt the user to select from multiple available backends.
+/// Non-interactive (piped stdin/stdout) auto-selects the first option.
+pub fn prompt_backend_selection(backends: &[&str]) -> Result<String> {
+    if !console::user_attended() {
+        return Ok(backends[0].to_string());
+    }
+
+    eprintln!("Multiple backends available. Select one:");
+    for (i, id) in backends.iter().enumerate() {
+        eprintln!("  [{}] {}", i + 1, id);
+    }
+    eprint!("Enter number (default 1): ");
+    io::stderr().flush().ok();
+
+    let mut line = String::new();
+    io::stdin().lock().read_line(&mut line)?;
+
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return Ok(backends[0].to_string());
+    }
+    let idx: usize = trimmed
+        .parse()
+        .map_err(|_| anyhow::anyhow!("invalid selection: '{trimmed}', expected a number"))?;
+    if idx == 0 || idx > backends.len() {
+        anyhow::bail!("selection {idx} out of range (1-{})", backends.len());
+    }
+    Ok(backends[idx - 1].to_string())
+}
+
 pub(crate) fn which_exists(cmd: &str) -> bool {
     let checker = if cfg!(windows) { "where" } else { "which" };
     std::process::Command::new(checker)
@@ -119,6 +175,60 @@ mod tests {
             id == "opencode" || id == "mock",
             "unexpected backend id: {id}",
         );
+    }
+
+    // ── detect_available_backends ──────────────────────────────
+
+    #[test]
+    fn detect_available_backends_returns_subset() {
+        let backends = detect_available_backends();
+        for id in &backends {
+            assert!(
+                *id == "opencode" || *id == "loom-acp",
+                "unexpected backend id: {id}",
+            );
+        }
+    }
+
+    // ── is_binary_available ─────────────────────────────────────
+
+    #[test]
+    fn is_binary_available_path_command() {
+        let cmd = if cfg!(windows) { "cmd" } else { "sh" };
+        assert!(is_binary_available(cmd, None));
+    }
+
+    #[test]
+    fn is_binary_available_missing_command() {
+        assert!(!is_binary_available("nonexistent_xyzzy_42", None));
+    }
+
+    #[test]
+    fn is_binary_available_absolute_override_existing() {
+        let cmd = if cfg!(windows) { "cmd" } else { "sh" };
+        let path = std::process::Command::new(if cfg!(windows) { "where" } else { "which" })
+            .arg(cmd)
+            .output()
+            .unwrap();
+        let resolved = String::from_utf8_lossy(&path.stdout);
+        let first = resolved.lines().next().unwrap_or(cmd);
+        let abs = std::path::PathBuf::from(first);
+        assert!(is_binary_available(cmd, Some(&abs)));
+    }
+
+    #[test]
+    fn is_binary_available_absolute_override_missing() {
+        let abs = std::path::PathBuf::from("/__nonexistent__/binary_42");
+        assert!(!is_binary_available("opencode", Some(&abs)));
+    }
+
+    // ── prompt_backend_selection ────────────────────────────────
+
+    #[test]
+    fn prompt_backend_selection_single() {
+        let result = prompt_backend_selection(&["opencode"]);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "opencode");
     }
 
     // ── which_exists ────────────────────────────────────────────
