@@ -12,9 +12,12 @@ use crate::RunArgs;
 use anyhow::Result;
 use maestro::core::contract::backend::RunContext;
 use maestro::core::contract::event::AgentEvent;
+use maestro::core::contract::ids::AgentId;
 use maestro::runtime::Runtime;
 use maestro::service::run as svc;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 pub async fn run_workflow(args: RunArgs) -> Result<()> {
     let is_nl = args.nl.is_some();
@@ -91,6 +94,7 @@ pub async fn run_workflow(args: RunArgs) -> Result<()> {
         };
 
         let backend2 = backend::create_backend(&backend_id, !args.no_acp_raw)?;
+
         let prepared = svc::prepare(&spec, backend2, &base_dir, &ctx).await?;
 
         if spec.resuming {
@@ -124,6 +128,7 @@ pub async fn run_workflow(args: RunArgs) -> Result<()> {
             args.output.clone(),
             logger,
             artifact_writer,
+            args.verbose,
         )
         .await;
 
@@ -226,14 +231,32 @@ async fn run_headless(
     output: Option<PathBuf>,
     mut logger: Option<EventLogger>,
     mut artifact_writer: Option<ArtifactWriter>,
+    verbose: bool,
 ) -> Result<()> {
+    use maestro::core::contract::event::ProgressDelta;
+    use std::collections::HashMap;
     use tokio::time::Duration;
 
     let tty = console::user_attended();
     let rx = run_ctx.events.subscribe();
+    let tool_calls: Arc<Mutex<HashMap<AgentId, Vec<String>>>> = Arc::new(Mutex::new(HashMap::new()));
+    let tool_calls_clone = tool_calls.clone();
     let printer = tokio::spawn(async move {
         let mut renderer = PhaseRenderer::new(tty);
         let skipped = drain_events(rx, |evt| {
+            if let AgentEvent::AgentProgress {
+                agent_id,
+                delta: ProgressDelta::ToolCall { ref name, .. },
+                ..
+            } = evt
+            {
+                tool_calls_clone
+                    .lock()
+                    .unwrap()
+                    .entry(*agent_id)
+                    .or_default()
+                    .push(name.clone());
+            }
             renderer.handle(evt);
             if let Some(l) = logger.as_mut() {
                 let _ = l.write(evt);
@@ -263,6 +286,9 @@ async fn run_headless(
             if let Some(path) = &output {
                 write_report(path, &report)?;
                 eprintln!("Report written to {}", path.display());
+            }
+            if verbose {
+                print_verbose_summary(&tool_calls);
             }
             print_report(&report);
             Ok(())
@@ -371,6 +397,34 @@ async fn try_fix_script(script: &str, error: &str, backend_id: &str) -> Result<S
     }
     // Fallback: try the whole output as Lua code
     Ok(content.to_string())
+}
+
+fn print_verbose_summary(tool_calls: &Arc<Mutex<HashMap<AgentId, Vec<String>>>>) {
+    let calls = tool_calls.lock().unwrap();
+    if calls.is_empty() {
+        println!();
+        println!("=== Structured Output Summary ===");
+        println!("No tool calls recorded.");
+        return;
+    }
+
+    let total_agents = calls.len();
+    let structured_agents: Vec<(&AgentId, &Vec<String>)> = calls
+        .iter()
+        .filter(|(_, names)| names.iter().any(|n| n == "structured_output"))
+        .collect();
+
+    println!();
+    println!("=== Structured Output Summary ===");
+    println!("Agents with tool calls: {total_agents}");
+    println!("Agents that called structured_output: {}", structured_agents.len());
+
+    for (agent_id, names) in calls.iter() {
+        let called = names.iter().any(|n| n == "structured_output");
+        let all_tools = names.join(", ");
+        let mark = if called { "✓" } else { "✗" };
+        println!("  {agent_id} {mark}  tools: {all_tools}");
+    }
 }
 
 #[cfg(test)]
@@ -600,6 +654,7 @@ mod tests {
             Some(output.clone()),
             None,
             None,
+            false,
         )
         .await
         .unwrap();
@@ -620,7 +675,7 @@ mod tests {
         };
         let rt = empty_script_runtime(&run_ctx).await;
 
-        run_headless(run_ctx, rt, "".to_string(), None, None, None)
+        run_headless(run_ctx, rt, "".to_string(), None, None, None, false)
             .await
             .unwrap();
     }
@@ -639,10 +694,11 @@ mod tests {
         let result = run_headless(
             run_ctx,
             rt,
-            "not valid lua <<<>>>".to_string(),
+            "bad lua".to_string(),
             None,
             None,
             None,
+            false,
         )
         .await;
         assert!(result.is_err(), "expected Err on script failure");
@@ -665,7 +721,7 @@ mod tests {
         };
         let rt = empty_script_runtime(&run_ctx).await;
 
-        run_headless(run_ctx, rt, "".to_string(), None, Some(logger), None)
+        run_headless(run_ctx, rt, "".to_string(), None, Some(logger), None, false)
             .await
             .unwrap();
 

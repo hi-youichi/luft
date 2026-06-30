@@ -166,6 +166,9 @@ struct RunArgs {
 
     #[arg(long, help = "Disable writing agent artifact reports to disk")]
     no_artifacts: bool,
+
+    #[arg(long, help = "Show MCP tool call summary after execution")]
+    verbose: bool,
 }
 
 #[tokio::main]
