@@ -35,14 +35,14 @@
 | `run --resume` | 复用最近可恢复 run 的 `workflow.lua` | ✅ |
 | `run --headless` | JSONL 事件流输出 | ✅ |
 | `run --approve` | 跳过审批提示 | ✅ |
-| `run -b <backend>` | backend 工厂：`mock` / `opencode` | ✅ |
+| `run -b <backend>` | backend 工厂：`mock` / `opencode` / `loom-acp`（默认：自动探测或交互选择） | ✅ |
 | `list [-l N]` | 列出历史 run + 状态 | ✅ |
 | `status <id>` | run 状态 + token + phase + findings | ✅ |
 | `logs <id> [-l N]` | 事件流日志 | ✅ |
 | `workflows` | 列出 `~/.maestro/workflows/*.lua` | ✅ |
 | `save <name> <out>` | 保存工作流（当前为占位实现） | ⚠️ |
 
-`backend` 工厂在 `main.rs` 内联模块里：`mock` → `MockBackend`（10ms 成功），`opencode` → `AcpAdapter::default_opencode()`。
+`backend` 工厂在 `main.rs` 内联模块里：`mock` → `MockBackend`（10ms 成功），`opencode` / `loom-acp` → `AcpAdapter`（ACP 协议子进程）。未指定 `--backend` 时，优先级链为 CLI 参数 > config 文件 `backend.default` > 自动探测；自动探测扫描 `opencode` 和 `loom-acp` 二进制，单个可用直接使用，多个可用时交互式编号选择并持久化到 config，无可用后端回退 `mock`。
 
 ---
 

@@ -105,7 +105,7 @@ maestro run "分析代码质量" --confirm
 
 Planner 会自动规划阶段（如 discovery → analysis → synthesis），生成完整的 Lua 编排脚本，经语法校验后交由运行时执行。
 生成质量取决于后端模型能力，内置最多 3 次自纠错重试。
-NL 模式自动探测可用后端（优先 opencode）；若未安装则提示安装。
+NL 模式自动探测可用后端（扫描 `opencode`、`loom-acp`）；单个可用直接使用，多个可用时交互式选择并持久化，无可用后端则回退 `mock`。
 
 ## 示例
 

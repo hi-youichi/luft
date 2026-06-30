@@ -230,39 +230,28 @@ $ maestro backend set mock
 
 ```
          CLI 参数                Config 文件               Auto-detect
-    maestro run --backend X    $XDG_CONFIG_HOME/         which opencode
-                                maestro/config.toml
+    maestro run --backend X    $XDG_CONFIG_HOME/         detect_available_backends()
+                                maestro/config.toml       (扫描 opencode/loom-acp)
         ↓                         ↓                         ↓
     explicit                   persisted                  fallback
     (最高优先级)                 (次高)                    (最低)
 
-    merge_with_backend_factory:
+    resolve_default_backend:
        用户指定 → 用指定值
        无指定 → config.default 有 → 用 config 值
-       无指定 → config.default 无 → auto-detect
+       无指定 → config.default 无 → detect_available_backends():
+           0 个真实后端 → "mock"（静默回退）
+           1 个        → 直接使用
+           ≥2 个        → prompt_backend_selection() 交互选择，结果持久化到 config
 ```
 
-当前 `backend.rs` 的 `detect_backend()` 只做 auto-detect，改为：
-
-```rust
-pub fn resolve_backend(user_specified: Option<&str>) -> Result<String> {
-    if let Some(id) = user_specified {
-        return Ok(id.to_string());
-    }
-    if let Some(config) = load_config().ok().flatten() {
-        if let Some(default) = config.backend.default {
-            return Ok(default);
-        }
-    }
-    Ok(detect_backend().to_string())
-}
-```
+非交互环境（管道/CI，`console::user_attended() == false`）跳过提示，自动选第一个可用后端。
 
 ---
 
 ## 6. 当前状态与局限（v0.1）
 
-- v0.1 只内置 `mock` 和 `opencode` 两个后端；多后端插件化是 v0.2
+- v0.1 内置 `mock`、`opencode`、`loom-acp` 三个后端；多后端插件化是 v0.2
 - `check` 的 ACP 握手不会真正发 `session/new`+`session/prompt`，因此无法验证 LLM 本身的可用性（API key、额度等）
 - `config` 命令的 key 路径当前只支持后端相关字段（`backend.*`）；全局配置扩展留待后续
 - `set` 命令不做后端 id 校验（允许设一个不存在的 id），`run` 时失败
