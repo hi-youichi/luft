@@ -1,29 +1,28 @@
 # cli 模块架构
 
-> **命令行入口 + 运行编排 + 输出模式。** clap 解析命令，编排一次 run 的完整生命周期（脚本解析 → journal → scheduler → runtime → 事件落盘 → 报告），并以 headless 形式输出。
+> **命令行入口 + 命令分发 + 输出模式。** clap 解析命令并 dispatch 到 `commands` 子命令处理器；`commands` 调用 `service` 完成核心编排。本文档涵盖 main.rs + commands 的 CLI 侧架构；run 生命周期编排详见 [service.md](./service.md)。
 
-源码：[`src/main.rs`](../../src/main.rs)（二进制入口）+ `src/cli.rs`（运行逻辑）
+源码：[`src/main.rs`](../../src/main.rs)（二进制入口 + clap 定义 + dispatch）+ [`src/commands/`](../../src/commands/)（子命令处理器）+ [`src/service/`](../../src/service/)（运行编排）
 
 ---
 
 ## 1. 职责与边界
 
-`cli` 是把所有模块**装配成一次完整运行**的顶层编排者。它是唯一同时接触 `planner`、`runtime`、`core`（scheduler/journal/state）与 `adapters`（backend 工厂）的模块。
+`cli` 层包含两个关注点：**参数解析/分发**（main.rs）和 **表示层/用户交互**（commands）。核心 run 编排已拆分到 `service`。
 
 ```
-   main.rs (clap)                          cli.rs (run 编排)
-   ├─ Run    ─► run_workflow ──┐
-   │            backend 工厂   │           run(backend, args):
-   │            NL→planner     │             解析 script/run_id/resuming
-   │            审批提示        └──────────►   JournalStore(init|open)
-   │                                          Scheduler + 事件总线
-   ├─ List/Status/Logs ─► 直接读 RunStore     spawn 事件→RunStore 转发
-   ├─ Workflows/Save                          Runtime::new
-    └─                                         └─ Headless ──► run_headless
-                                                   execute_runtime(spawn_blocking + RunDone)
+   main.rs (clap + dispatch)               commands/ (presentation)
+   ├─ Run    ─► commands::run::run_workflow ──┐
+   │            backend 解析 + 脚本确认      │
+   │            headless / phase renderer     │     service/run.rs (library):
+   │                                         └───►   resolve → prepare → execute
+   ├─ Generate ─► commands::generate              service/query.rs:
+   ├─ List/Status/Logs ─► commands::{list,...}     list / status / events / report
+   ├─ Backend ─► commands::backend
+   └─ Lua/MCP ─► commands::{lua_validate,mcp_server}
 ```
 
-**边界**：`main.rs` 负责**参数与一次性命令**（含 NL 规划、审批、backend 选择）；`cli.rs` 负责**run 的运行时编排**（journal/scheduler/runtime 装配、事件落盘、输出）。两者以 `cli::RunArgs` 为接口。
+**边界**：`main.rs` 负责**参数解析与 dispatch**；`commands/` 负责**表示层**（参数、审批、输出格式化）；`service` 负责**run 编排与查询**。`commands` → `service` 单向依赖。详见 [commands.md](./commands.md) 和 [service.md](./service.md)。
 
 ---
 
@@ -42,7 +41,9 @@
 | `workflows` | 列出 `~/.maestro/workflows/*.lua` | ✅ |
 | `save <name> <out>` | 保存工作流（当前为占位实现） | ⚠️ |
 
-`backend` 工厂在 `main.rs` 内联模块里：`mock` → `MockBackend`（10ms 成功），`opencode` / `loom-acp` → `AcpAdapter`（ACP 协议子进程）。未指定 `--backend` 时，优先级链为 CLI 参数 > config 文件 `backend.default` > 自动探测；自动探测扫描 `opencode` 和 `loom-acp` 二进制，单个可用直接使用，多个可用时交互式编号选择并持久化到 config，无可用后端回退 `mock`。
+`backend` 工厂在 `main.rs` 内联模块里：`mock` → `MockBackend`（10ms 成功），`opencode` / `loom-acp` → `AcpAdapter`（ACP 协议子进程）。未指定 `--backend` 时，优先级链为 CLI 参数 > config 文件 `backend.default` > 自动探测；自动探测扫描 `opencode` 和 `loom-acp` 二进制，单个可用直接使用，多个可用时交互式编号选择并持久化到 config，无可用后端回退 `mock`。详见 [backend-command.md](../design/backend-command.md)。
+
+详细的命令清单和 handler 架构见 [commands.md](./commands.md)；run 生命周期编排见 [service.md](./service.md)。
 
 ---
 
@@ -116,5 +117,6 @@
 ## 8. 相关文档
 
 - 总览：[../architecture.md](../architecture.md)
+- 表示层：[commands.md](./commands.md)（子命令处理器）
+- 库层：[service.md](./service.md)（run 编排 + 查询 API）、[storage.md](./storage.md)（SQLite 持久化）
 - 装配的模块：planner.md（NL→脚本）、[runtime.md](./runtime.md)（执行）、core.md（scheduler/journal/state）、[adapters.md](./adapters.md)（backend 工厂）
-- 旧版设计稿：cli.md（已归档）

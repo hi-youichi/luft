@@ -11,6 +11,9 @@
 | **adapters** | OpenCode ACP 真实后端（`AgentBackend` 实现） | [architecture/adapters.md](./architecture/adapters.md) |
 | **planner** | 自然语言 → Lua 脚本（agent 写脚本 + 校验重试） | [architecture/planner.md](./architecture/planner.md) |
 | **mcp** | MCP 数据面服务器（5 个上报工具，stdio JSON-RPC） | [architecture/mcp.md](./architecture/mcp.md) |
+| **service** | Presentation-free 运行编排 + 查询 API（commands 与库逻辑的接缝） | [architecture/service.md](./architecture/service.md) |
+| **storage** | SQLite 结构化持久化（7 表 + UI-ready 查询 API） | [architecture/storage.md](./architecture/storage.md) |
+| **commands** | CLI 子命令处理器（presentation 层，14 个子模块） | [architecture/commands.md](./architecture/commands.md) |
 | **cli** | 命令行入口 + run 生命周期编排 + headless 输出 | [architecture/cli.md](./architecture/cli.md) |
 
 ## 模块布局
@@ -22,21 +25,41 @@ maestro
 │   ├── scheduler/     ← 并发调度：信号量 + 配额 + 重试 + 取消 + 事件广播
 │   ├── journal.rs     ← JournalStore：cache key 索引 + O(1) 查询 + ResumeContext
 │   ├── state.rs       ← RunStore / RunCheckpoint：JSONL 事件日志 + checkpoint 落盘
+│   ├── run_dir.rs     ← run 目录命名：slug 派生 + 唯一性保证
 │   └── mock_backend.rs← MockBackend：确定性测试后端
 ├── runtime/           ← mlua 编排运行时
 │   ├── sandbox.rs     ← Lua VM 沙箱 + SDK 原语桥接 + Lua↔JSON 转换
+│   ├── sdk/           ← 10 个 SDK 原语（agent / parallel / pipeline / converge / report / …）
 │   ├── pipeline.rs    ← 多阶段处理引擎（当前：逐阶段栅栏 + 内联 handler）
 │   ├── converge.rs    ← 对抗性收敛验证
 │   └── error.rs       ← ExecLimits（已定义未强制）+ ScriptError
-├── adapters/          ← AcpAdapter：opencode ACP 真实后端（client 侧）
+├── adapters/          ← AcpAdapter：opencode / loom-acp ACP 真实后端（client 侧）
 │   ├── acp_adapter.rs ← AcpConfig + 一次性会话：spawn → init → session → prompt
 │   ├── update_mapper.rs← ACP SessionUpdate → ProgressDelta + message/token 累积
 │   ├── permission.rs  ← 非交互 request_permission 自动决策（纯逻辑 + 单测）
 │   └── result_collector.rs← stop_reason + message → AgentResult（findings 文本回退）
+├── service/           ← Presentation-free 运行编排 + 查询 API
+│   ├── run.rs         ← run 生命周期：resolve → prepare → execute
+│   └── query.rs       ← 只读查询：list / status / events / report / cancel
+├── storage/           ← SQLite 结构化持久化
+│   ├── db.rs          ← 连接池（WAL + FK）+ 迁移
+│   ├── writer.rs      ← AgentEvent → SQL 写入路径
+│   ├── reader.rs      ← UI-ready 查询 API（run overview / agent turns / spans）
+│   └── error.rs       ← StorageError
+├── commands/          ← CLI 子命令处理器（presentation 层）
+│   ├── run.rs         ← run 命令（backend 解析 + 脚本确认 + 输出驱动）
+│   ├── generate.rs    ← generate 命令（NL → Lua，不执行）
+│   ├── backend.rs     ← backend 子命令（list / info / check / config / set）
+│   ├── phase_renderer.rs ← TUI 进度条（phase / agent / log → stderr）
+│   ├── event_log.rs   ← 可选文件日志（pretty / jsonl）
+│   ├── artifact_writer.rs ← 最终报告写出（-o，含 markdown 字段写干净 Markdown）
+│   └── ...            ← list / status / logs / clear / save / workflows / lua_validate / mcp_server
 ├── planner.rs         ← NL → Lua 规划器（agent 生成脚本 + 语法校验/重试）
 ├── mcp.rs             ← MCP 数据面服务器（5 个工具 + stdio JSON-RPC）
-├── cli.rs             ← run 生命周期编排（journal/scheduler/runtime 装配）
-└── main.rs            ← clap 命令行入口（含 NL 规划、审批、backend 工厂）
+├── backend.rs         ← Backend 工厂：create_backend + detect_available_backends + prompt
+├── config.rs          ← TOML 配置读写 + resolve_default_backend（CLI > config > auto-detect）
+├── logging.rs         ← tracing 全局订阅（filter：--log-level > RUST_LOG > default）
+└── main.rs            ← clap 命令行入口 + dispatch
 ```
 
 ## 核心抽象
@@ -68,16 +91,16 @@ blake3(prompt + model + phase) 确定性去重键。runtime 的 `agent()` 在提
 ## 数据流：一次 Workflow 执行的完整路径
 
 ```
-1. main.rs 解析参数 → (NL 经 planner 生成脚本 + 审批) → 构建 cli::RunArgs
-2. cli::run 装配：JournalStore(init|open) + Scheduler + 事件总线 + 事件→RunStore 落盘任务
+1. main.rs 解析参数 → commands::run → service::run::resolve_fresh (NL 经 planner / 读 workflow)
+2. service::run::prepare 装配：JournalStore(init|open) + Scheduler + 事件总线 + SQLite writer + 事件双写转发任务
 3. Runtime::new 注册 SDK 原语到 Lua 沙箱（屏蔽 io/os/fs/network）
 4. spawn_blocking 驱动 Runtime::execute(script)
 5. 脚本调用 agent()/parallel()/pipeline()/converge()
 6. SDK 桥接层 → build_task → journal cache 检查 → handle.block_on(Scheduler.run_agent)
 7. Scheduler → 选 Backend → 执行（重试/超时/取消/schema 校验）→ AgentResult
-8. journal.record_result 回写（cache key 索引）；AgentEvent 广播
+8. journal.record_result 回写（cache key 索引）；AgentEvent 广播 → 事件转发任务双写 journal + SQLite
 9. 脚本调用 report(value) → 设置最终输出
-10. emit RunDone → 持久化 checkpoint.json + events.jsonl
+10. emit RunDone → 持久化 checkpoint.json + events.jsonl + SQLite UPDATE
 ```
 
 逐模块的内部数据流见各自专篇。
@@ -85,16 +108,18 @@ blake3(prompt + model + phase) 确定性去重键。runtime 的 `agent()` 在提
 ## 依赖关系
 
 ```
-                    cli ──► planner ──► runtime ──► core ◄── adapters
-                     └────────────────────────────► core ◄── mcp
+  commands ──► service ──► planner ──► runtime ──► core ◄── adapters
+                        └──────────► core ◄── mcp
+                        └──────► storage ──► core
 ```
 
-`core` 无上游依赖；其余模块都依赖 `core` 的合约。第三方关键依赖：
+`core` 无上游依赖；`storage` 依赖 `core` 的类型；`service` 装配 core + runtime + storage + planner；`commands` 是表示层，依赖 `service`。第三方关键依赖：
 
 | crate | 用途 |
 |-------|------|
 | `mlua 0.10`（lua54 + vendored + async + serialize + send） | Lua 5.4 VM |
 | `tokio 1`（full） | 异步运行时 |
+| `sqlx 0.8`（sqlite） | SQLite 结构化持久化 |
 | `agent-client-protocol 0.11.1` | ACP schema 与连接原语 |
 | `dashmap 6` · `tokio-util 0.7` | 并发 map · CancellationToken |
 | `blake3 1` · `unicode-normalization 0.1` | 确定性缓存键 |
