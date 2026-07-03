@@ -169,6 +169,12 @@ struct RunArgs {
 
     #[arg(long, help = "Show MCP tool call summary after execution")]
     verbose: bool,
+
+    #[arg(long, help = "Model to use for LLM calls (overrides config)")]
+    model: Option<String>,
+
+    #[arg(long, help = "Model for NL→Lua planning only (overrides --model for planner)")]
+    planner_model: Option<String>,
 }
 
 #[tokio::main]
@@ -277,6 +283,8 @@ mod tests {
                 max_fix_attempts: 3,
                 no_artifacts: false,
                 verbose: false,
+                model: None,
+                planner_model: None,
             }),
             log_level: None,
         };
@@ -307,6 +315,8 @@ mod tests {
                 max_fix_attempts: 3,
                 no_artifacts: false,
                 verbose: false,
+                model: None,
+                planner_model: None,
             }),
             log_level: None,
         };

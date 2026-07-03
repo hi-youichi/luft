@@ -18,7 +18,7 @@ pub async fn generate_script(args: GenerateArgs) -> Result<()> {
         eprintln!("ℹ  no --backend specified, auto-detected: {}", backend_id);
     }
 
-    let backend = backend::create_backend(&backend_id, false)?;
+    let backend = backend::create_backend(&backend_id, false, None)?;
     generate_script_with_backend(args, backend).await
 }
 

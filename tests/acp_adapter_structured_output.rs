@@ -66,6 +66,7 @@ async fn acp_adapter_extracts_structured_output_from_tool_call() {
         connect_timeout: Duration::from_secs(10),
         emit_raw_events: true,
         env_passthrough: fake_acp_env(),
+        model: None,
     };
     let adapter = AcpAdapter::new(config);
 

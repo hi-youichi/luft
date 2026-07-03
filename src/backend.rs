@@ -8,7 +8,12 @@ use std::sync::Arc;
 
 /// Construct a backend by id. `emit_raw_events` toggles the ACP backend's raw
 /// `session/update` passthrough (ignored by the mock backend).
-pub fn create_backend(id: &str, emit_raw_events: bool) -> Result<Arc<dyn AgentBackend>> {
+/// `model` sets the LLM model for ACP backends (passed via ACP config options).
+pub fn create_backend(
+    id: &str,
+    emit_raw_events: bool,
+    model: Option<String>,
+) -> Result<Arc<dyn AgentBackend>> {
     match id {
         "mock" => Ok(Arc::new(MockBackend::new(
             "mock",
@@ -21,6 +26,7 @@ pub fn create_backend(id: &str, emit_raw_events: bool) -> Result<Arc<dyn AgentBa
         "opencode" => Ok(Arc::new(maestro::adapters::AcpAdapter::new(
             apply_acp_overrides(maestro::adapters::AcpConfig {
                 emit_raw_events,
+                model: model.clone(),
                 ..Default::default()
             }),
         ))),
@@ -30,6 +36,7 @@ pub fn create_backend(id: &str, emit_raw_events: bool) -> Result<Arc<dyn AgentBa
                 binary: PathBuf::from("loom-acp"),
                 acp_args: vec![],
                 emit_raw_events,
+                model,
                 ..Default::default()
             }),
         ))),
@@ -142,25 +149,31 @@ mod tests {
 
     #[test]
     fn create_backend_returns_mock() {
-        let backend = create_backend("mock", false).unwrap();
+        let backend = create_backend("mock", false, None).unwrap();
         assert_eq!(backend.id(), "mock");
     }
 
     #[test]
     fn create_backend_returns_opencode() {
-        let backend = create_backend("opencode", false).unwrap();
+        let backend = create_backend("opencode", false, None).unwrap();
         assert_eq!(backend.id(), "opencode");
     }
 
     #[test]
     fn create_backend_emit_raw_events_true() {
-        let backend = create_backend("opencode", true).unwrap();
+        let backend = create_backend("opencode", true, None).unwrap();
+        assert_eq!(backend.id(), "opencode");
+    }
+
+    #[test]
+    fn create_backend_with_model() {
+        let backend = create_backend("opencode", false, Some("claude-3".into())).unwrap();
         assert_eq!(backend.id(), "opencode");
     }
 
     #[test]
     fn create_backend_unknown_id() {
-        match create_backend("bogus", false) {
+        match create_backend("bogus", false, None) {
             Err(e) => assert!(e.to_string().contains("unknown backend")),
             Ok(_) => panic!("expected error for unknown backend"),
         }

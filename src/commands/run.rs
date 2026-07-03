@@ -34,14 +34,62 @@ pub async fn run_workflow(args: RunArgs) -> Result<()> {
             backend_id
         );
     }
+    let config = crate::config::load_config();
+    let model = crate::config::resolve_model(
+        args.model.as_deref(),
+        config.as_ref().and_then(|c| c.backend.model.as_deref()),
+    );
+    if let Some(ref m) = model {
+        eprintln!("\u{2139}  using model: {}", m);
+    }
+    let planner_cfg = {
+        let planner_model = crate::config::resolve_planner_model(
+            args.planner_model.as_deref(),
+            config.as_ref().and_then(|c| c.planner.model.as_deref()),
+            model.as_deref(),
+        );
+        maestro::planner::PlannerConfig {
+            planner_model,
+            ..Default::default()
+        }
+    };
     let base_dir = runs_base_dir();
+
+    let task_label_for_detect = args
+        .nl
+        .as_deref()
+        .map(str::to_string)
+        .or_else(|| args.workflow.as_deref().map(|wf| wf.display().to_string()));
+
+    let mut resume_override: Option<String> = None;
+    if !args.resume && console::user_attended() {
+        if let Some(ref task) = task_label_for_detect {
+            if let Ok(Some(prev)) = svc::find_resumable_by_task(task, &base_dir) {
+                let agent_count = prev.checkpoint.agent_results.len();
+                let ago = svc::format_duration_ago(prev.checkpoint.updated_at);
+                eprint!(
+                    "\u{26a0} Previous run detected (\u{1f552} {}, {} agents) Resume? [Y/n] ",
+                    ago, agent_count
+                );
+                std::io::Write::flush(&mut std::io::stdout())?;
+                let mut input = String::new();
+                std::io::stdin().read_line(&mut input)?;
+                let trimmed = input.trim();
+                if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("y") {
+                    resume_override = Some(prev.run_dir_name);
+                }
+            }
+        }
+    }
 
     // Resolve a fully-specified run (script + run id + resume flag).
     let mut spec = if args.resume {
         let run_dir = svc::latest_resumable(&base_dir)?;
         svc::resolve_resume(&run_dir, &base_dir)?
+    } else if let Some(run_dir) = resume_override {
+        svc::resolve_resume(&run_dir, &base_dir)?
     } else {
-        let backend = backend::create_backend(&backend_id, !args.no_acp_raw)?;
+        let backend = backend::create_backend(&backend_id, !args.no_acp_raw, model.clone())?;
         let source = if let Some(nl) = args.nl.as_deref() {
             svc::ScriptSource::Nl(nl)
         } else if let Some(wf) = args.workflow.as_deref() {
@@ -52,7 +100,7 @@ pub async fn run_workflow(args: RunArgs) -> Result<()> {
         } else {
             anyhow::bail!("either a natural language prompt or --workflow <file> is required");
         };
-        let mut s = svc::resolve_fresh(source, backend).await?;
+        let mut s = svc::resolve_fresh(source, backend, planner_cfg).await?;
         svc::assign_dir_name(&mut s, &base_dir);
         s
     };
@@ -93,7 +141,7 @@ pub async fn run_workflow(args: RunArgs) -> Result<()> {
             events: tx,
         };
 
-        let backend2 = backend::create_backend(&backend_id, !args.no_acp_raw)?;
+        let backend2 = backend::create_backend(&backend_id, !args.no_acp_raw, model.clone())?;
 
         let prepared = svc::prepare(&spec, backend2, &base_dir, &ctx).await?;
 
@@ -146,7 +194,7 @@ pub async fn run_workflow(args: RunArgs) -> Result<()> {
                     "\u{26a0} Attempt {}/{} \u{2014} fixing script via LLM...",
                     attempt, max_att
                 );
-                match try_fix_script(&current_script, &e.to_string(), &backend_id).await {
+                match try_fix_script(&current_script, &e.to_string(), &backend_id, model.clone()).await {
                     Ok(fixed) => {
                         eprintln!("\u{2713} Fixed ({} bytes), retrying...", fixed.len());
                         current_script = fixed;
@@ -336,13 +384,18 @@ fn print_report(report: &serde_json::Value) {
 }
 
 /// Call the LLM backend to fix a broken Lua workflow script.
-async fn try_fix_script(script: &str, error: &str, backend_id: &str) -> Result<String> {
+async fn try_fix_script(
+    script: &str,
+    error: &str,
+    backend_id: &str,
+    model: Option<String>,
+) -> Result<String> {
     use maestro::core::contract::backend::AgentTask;
     use maestro::core::contract::ids::AgentId;
     use maestro::core::RunContext;
     use tokio_util::sync::CancellationToken;
 
-    let backend = crate::backend::create_backend(backend_id, false)?;
+    let backend = crate::backend::create_backend(backend_id, false, model)?;
     let prompt = format!(
         "The following Lua workflow script failed during execution:\n\n\
          --- Error ---\n{error}\n\n\

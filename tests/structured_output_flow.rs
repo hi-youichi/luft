@@ -13,7 +13,6 @@ use maestro::adapters::{AcpAdapter, AcpConfig};
 use maestro::core::contract::backend::{AgentBackend, RunContext};
 use maestro::core::{BackendRegistry, Scheduler, SchedulerConfig};
 use maestro::runtime::{ExecLimits, Runtime};
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
@@ -39,6 +38,7 @@ fn fake_acp_backend() -> Arc<dyn AgentBackend> {
         connect_timeout: Duration::from_secs(10),
         emit_raw_events: true,
         env_passthrough,
+        model: None,
     };
     Arc::new(AcpAdapter::new(config))
 }

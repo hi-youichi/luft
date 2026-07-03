@@ -49,11 +49,11 @@ pub enum ScriptSource<'a> {
 pub async fn resolve_script(
     source: ScriptSource<'_>,
     backend: Arc<dyn crate::core::contract::backend::AgentBackend>,
+    planner_cfg: crate::planner::PlannerConfig,
 ) -> Result<String> {
     match source {
         ScriptSource::Nl(nl) => {
-            let cfg = crate::planner::PlannerConfig::default();
-            let planned = crate::planner::plan_workflow(nl, backend, &cfg).await?;
+            let planned = crate::planner::plan_workflow(nl, backend, &planner_cfg).await?;
             Ok(planned.script)
         }
         ScriptSource::Workflow(path) => std::fs::read_to_string(path)
@@ -117,13 +117,14 @@ pub struct RunSpec {
 pub async fn resolve_fresh(
     source: ScriptSource<'_>,
     backend: Arc<dyn AgentBackend>,
+    planner_cfg: crate::planner::PlannerConfig,
 ) -> Result<RunSpec> {
     let task_label = match source {
         ScriptSource::Nl(nl) => nl.to_string(),
         ScriptSource::Workflow(p) => p.display().to_string(),
         ScriptSource::Script(_) => "maestro workflow".to_string(),
     };
-    let script = resolve_script(source, backend).await?;
+    let script = resolve_script(source, backend, planner_cfg).await?;
     let run_id = RunId::now_v7();
     Ok(RunSpec {
         run_id,
@@ -210,6 +211,56 @@ pub fn latest_resumable(base_dir: &Path) -> Result<String> {
         .cloned()
         .ok_or_else(|| anyhow::anyhow!("no resumable run found"))
 }
+
+pub struct PreviousRun {
+    pub run_dir_name: String,
+    pub checkpoint: RunCheckpoint,
+}
+
+pub fn find_resumable_by_task(task: &str, base_dir: &Path) -> Result<Option<PreviousRun>> {
+    let run_dirs = list_runs(base_dir)?;
+    for dir in run_dirs.iter().rev() {
+        let cp_path = base_dir.join(dir).join("checkpoint.json");
+        let content = match std::fs::read_to_string(&cp_path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let cp: RunCheckpoint = match serde_json::from_str(&content) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        if cp.task == task && matches!(cp.status, CheckpointStatus::Running) {
+            return Ok(Some(PreviousRun {
+                run_dir_name: dir.clone(),
+                checkpoint: cp,
+            }));
+        }
+    }
+    Ok(None)
+}
+
+pub fn format_duration_ago(ts: u64) -> String {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let secs = now.saturating_sub(ts);
+    if secs < 60 {
+        return "just now".to_string();
+    }
+    let mins = secs / 60;
+    if mins < 60 {
+        return format!("{}m ago", mins);
+    }
+    let hrs = mins / 60;
+    if hrs < 24 {
+        return format!("{}h ago", hrs);
+    }
+    let days = hrs / 24;
+    format!("{}d ago", days)
+}
+
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// A prepared run: the Lua runtime plus the journal handle (single persistence
 /// instance for the run).
@@ -608,7 +659,7 @@ mod tests {
                 delay: Duration::ZERO,
             }],
         ));
-        let result = resolve_script(ScriptSource::Script("print(1)"), backend)
+        let result = resolve_script(ScriptSource::Script("print(1)"), backend, crate::planner::PlannerConfig::default())
             .await
             .unwrap();
         assert_eq!(result, "print(1)");
@@ -628,7 +679,7 @@ mod tests {
                 delay: Duration::ZERO,
             }],
         ));
-        let result = resolve_script(ScriptSource::Workflow(&path), backend)
+        let result = resolve_script(ScriptSource::Workflow(&path), backend, crate::planner::PlannerConfig::default())
             .await
             .unwrap();
         assert_eq!(result, "print('hello')");
@@ -646,7 +697,7 @@ mod tests {
                 delay: Duration::ZERO,
             }],
         ));
-        let result = resolve_script(ScriptSource::Nl("do something"), backend)
+        let result = resolve_script(ScriptSource::Nl("do something"), backend, crate::planner::PlannerConfig::default())
             .await
             .unwrap();
         assert!(
@@ -670,7 +721,7 @@ mod tests {
                 delay: Duration::ZERO,
             }],
         ));
-        let spec = resolve_fresh(ScriptSource::Script("print(1)"), backend)
+        let spec = resolve_fresh(ScriptSource::Script("print(1)"), backend, crate::planner::PlannerConfig::default())
             .await
             .unwrap();
         assert_eq!(spec.script, "print(1)");
@@ -692,7 +743,7 @@ mod tests {
                 delay: Duration::ZERO,
             }],
         ));
-        let spec = resolve_fresh(ScriptSource::Workflow(&path), backend)
+        let spec = resolve_fresh(ScriptSource::Workflow(&path), backend, crate::planner::PlannerConfig::default())
             .await
             .unwrap();
         assert_eq!(spec.script, "report({ok=true})");
@@ -712,7 +763,7 @@ mod tests {
                 delay: Duration::ZERO,
             }],
         ));
-        let spec = resolve_fresh(ScriptSource::Nl("build a calculator"), backend)
+        let spec = resolve_fresh(ScriptSource::Nl("build a calculator"), backend, crate::planner::PlannerConfig::default())
             .await
             .unwrap();
         assert_eq!(spec.task_label, "build a calculator");
@@ -1180,5 +1231,130 @@ mod tests {
             Err(ScriptError::Syntax(_)) => {} // expected
             _ => panic!("expected Syntax error, got {:?}", result),
         }
+    }
+
+    // =========================================================================
+    // find_resumable_by_task
+    // =========================================================================
+
+    fn make_checkpoint_with_task(dir: &std::path::Path, task: &str, status: &str) {
+        let cp = serde_json::json!({
+            "run_id": RunId::now_v7(),
+            "task": task,
+            "status": status,
+            "current_phase": 0,
+            "completed_phases": [],
+            "agent_results": {},
+            "findings": [],
+            "total_tokens": 0,
+            "created_at": 0,
+            "updated_at": 0,
+        });
+        std::fs::write(
+            dir.join("checkpoint.json"),
+            serde_json::to_string(&cp).unwrap(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn find_resumable_by_task_match() {
+        let dir = tempfile::tempdir().unwrap();
+        let run_dir = dir.path().join("clean_100");
+        std::fs::create_dir_all(&run_dir).unwrap();
+        make_checkpoint_with_task(&run_dir, "scripts/clean.lua", "running");
+
+        let result = find_resumable_by_task("scripts/clean.lua", dir.path()).unwrap();
+        assert!(result.is_some());
+        let prev = result.unwrap();
+        assert_eq!(prev.run_dir_name, "clean_100");
+        assert_eq!(prev.checkpoint.task, "scripts/clean.lua");
+    }
+
+    #[test]
+    fn find_resumable_by_task_no_match() {
+        let dir = tempfile::tempdir().unwrap();
+        let run_dir = dir.path().join("clean_100");
+        std::fs::create_dir_all(&run_dir).unwrap();
+        make_checkpoint_with_task(&run_dir, "scripts/clean.lua", "running");
+
+        let result = find_resumable_by_task("scripts/other.lua", dir.path()).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn find_resumable_by_task_skips_completed() {
+        let dir = tempfile::tempdir().unwrap();
+        let run_dir = dir.path().join("clean_100");
+        std::fs::create_dir_all(&run_dir).unwrap();
+        make_checkpoint_with_task(&run_dir, "scripts/clean.lua", "completed");
+
+        let result = find_resumable_by_task("scripts/clean.lua", dir.path()).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn find_resumable_by_task_returns_latest() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["clean_100", "clean_200"] {
+            let run_dir = dir.path().join(name);
+            std::fs::create_dir_all(&run_dir).unwrap();
+            make_checkpoint_with_task(&run_dir, "scripts/clean.lua", "running");
+        }
+
+        let result = find_resumable_by_task("scripts/clean.lua", dir.path()).unwrap();
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().run_dir_name, "clean_200");
+    }
+
+    #[test]
+    fn find_resumable_by_task_empty_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = find_resumable_by_task("scripts/clean.lua", dir.path()).unwrap();
+        assert!(result.is_none());
+    }
+
+    // =========================================================================
+    // format_duration_ago
+    // =========================================================================
+
+    #[test]
+    fn format_duration_ago_just_now() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        assert_eq!(format_duration_ago(now), "just now");
+        assert_eq!(format_duration_ago(now - 30), "just now");
+    }
+
+    #[test]
+    fn format_duration_ago_minutes() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        assert_eq!(format_duration_ago(now - 120), "2m ago");
+        assert_eq!(format_duration_ago(now - 3540), "59m ago");
+    }
+
+    #[test]
+    fn format_duration_ago_hours() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        assert_eq!(format_duration_ago(now - 3600), "1h ago");
+        assert_eq!(format_duration_ago(now - 7200), "2h ago");
+    }
+
+    #[test]
+    fn format_duration_ago_days() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        assert_eq!(format_duration_ago(now - 86400), "1d ago");
+        assert_eq!(format_duration_ago(now - 172800), "2d ago");
     }
 }

@@ -836,7 +836,7 @@ mod tests {
     #[test]
     fn test_extract_string_invalid_utf8() {
         let lua = Lua::new();
-        let s = lua.create_string(&[0xFF, 0xFE, 0x00]).unwrap();
+        let s = lua.create_string([0xFF, 0xFE, 0x00]).unwrap();
         assert_eq!(extract_string(s), None);
     }
 
@@ -879,8 +879,8 @@ mod tests {
     #[test]
     fn test_lua_value_to_json_number() {
         assert_eq!(
-            lua_value_to_json(&Value::Number(3.14)).unwrap(),
-            serde_json::json!(3.14)
+            lua_value_to_json(&Value::Number(std::f64::consts::PI)).unwrap(),
+            serde_json::json!(std::f64::consts::PI)
         );
     }
 
@@ -917,7 +917,7 @@ mod tests {
     #[test]
     fn test_lua_value_to_json_string_invalid_utf8() {
         let lua = Lua::new();
-        let s = lua.create_string(&[0xFF, 0xFE]).unwrap();
+        let s = lua.create_string([0xFF, 0xFE]).unwrap();
         assert_eq!(
             lua_value_to_json(&Value::String(s)).unwrap(),
             serde_json::Value::Null
@@ -1035,8 +1035,8 @@ mod tests {
     fn test_json_to_lua_value_float() {
         let lua = Lua::new();
         assert!(matches!(
-            json_to_lua_value(&lua, serde_json::json!(3.14)).unwrap(),
-            Value::Number(n) if (n - 3.14).abs() < f64::EPSILON
+            json_to_lua_value(&lua, serde_json::json!(std::f64::consts::PI)).unwrap(),
+            Value::Number(n) if (n - std::f64::consts::PI).abs() < f64::EPSILON
         ));
     }
 
@@ -1295,8 +1295,10 @@ mod tests {
         let scheduler = converge_scheduler(backend);
         let (ctx, _rx) = test_run_ctx(&scheduler);
 
-        let mut config = ConvergeConfig::default();
-        config.adversarial = false;
+        let config = ConvergeConfig {
+            adversarial: false,
+            ..ConvergeConfig::default()
+        };
 
         let result = execute_convergence(
             vec![serde_json::json!({"x": 1})],
@@ -1357,9 +1359,11 @@ mod tests {
         let scheduler = converge_scheduler(backend);
         let (ctx, _rx) = test_run_ctx(&scheduler);
 
-        let mut config = ConvergeConfig::default();
-        config.adversarial = false;
-        config.max_rounds = 1;
+        let config = ConvergeConfig {
+            adversarial: false,
+            max_rounds: 1,
+            ..ConvergeConfig::default()
+        };
 
         let result = execute_convergence(
             vec![serde_json::json!({"x": 1})],

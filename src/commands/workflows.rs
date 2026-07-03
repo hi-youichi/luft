@@ -57,20 +57,24 @@ mod dirs {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    #[cfg(unix)]
     use std::path::PathBuf;
+    #[cfg(unix)]
     use std::sync::Mutex;
+    #[cfg(unix)]
     use tempfile::TempDir;
 
+    #[cfg(unix)]
     static HOME_LOCK: Mutex<()> = Mutex::new(());
 
+    #[cfg(unix)]
     struct HomeEnv {
         _lock: std::sync::MutexGuard<'static, ()>,
         _dir: TempDir,
         orig_home: Option<String>,
     }
 
-    /// On Windows, `dirs::config_dir()` uses `APPDATA`; on Unix it uses `HOME`.
+    #[cfg(unix)]
     fn config_env_var() -> &'static str {
         if cfg!(windows) {
             "APPDATA"
@@ -79,6 +83,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     impl HomeEnv {
         fn new() -> Self {
             let _lock = HOME_LOCK.lock().unwrap();
@@ -94,6 +99,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     impl Drop for HomeEnv {
         fn drop(&mut self) {
             let key = config_env_var();
@@ -104,11 +110,13 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     struct UnsetHomeGuard {
         _lock: std::sync::MutexGuard<'static, ()>,
         orig_home: Option<String>,
     }
 
+    #[cfg(unix)]
     impl UnsetHomeGuard {
         fn new() -> Self {
             let _lock = HOME_LOCK.lock().unwrap();
@@ -119,6 +127,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     impl Drop for UnsetHomeGuard {
         fn drop(&mut self) {
             let key = config_env_var();

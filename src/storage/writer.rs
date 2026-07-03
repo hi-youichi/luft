@@ -810,6 +810,9 @@ pub(crate) async fn fetch_turn_count(
     Ok(row.try_get::<i64, _>("c")?)
 }
 
+// Re-export Arc<EventWriter> as a convenience for forwarding tasks.
+pub type SharedWriter = Arc<EventWriter>;
+
 // ----------------------------------------------------------------------------
 // Tests
 // ----------------------------------------------------------------------------
@@ -1319,6 +1322,3 @@ mod tests {
         assert_eq!(count, 0);
     }
 }
-
-// Re-export Arc<EventWriter> as a convenience for forwarding tasks.
-pub type SharedWriter = Arc<EventWriter>;

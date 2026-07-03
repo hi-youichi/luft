@@ -87,13 +87,13 @@ pub fn format_event_line(evt: &AgentEvent) -> String {
         AgentDone { agent_id, status, tokens, elapsed_ms, name, .. } => {
             let fallback = agent_id.to_string();
             let label = name.as_deref().unwrap_or(&fallback);
-            format!("agent {} done: {status:?} ({elapsed_ms}ms, {} tok)", label, tokens.total())
+            format!("agent {} done: {status:?} ({elapsed_ms}ms, {} tok)", label, tokens.display_total())
         }
         PhaseDone { phase_id, ok, failed, .. } => {
             format!("phase {phase_id} done: {ok} ok, {failed} failed")
         }
         RunDone { status, total_tokens, .. } => {
-            format!("run done: {status:?} ({} tok)", total_tokens.total())
+            format!("run done: {status:?} ({} tok)", total_tokens.display_total())
         }
         Log { level, msg, .. } => format!("log [{level:?}] {msg}"),
         BudgetSet { time_limit_ms, max_rounds, .. } => {
@@ -156,7 +156,7 @@ fn format_delta(delta: &ProgressDelta) -> String {
         ProgressDelta::Message { text } => format!("msg: {}", truncate(text, 80)),
         ProgressDelta::ToolCall { name, summary } => format!("tool: {name} {summary}"),
         ProgressDelta::FileEdit { path } => format!("edit: {}", path.display()),
-        ProgressDelta::Tokens { usage } => format!("tokens: {}", usage.total()),
+        ProgressDelta::Tokens { usage } => format!("tokens: {}", usage.display_total()),
     }
 }
 
@@ -620,7 +620,7 @@ mod tests {
     #[test]
     fn event_logger_new_invalid_path() {
         let result = EventLogger::new(
-            Some(&Path::new("/nonexistent_path_12345/foo.log")),
+            Some(Path::new("/nonexistent_path_12345/foo.log")),
             LogFormat::Pretty,
         );
         assert!(result.is_err());
@@ -631,10 +631,7 @@ mod tests {
         struct FailWriter;
         impl Write for FailWriter {
             fn write(&mut self, _buf: &[u8]) -> std::io::Result<usize> {
-                Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "mock write error",
-                ))
+                Err(std::io::Error::other("mock write error"))
             }
             fn flush(&mut self) -> std::io::Result<()> {
                 Ok(())
@@ -662,10 +659,7 @@ mod tests {
                 Ok(buf.len())
             }
             fn flush(&mut self) -> std::io::Result<()> {
-                Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "mock flush error",
-                ))
+                Err(std::io::Error::other("mock flush error"))
             }
         }
         let mut logger = EventLogger::new_with_writer(Box::new(FailFlushWriter), LogFormat::Pretty);

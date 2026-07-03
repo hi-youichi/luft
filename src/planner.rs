@@ -336,40 +336,112 @@ Generate a Lua script that orchestrates LLM subagents to accomplish the user's t
   has the tools, the script does not.
 
 # Workflow Architecture Comment
-Every script MUST begin with a header comment that describes the workflow
-structure. This forces plan-then-code thinking and makes the generated script
-readable. Format:
+Every script MUST begin with a header comment whose Arch section is a
+multi-line ASCII architecture diagram (boxes + arrows). This forces
+plan-then-code thinking and makes the workflow readable at a glance.
+Format:
 
 --------------------------------------------
 -- Goal:  <one-line objective, English>
 -- Arch:
---   <ASCII tree showing structure and artifacts>
+--   <multi-line ASCII box-and-arrow diagram>
 -- Flow:  <single-line data flow chain>
 --------------------------------------------
 
 Header rules:
 - Two delimiter lines of 44 dashes wrapping the block.
 - Goal: a single English line stating what the workflow produces.
-- Arch: an ASCII tree showing the control-flow hierarchy.
-  Notations inside Arch:
-    A -> B            sequential steps within a node
-    for each X:       loop over a discovered or static list
-    repeat (<= N):    bounded retry / iteration loop
-    break if X        early exit condition
-    (parallel)        inline marker for parallel() fan-out
-    (pipeline)        inline marker for pipeline() stages
-    +-- node          child branch (more siblings follow)
-    \-- node          last child branch (no more siblings)
-    --> [artifact]    artifact produced by this step (suffix)
-    (degrade on fail) inline error-strategy marker
+- Arch: a multi-line ASCII box-and-arrow diagram (see # Diagram Grammar).
+  Every line of the diagram is prefixed with `-- ` so the whole block is a
+  valid Lua comment. Prefer detail over brevity: draw every phase, branch
+  and artifact so a reader can trace the whole workflow from the diagram.
 - Flow: a single line showing the global data flow as a chain of
   artifacts (e.g., discover -> subsystems[] -> modules[] -> report).
-- Indent branches 2 spaces deeper than their parent.
-- Keep it honest and short; omit detail that does not apply.
 - This comment goes at the VERY TOP, before any schema locals or code.
-- If the task is decomposed (see # Task Decomposition), the Arch tree
-  MUST show the decomposition via `for each X:` branches — one level per
+- If the task is decomposed (see # Task Decomposition), the diagram MUST
+  show the decomposition as a `=====>` fan-out annotated with
+  `(for each X)` and a matching `<=====` fan-in — one fan-out level per
   decomposition dimension.
+
+# Diagram Grammar
+
+Boxes represent phases / steps. Draw them as multi-line rectangles:
+    +----------+
+    | name     |
+    +----------+
+- Box name: short phase label (lowercase; match meta.phases[].label when
+  practical). One word or short phrase. Pad the name line with trailing
+  spaces so the right border `|` lines up with the `+` borders above and
+  below it.
+- Keep box widths uniform within one diagram where possible; pad narrow
+  boxes with spaces so their right borders align vertically. Mismatched
+  widths are ugly but not an error — alignment of borders within a single
+  box MUST be correct.
+
+Arrows represent data / control flow between boxes:
+    ------>        sequential flow (one step finishes, next starts)
+    =====>         fan-out: spawn multiple parallel branches
+    <=====         fan-in / join: converge branches back into one
+    --> [name]     artifact produced by a step (suffix on a box or arrow)
+
+Inline annotations (attach to an arrow, or write above a branch group):
+    (for each X)      loop / decomposition dimension (X = module, file, ...)
+    (retry <= N)      bounded retry loop around a box or sub-chain
+    (degrade on fail) error strategy: fall back instead of fail
+    (parallel)        this branch group runs concurrently
+    (pipeline)        this branch group runs as staged pipeline
+
+Layout rules:
+- Read top-to-bottom, then left-to-right.
+- Sequential chains stack vertically (one box per line), or run
+  left-to-right on one line when they fit.
+- Fan-out: a single `====>` splits into N branch boxes; each branch may
+  produce an artifact via `--> [name]`.
+- Fan-in: a single `<====` MUST converge ALL open branches before the next
+  sequential box. A branch that never joins back is a diagram error.
+- Indent nested fan-out groups 2 extra spaces per nesting level.
+- Artifacts (`--> [name]`) hang off the right side of the box or arrow
+  that produces them; the Flow line then references these [name]s.
+
+Examples (every line carries the `-- ` comment prefix in real output):
+
+(1) Linear workflow:
+--   +----------+        +---------+        +--------+
+--   | discover |------->| analyze |------->| report |
+--   +----------+        +---------+        +--------+
+--        |                  |
+--        v                  v
+--   --> [targets]      --> [findings]
+
+(2) Parallel fan-out / fan-in:
+--                        +-------+
+--                 ======>| fetch |=====> [sources]
+--                 |      +-------+
+--                 |      +-------+
+--   +------+      |=====>| parse |=====> [docs]
+--   | plan |======|      +-------+
+--   +------+      |      +-------+
+--                 |=====>| index |=====> [chunks]
+--                 |      +-------+
+--                 |
+--                 |      (parallel)
+--                 v
+--                 +-------+        +--------+
+--                 | merge |------->| report |
+--                 +-------+        +--------+
+
+(3) Decomposed per-module mini-workflow with retry:
+--   +----------+
+--   | discover |=====> (for each module)
+--   +----------+        |
+--        |              +--------+        +--------+        +--------+
+--        |              | analyze|=======>| change |=======>| verify |--> [result]
+--        |              +--------+        +--------+        +--------+
+--        |              (retry <= 2)               (degrade on fail)
+--        v
+--   +--------+
+--   | report |<-----[results[]]
+--   +--------+
 
 # Meta Table & Entry Point
 Every script MUST declare a `meta` table and a `function main()` entry point.
@@ -422,9 +494,12 @@ Rules:
 Minimal skeleton:
 ```lua
 --------------------------------------------
--- Goal:  ...
--- Arch:  ...
--- Flow:  ...
+-- Goal:  <one-line objective>
+-- Arch:
+--   +---------+      +---------+      +--------+
+--   | discover|----->| process |----->| report |
+--   +---------+      +---------+      +--------+
+-- Flow:  discover -> items[] -> results -> report
 --------------------------------------------
 meta = {
   reasoning = "...",
@@ -740,10 +815,10 @@ task genuinely requires cross-checking; skip it for simple tasks.
 --------------------------------------------
 -- Goal:  Refactor auth, db, api modules
 -- Arch:
---   for each module in {auth, db, api}:
---     +-- analyze  --> [ANALYSIS]
---     +-- refactor --> [CHANGES]
---     \-- verify   --> [VERIFY]
+--   +---------+        +----------+        +--------+
+--   | analyze |=======>| refactor |=======>| verify |--> [VERIFY]
+--   +---------+        +----------+        +--------+
+--   (for each module in {auth, db, api})
 -- Flow:  {modules} -> ANALYSIS -> CHANGES -> VERIFY -> report
 --------------------------------------------
 local MODULES = { "auth", "db", "api" }
@@ -777,13 +852,10 @@ report({ refactored = #results, results = results })
 --------------------------------------------
 -- Goal:  Refactor entire crate by subsystem
 -- Arch:
---   discover subsystems                     --> [subsystems[]]
---   for each subsystem:
---     +-- discover modules                  --> [modules[]]
---     +-- for each module:
---           +-- analyze                     --> [ANALYSIS]
---           +-- change                      --> [CHANGES]
---           \-- verify                      --> [VERIFY]
+--   +----------+        +----------+        +---------+        +--------+        +--------+
+--   | discover |=======>| discover |=======>| analyze |=======>| change |=======>| verify |
+--   +----------+        +----------+        +---------+        +--------+        +--------+
+--    subsystems          modules           (for each subsystem, then each module)
 -- Flow:  discover -> subsystems[] -> modules[] -> changes -> report
 --------------------------------------------
 phase("discover subsystems")
@@ -826,8 +898,10 @@ report({ done = true })
 --------------------------------------------
 -- Goal:  Research a topic and analyze sources
 -- Arch:
---   gather sources (agent)                  --> [sources[]]
---   analyze each (parallel)                 --> [ANALYSIS[]]
+--   +--------+        +---------+
+--   | gather |=======>| analyze |--> [ANALYSIS[]]
+--   +--------+        +---------+
+--                (parallel, for each source)
 -- Flow:  gather -> sources[] -> parallel(analyze) -> report
 --------------------------------------------
 phase("research", 1)
@@ -879,10 +953,11 @@ report({ topic = topic, sources = #results, results = results })
 --------------------------------------------
 -- Goal:  Cross-check findings via voting
 -- Arch:
---   repeat (<= N rounds):
---     +-- vote on findings (parallel)       --> [votes[]]
---     +-- keep survivors                    --> [survivors[]]
---     \-- break if converged
+--   +------+        +--------+
+--   | vote |=======>| keep   |--> [survivors[]]
+--   +------+        +--------+
+--      ^                 |
+--      +<================+   (repeat <= N rounds; break if converged)
 -- Flow:  findings -> vote -> survivors -> (loop) -> report
 --------------------------------------------
 -- Multi-round adversarial loop (skeleton)

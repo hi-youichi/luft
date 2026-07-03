@@ -26,7 +26,8 @@ use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use agent_client_protocol::schema::{
     ContentBlock, InitializeRequest, McpServer, McpServerStdio, NewSessionRequest, PromptRequest,
     ProtocolVersion, RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
-    SelectedPermissionOutcome, SessionNotification, TextContent,
+    SelectedPermissionOutcome, SessionConfigKind, SessionConfigOptionCategory,
+    SessionConfigSelectOptions, SessionNotification, SetSessionConfigOptionRequest, TextContent,
 };
 use agent_client_protocol::{Agent, ByteStreams, Client, ConnectionTo, Responder};
 
@@ -70,6 +71,10 @@ pub struct AcpConfig {
     /// needed for the binary to bootstrap on the current OS (PATH, user
     /// dirs, temp, locale, shell).
     pub env_passthrough: Vec<String>,
+    /// Model to use for LLM calls. Passed via ACP `session/set_config_option`
+    /// with category `model`. If the agent does not support model selection,
+    /// this is silently ignored.
+    pub model: Option<String>,
 }
 
 impl AcpConfig {
@@ -116,6 +121,7 @@ impl Default for AcpConfig {
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
+            model: None,
         }
     }
 }
@@ -324,8 +330,10 @@ async fn run_acp_session(
                     agent_client_protocol::on_receive_request!(),
                 )
                 .connect_with(transport, {
+                    let model = config.model.clone();
                     move |conn: ConnectionTo<Agent>| {
                         let acc_prompt = acc_prompt.clone();
+                        let model = model.clone();
                         async move {
                             tracing::debug!("ACP handshake: initialize");
                             conn.send_request(InitializeRequest::new(ProtocolVersion::V1))
@@ -352,6 +360,45 @@ async fn run_acp_session(
                                 };
                                 conn.send_request(req).block_task().await?
                             };
+                            if let Some(ref model_name) = model {
+                                if let Some(ref config_options) = ns.config_options {
+                                    if let Some(model_option) = config_options.iter().find(|opt| {
+                                        opt.category.as_ref() == Some(&SessionConfigOptionCategory::Model)
+                                    }) {
+                                        let valid = if let SessionConfigKind::Select(ref select) = model_option.kind {
+                                            match &select.options {
+                                                SessionConfigSelectOptions::Ungrouped(opts) => {
+                                                    opts.iter().any(|o| o.value.0.as_ref() == model_name.as_str())
+                                                }
+                                                SessionConfigSelectOptions::Grouped(groups) => {
+                                                    groups.iter().any(|g| {
+                                                        g.options.iter().any(|o| o.value.0.as_ref() == model_name.as_str())
+                                                    })
+                                                }
+                                                _ => false,
+                                            }
+                                        } else {
+                                            false
+                                        };
+                                        if valid {
+                                            tracing::debug!(model = %model_name, "ACP: setting session model");
+                                            let req = SetSessionConfigOptionRequest::new(
+                                                ns.session_id.clone(),
+                                                model_option.id.clone(),
+                                                model_name.clone(),
+                                            );
+                                            conn.send_request(req).block_task().await?;
+                                        } else {
+                                            tracing::warn!(
+                                                model = %model_name,
+                                                "ACP: requested model not available, using agent default"
+                                            );
+                                        }
+                                    } else {
+                                        tracing::debug!("ACP: agent does not support model selection");
+                                    }
+                                }
+                            }
                             tracing::debug!("ACP handshake: session/prompt");
                             let pr = conn
                                 .send_request(PromptRequest::new(
@@ -535,12 +582,10 @@ mod tests {
         }
         // Sanity: OS bootstrap vars that the subprocess needs to start
         // (PATH at minimum) must be present.
-        for required in ["PATH"] {
-            assert!(
-                c.env_passthrough.iter().any(|v| v == required),
-                "default env_passthrough must include {required}"
-            );
-        }
+        assert!(
+            c.env_passthrough.iter().any(|v| v == "PATH"),
+            "default env_passthrough must include PATH"
+        );
         // Sanity: the default allowlist is a closed list, not "inherit
         // everything" (the latter would be a security hole).
         assert!(
@@ -633,7 +678,7 @@ mod tests {
 
     fn test_context(cancel: Option<tokio_util::sync::CancellationToken>) -> RunContext {
         let (tx, _rx) = tokio::sync::broadcast::channel(16);
-        let cancel = cancel.unwrap_or_else(tokio_util::sync::CancellationToken::new);
+        let cancel = cancel.unwrap_or_default();
         RunContext {
             run_id: uuid::Uuid::now_v7(),
             cancel,

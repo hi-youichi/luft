@@ -8,12 +8,22 @@ use std::path::PathBuf;
 pub struct MaestroConfig {
     #[serde(default)]
     pub backend: BackendConfig,
+    #[serde(default)]
+    pub planner: PlannerConfig,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct PlannerConfig {
+    /// Default model for planner LLM calls (falls back to backend.model).
+    pub model: Option<String>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct BackendConfig {
     /// Default backend id (overrides auto-detect).
     pub default: Option<String>,
+    /// Default model for LLM calls (overrides agent default).
+    pub model: Option<String>,
     #[serde(default)]
     pub acp: AcpConfigOverride,
 }
@@ -100,4 +110,22 @@ pub fn resolve_default_backend(user_specified: Option<&str>) -> String {
             }
         },
     }
+}
+
+/// Resolve model: CLI > config > None.
+pub fn resolve_model(cli: Option<&str>, config: Option<&str>) -> Option<String> {
+    cli.map(String::from)
+        .or_else(|| config.map(String::from))
+}
+
+/// Resolve planner model: CLI planner_model > CLI model > config > None.
+pub fn resolve_planner_model(
+    cli_planner: Option<&str>,
+    cli_model: Option<&str>,
+    config: Option<&str>,
+) -> Option<String> {
+    cli_planner
+        .map(String::from)
+        .or_else(|| cli_model.map(String::from))
+        .or_else(|| config.map(String::from))
 }

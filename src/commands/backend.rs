@@ -76,7 +76,7 @@ pub fn list_backends() {
     );
 
     for id in known_ids {
-        match crate::backend::create_backend(id, false) {
+        match crate::backend::create_backend(id, false, None) {
             Ok(be) => {
                 let caps = be.capabilities();
                 let models = if caps.models.is_empty() {
@@ -113,7 +113,7 @@ fn bool_mark(v: bool) -> &'static str {
 pub fn info_backend(id: Option<String>) {
     let be_id = id.unwrap_or_else(|| crate::backend::detect_backend().to_string());
     let cfg = crate::config::load_config();
-    match crate::backend::create_backend(&be_id, false) {
+    match crate::backend::create_backend(&be_id, false, None) {
         Ok(be) => {
             let caps = be.capabilities();
             let binary = match be_id.as_str() {

@@ -382,7 +382,7 @@ impl PhaseRenderer {
         let (icon, detail) = match status {
             AgentStatus::Ok => (
                 style("✓").green().bold(),
-                format!("{} · {} tok", fmt_dur(elapsed_ms), tokens.total()),
+                format!("{} · {} tok", fmt_dur(elapsed_ms), tokens.display_total()),
             ),
             AgentStatus::Error => (style("✗").red().bold(), "ERROR".into()),
             AgentStatus::Cancelled => (style("⊘").yellow().bold(), "CANCELLED".into()),
@@ -425,7 +425,7 @@ impl PhaseRenderer {
         };
         match delta {
             ProgressDelta::Tokens { usage } => {
-                let msg = format!("{} · {} tok", label, usage.total());
+                let msg = format!("{} · {} tok", label, usage.display_total());
                 pb.set_message(msg);
             }
             ProgressDelta::Message { text } => {
@@ -474,7 +474,7 @@ impl PhaseRenderer {
         self.print(&format!(
             "╰─ Run done · {} · {} tok · {}",
             status_str,
-            total_tokens.total(),
+            total_tokens.display_total(),
             fmt_dur(elapsed.as_millis() as u64),
         ));
     }

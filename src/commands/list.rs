@@ -29,7 +29,6 @@ pub fn list_runs_cmd(limit: Option<usize>) -> Result<()> {
 mod tests {
     use super::*;
     use std::path::PathBuf;
-    use std::sync::Mutex;
     use tempfile::TempDir;
 
     /// Drops the temp-dir *after* restoring CWD so the relative

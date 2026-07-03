@@ -191,7 +191,7 @@ struct JsonRpcMessage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::{BufRead, BufReader, Seek, Write};
+    #[cfg(unix)]
     use std::sync::Mutex;
 
     /// Serialises fd-redirection tests so parallel runs don't race on fd 0/1.
@@ -275,13 +275,6 @@ mod tests {
 
             (result, lines)
         }
-    }
-
-    fn json_lines(lines: &[String]) -> Vec<Value> {
-        lines
-            .iter()
-            .map(|l| serde_json::from_str(l).unwrap())
-            .collect()
     }
 
     #[cfg(unix)]
