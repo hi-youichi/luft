@@ -84,7 +84,7 @@ pub fn format_event_line(evt: &AgentEvent) -> String {
         }
         AgentProgress { agent_id, delta, .. } => format!("agent {agent_id} · {}", format_delta(delta)),
         AcpRaw { kind, .. } => format!("acp raw: {kind}"),
-        AgentDone { agent_id, status, tokens, elapsed_ms, name, .. } => {
+AgentDone { agent_id, status, tokens, elapsed_ms, name, .. } => {
             let fallback = agent_id.to_string();
             let label = name.as_deref().unwrap_or(&fallback);
             format!("agent {} done: {status:?} ({elapsed_ms}ms, {} tok)", label, tokens.display_total())
@@ -156,7 +156,7 @@ fn format_delta(delta: &ProgressDelta) -> String {
         ProgressDelta::Message { text } => format!("msg: {}", truncate(text, 80)),
         ProgressDelta::ToolCall { name, summary } => format!("tool: {name} {summary}"),
         ProgressDelta::FileEdit { path } => format!("edit: {}", path.display()),
-        ProgressDelta::Tokens { usage } => format!("tokens: {}", usage.display_total()),
+        ProgressDelta::Tokens { usage } => format!("tokens: {} tok", usage.display_total()),
     }
 }
 

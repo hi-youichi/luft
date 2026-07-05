@@ -42,31 +42,51 @@ impl TokenUsage {
         self.input + self.output
     }
 
-    /// Human-readable token count (e.g. "12.3k", "1.5M").
+    /// Human-readable token count (e.g. "12.3k", "1.5M", "2.3B").
     pub fn display_total(&self) -> String {
         fmt_tokens(self.total())
     }
 }
 
-/// Format a token count with k/M suffix.
+/// Format a token count with k/M/B suffix.
 ///
-/// - `< 1000` → raw number (`832`)
+/// - `< 1_000` → raw number (`832`)
 /// - `< 1_000_000` → `12.3k` (trailing `.0` stripped → `12k`)
-/// - `≥ 1_000_000` → `1.5M`
+/// - `< 1_000_000_000` → `1.5M`
+/// - `≥ 1_000_000_000` → `1.5B`
+///
+/// Round-up edge cases (`999_999`, `999_999_999`) bump to the next magnitude
+/// instead of producing `"1000k"` / `"1000M"`.
 pub fn fmt_tokens(n: u64) -> String {
     if n < 1_000 {
         return n.to_string();
     }
     let (divisor, suffix) = if n < 1_000_000 {
         (1_000_u64, "k")
-    } else {
+    } else if n < 1_000_000_000 {
         (1_000_000_u64, "M")
+    } else {
+        (1_000_000_000_u64, "B")
     };
     let v = n as f64 / divisor as f64;
-    // One decimal place, strip trailing ".0".
-    let s = format!("{:.1}", v);
-    let s = s.trim_end_matches(".0");
-    format!("{}{}", s, suffix)
+    // If rounding would push v to ≥1000, bump to the next magnitude to avoid "1000k" / "1000M".
+    if v >= 999.95 {
+        let next_divisor = divisor * 1000;
+        let next_suffix = match suffix {
+            "k" => "M",
+            "M" => "B",
+            "B" => "T",
+            _ => unreachable!("unexpected suffix {suffix}"),
+        };
+        let v = n as f64 / next_divisor as f64;
+        let s = format!("{:.1}", v);
+        let s = s.trim_end_matches(".0");
+        format!("{}{}", s, next_suffix)
+    } else {
+        let s = format!("{:.1}", v);
+        let s = s.trim_end_matches(".0");
+        format!("{}{}", s, suffix)
+    }
 }
 
 #[cfg(test)]
@@ -409,7 +429,28 @@ mod tests {
 
     #[test]
     fn fmt_tokens_border_999999() {
-        assert_eq!(fmt_tokens(999_999), "1000k");
+        assert_eq!(fmt_tokens(999_999), "1M");
+    }
+
+    #[test]
+    fn fmt_tokens_border_999_999_999() {
+        assert_eq!(fmt_tokens(999_999_999), "1B");
+    }
+
+    #[test]
+    fn fmt_tokens_exactly_1b() {
+        assert_eq!(fmt_tokens(1_000_000_000), "1B");
+    }
+
+    #[test]
+    fn fmt_tokens_b_with_decimal() {
+        assert_eq!(fmt_tokens(1_500_000_000), "1.5B");
+        assert_eq!(fmt_tokens(2_300_000_000), "2.3B");
+    }
+
+#[test]
+    fn fmt_tokens_b_whole_no_decimal() {
+        assert_eq!(fmt_tokens(10_000_000_000), "10B");
     }
 
     #[test]

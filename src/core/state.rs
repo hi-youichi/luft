@@ -179,9 +179,15 @@ impl RunStore {
         let checkpoint: RunCheckpoint = serde_json::from_str(&content)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
 
-        // Open events file
+        // Open events file. Resume appends new events (phase_started, agent_started,
+        // log, agent_done) to the same file; opening read-only here would make every
+        // forwarded event fail with Access is denied (os error 5) and silently drop
+        // observability for the entire resumed run.
         let events_path = self.run_dir.join("events.jsonl");
-        let events_file = OpenOptions::new().read(true).open(events_path)?;
+        let events_file = OpenOptions::new()
+            .read(true)
+            .append(true)
+            .open(events_path)?;
 
         let mut checkpoint_guard = self.checkpoint.write().unwrap();
         *checkpoint_guard = Some(checkpoint.clone());
@@ -488,5 +494,37 @@ mod tests {
         store.init_run(run_id, "Test task").unwrap();
 
         assert!(store.can_resume());
+    }
+
+    #[test]
+    fn test_resume_appends_events() {
+        // Regression: open_run previously opened events.jsonl read-only, causing
+        // every forwarded event in the resumed run to fail with
+        // `Access is denied (os error 5)` and silently dropping observability.
+        let dir = tempdir().unwrap();
+        let run_id = uuid::Uuid::now_v7();
+        let store = RunStore::new(dir.path()).unwrap();
+        store.init_run(run_id, "Test task").unwrap();
+
+        let store2 = RunStore::new(dir.path()).unwrap();
+        store2.open_run(run_id).unwrap().unwrap();
+
+        // Writing through the resumed store must succeed and persist the event.
+        let evt = AgentEvent::Log {
+            run_id,
+            agent_id: None,
+            level: crate::core::contract::event::LogLevel::Info,
+            msg: "resume smoke test".to_string(),
+        };
+        store2.append_event(&evt).expect("append_event after resume must succeed");
+
+        let log = store2.get_event_log().expect("read events.jsonl");
+        assert!(
+            log.iter().any(|e| matches!(
+                e,
+                AgentEvent::Log { msg, .. } if msg == "resume smoke test"
+            )),
+            "event written after open_run must appear in events.jsonl"
+        );
     }
 }

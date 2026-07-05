@@ -20,7 +20,7 @@ pub(crate) fn status_run_cmd_inner(w: &mut impl Write, run_dir: String) -> Resul
     writeln!(w, "  Task:          {}", checkpoint.task)?;
     writeln!(w, "  Status:        {:?}", checkpoint.status)?;
     writeln!(w, "  Current phase: {}", checkpoint.current_phase)?;
-    writeln!(w, "  Total tokens:  {}", fmt_tokens(checkpoint.total_tokens))?;
+    writeln!(w, "  Total tokens:  {} tok", fmt_tokens(checkpoint.total_tokens))?;
     writeln!(w, "  Created:       {}", checkpoint.created_at)?;
     writeln!(w, "  Updated:       {}", checkpoint.updated_at)?;
 

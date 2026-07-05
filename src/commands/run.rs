@@ -285,12 +285,23 @@ async fn run_headless(
     use std::collections::HashMap;
     use tokio::time::Duration;
 
-    let tty = console::user_attended();
+let tty = console::user_attended();
     let rx = run_ctx.events.subscribe();
     let tool_calls: Arc<Mutex<HashMap<AgentId, Vec<String>>>> = Arc::new(Mutex::new(HashMap::new()));
     let tool_calls_clone = tool_calls.clone();
+
+    // The renderer needs to be reachable from two tasks:
+    //   1. the printer task, which feeds events into it
+    //   2. a 1-second tick task, which re-renders the live header timer
+    // Share it via Arc<Mutex<>>. Lock duration is short (handle / set_message
+    // only) so contention is negligible.
+    let renderer: Arc<Mutex<PhaseRenderer>> = Arc::new(Mutex::new(PhaseRenderer::new(tty)));
+    let renderer_for_printer = renderer.clone();
+    let renderer_for_tick = renderer.clone();
+
+    let (stop_tick_tx, mut stop_tick_rx) = tokio::sync::oneshot::channel::<()>();
+
     let printer = tokio::spawn(async move {
-        let mut renderer = PhaseRenderer::new(tty);
         let skipped = drain_events(rx, |evt| {
             if let AgentEvent::AgentProgress {
                 agent_id,
@@ -305,7 +316,7 @@ async fn run_headless(
                     .or_default()
                     .push(name.clone());
             }
-            renderer.handle(evt);
+            renderer_for_printer.lock().unwrap().handle(evt);
             if let Some(l) = logger.as_mut() {
                 let _ = l.write(evt);
             }
@@ -320,12 +331,45 @@ async fn run_headless(
         skipped
     });
 
+    // Live wall-clock timer. Rewrites the header bar's `⏱ ...` suffix every
+    // second. Stopped via `stop_tick_tx` once the printer task drains its
+    // final `RunDone` event (no new events mean no more visual change to
+    // tick against, and we want the final "╰─ Run done" line to print on a
+    // clean line).
+    let tick = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(1));
+        // Skip the immediate first tick — `RunStarted` itself draws the
+        // initial `⏱ 0s`, and we don't want a redundant re-render at t=0.
+        interval.tick().await;
+        loop {
+            tokio::select! {
+                biased;
+                _ = &mut stop_tick_rx => break,
+                _ = interval.tick() => {
+                    renderer_for_tick.lock().unwrap().tick_elapsed();
+                }
+            }
+        }
+    });
+
     let exec_result = svc::execute(&run_ctx, rt, script).await;
 
     if let Ok(Ok(skipped)) = tokio::time::timeout(Duration::from_secs(2), printer).await {
+        // Printer drained — the final `RunDone` event has been painted. Tell
+        // the tick task to exit so it doesn't fire one more `set_message`
+        // against a finished bar.
+        let _ = stop_tick_tx.send(());
+        // Join with a short timeout; tick is already between waits or about
+        // to notice the stop signal.
+        let _ = tokio::time::timeout(Duration::from_secs(1), tick).await;
         if skipped > 0 {
-            eprintln!("\u{26a0} event stream lagged, skipped {skipped} events");
+            eprintln!("⚠ event stream lagged, skipped {skipped} events");
         }
+    } else {
+// Printer didn't finish in time; drop the stop signal (oneshot
+        // closure) and abandon the tick task. It will be cancelled when
+        // its parent future is dropped at function return.
+        drop(stop_tick_tx);
     }
 
     let result = exec_result?;
@@ -341,7 +385,7 @@ async fn run_headless(
             print_report(&report);
             Ok(())
         }
-        Err(e) => {
+Err(e) => {
             tracing::error!(error = %e, "workflow execution failed");
             eprintln!("Execution error: {}", e);
             Err(anyhow::anyhow!("{}", e))

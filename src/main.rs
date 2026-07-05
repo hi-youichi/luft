@@ -28,6 +28,9 @@ struct Cli {
     /// Program-log level (trace|debug|info|warn|error). Overrides RUST_LOG.
     #[arg(long, global = true)]
     log_level: Option<String>,
+    /// Write program-log (tracing) to this file. Default: `~/.maestro/logs/maestro.log`.
+    #[arg(long, global = true, value_name = "FILE")]
+    log_file: Option<PathBuf>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -187,7 +190,7 @@ async fn main() -> Result<()> {
 /// Exposed as a separate function so it can be tested without touching
 /// process-global `std::env::args()`.
 async fn dispatch(cli: Cli) -> Result<()> {
-    logging::init(cli.log_level.as_deref(), "warn")?;
+    logging::init(cli.log_level.as_deref(), "warn", cli.log_file.as_deref())?;
 
     match cli.command {
         Commands::Generate(args) => commands::generate::generate_script(args).await?,
@@ -230,13 +233,14 @@ mod tests {
 
     #[tokio::test]
     async fn dispatch_generate_unknown_backend() {
-        let cli = Cli {
+let cli = Cli {
             command: Commands::Generate(GenerateArgs {
                 nl: "do something".into(),
                 output: None,
                 backend: Some("does-not-exist".into()),
             }),
             log_level: Some("debug".into()),
+            log_file: None,
         };
         let err = dispatch(cli).await.unwrap_err();
         assert!(
@@ -248,13 +252,14 @@ mod tests {
 
     #[tokio::test]
     async fn dispatch_generate_mock_backend_planner_exhausted() {
-        let cli = Cli {
+let cli = Cli {
             command: Commands::Generate(GenerateArgs {
                 nl: "do something".into(),
                 output: None,
                 backend: Some("mock".into()),
             }),
             log_level: None,
+            log_file: None,
         };
         let err = dispatch(cli).await.unwrap_err();
         assert!(
@@ -266,7 +271,7 @@ mod tests {
 
     #[tokio::test]
     async fn dispatch_run_unknown_backend() {
-        let cli = Cli {
+let cli = Cli {
             command: Commands::Run(RunArgs {
                 nl: Some("do something".into()),
                 workflow: None,
@@ -287,6 +292,7 @@ mod tests {
                 planner_model: None,
             }),
             log_level: None,
+            log_file: None,
         };
         let err = dispatch(cli).await.unwrap_err();
         assert!(
@@ -298,7 +304,7 @@ mod tests {
 
     #[tokio::test]
     async fn dispatch_run_without_nl_or_workflow() {
-        let cli = Cli {
+let cli = Cli {
             command: Commands::Run(RunArgs {
                 nl: None,
                 workflow: None,
@@ -319,6 +325,7 @@ mod tests {
                 planner_model: None,
             }),
             log_level: None,
+            log_file: None,
         };
         let err = dispatch(cli).await.unwrap_err();
         assert!(
@@ -331,21 +338,23 @@ mod tests {
 
     #[tokio::test]
     async fn dispatch_workflows() {
-        let cli = Cli {
+let cli = Cli {
             command: Commands::Workflows,
             log_level: None,
+            log_file: None,
         };
         dispatch(cli).await.unwrap();
     }
 
     #[tokio::test]
     async fn dispatch_save() {
-        let cli = Cli {
+let cli = Cli {
             command: Commands::Save {
                 name: "test".into(),
                 output: PathBuf::from("out.lua"),
             },
             log_level: None,
+            log_file: None,
         };
         let err = dispatch(cli).await.unwrap_err();
         assert!(
@@ -357,20 +366,22 @@ mod tests {
 
     #[tokio::test]
     async fn dispatch_list() {
-        let cli = Cli {
+let cli = Cli {
             command: Commands::List { limit: None },
             log_level: None,
+            log_file: None,
         };
         dispatch(cli).await.unwrap();
     }
 
     #[tokio::test]
     async fn dispatch_status_not_found() {
-        let cli = Cli {
+let cli = Cli {
             command: Commands::Status {
                 run_dir: "__nonexistent_run__".into(),
             },
             log_level: None,
+            log_file: None,
         };
         let err = dispatch(cli).await.unwrap_err();
         assert!(
@@ -382,12 +393,13 @@ mod tests {
 
     #[tokio::test]
     async fn dispatch_logs_not_found() {
-        let cli = Cli {
+let cli = Cli {
             command: Commands::Logs {
                 run_dir: "__nonexistent_run__".into(),
                 limit: None,
             },
             log_level: None,
+            log_file: None,
         };
         let err = dispatch(cli).await.unwrap_err();
         assert!(
@@ -399,11 +411,12 @@ mod tests {
 
     #[tokio::test]
     async fn dispatch_mcp_no_schema_file() {
-        let cli = Cli {
+let cli = Cli {
             command: Commands::McpStructuredOutput(commands::mcp_server::McpStructuredOutputArgs {
                 schema_file: PathBuf::from("/__nonexistent__/schema.json"),
             }),
             log_level: None,
+            log_file: None,
         };
         let err = dispatch(cli).await.unwrap_err();
         assert!(
