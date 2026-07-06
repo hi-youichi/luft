@@ -255,6 +255,7 @@ impl JournalStore {
             output: serde_json::Value::Null,
             findings: Vec::new(),
             prompt: String::new(),
+            retry_count: 0,
         };
         self.inner.append_event(&event)?;
 

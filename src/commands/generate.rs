@@ -18,15 +18,26 @@ pub async fn generate_script(args: GenerateArgs) -> Result<()> {
         eprintln!("ℹ  no --backend specified, auto-detected: {}", backend_id);
     }
 
-    let backend = backend::create_backend(&backend_id, false, None)?;
-    generate_script_with_backend(args, backend).await
+    let config = crate::config::load_config();
+    let model = crate::config::resolve_planner_model(
+        args.model.as_deref(),
+        None,
+        config.as_ref().and_then(|c| c.planner.model.as_deref()),
+    );
+
+    let backend = backend::create_backend(&backend_id, false, model.clone())?;
+    generate_script_with_backend(args, backend, model).await
 }
 
 async fn generate_script_with_backend(
     args: GenerateArgs,
     backend: Arc<dyn AgentBackend>,
+    planner_model: Option<String>,
 ) -> Result<()> {
-    let cfg = maestro::planner::PlannerConfig::default();
+    let cfg = maestro::planner::PlannerConfig {
+        planner_model,
+        ..Default::default()
+    };
 
     eprintln!("⚙  Generating Lua workflow script…");
 
@@ -71,6 +82,7 @@ mod tests {
             nl: nl.to_string(),
             backend: backend.map(|s| s.to_string()),
             output: output.map(std::path::PathBuf::from),
+            model: None,
         }
     }
 
@@ -135,7 +147,7 @@ mod tests {
     #[tokio::test]
     async fn generate_script_with_backend_output_to_stdout() {
         let result =
-            generate_script_with_backend(args("test task", None, None), valid_lua_backend()).await;
+            generate_script_with_backend(args("test task", None, None), valid_lua_backend(), None).await;
         assert!(result.is_ok());
     }
 
@@ -147,6 +159,7 @@ mod tests {
         let result = generate_script_with_backend(
             args("test task", None, Some(&path.to_string_lossy())),
             valid_lua_backend(),
+            None,
         )
         .await;
         assert!(result.is_ok(), "expected Ok, got: {:?}", result.err());
@@ -163,6 +176,7 @@ mod tests {
         let result = generate_script_with_backend(
             args("test task", None, Some("/nonexistent/dir/output.lua")),
             valid_lua_backend(),
+            None,
         )
         .await;
         assert!(result.is_err());
@@ -187,7 +201,7 @@ mod tests {
             }],
         ));
 
-        let err = generate_script_with_backend(args("test task", None, None), null_backend)
+        let err = generate_script_with_backend(args("test task", None, None), null_backend, None)
             .await
             .unwrap_err();
         let msg = err.to_string();

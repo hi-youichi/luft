@@ -81,6 +81,8 @@ pub enum AgentEvent {
         findings: Vec<Finding>,
         #[serde(default)]
         prompt: String,
+        #[serde(default)]
+        retry_count: u32,
     },
     PhaseDone {
         run_id: RunId,

@@ -225,6 +225,7 @@ mod tests {
                 output: serde_json::Value::Null,
                 findings: Vec::new(),
                 prompt: String::new(),
+                retry_count: 0,
             },
             AgentEvent::PhaseDone {
                 run_id,

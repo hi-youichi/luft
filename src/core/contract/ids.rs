@@ -46,6 +46,18 @@ impl TokenUsage {
     pub fn display_total(&self) -> String {
         fmt_tokens(self.total())
     }
+
+    /// Split display: "↑12.3k ↓5.6k" with optional cache annotation.
+    pub fn display_split(&self) -> String {
+        let mut parts = vec![
+            format!("↑{}", fmt_tokens(self.input)),
+            format!("↓{}", fmt_tokens(self.output)),
+        ];
+        if self.cache_read > 0 {
+            parts.push(format!("{} cached", fmt_tokens(self.cache_read)));
+        }
+        parts.join(" ")
+    }
 }
 
 /// Format a token count with k/M/B suffix.
@@ -463,5 +475,33 @@ mod tests {
         };
         assert_eq!(t.display_total(), fmt_tokens(12_345));
         assert_eq!(t.display_total(), "12.3k");
+    }
+
+    #[test]
+    fn display_split_basic() {
+        let t = TokenUsage {
+            input: 5_000,
+            output: 7_345,
+            cache_read: 0,
+            cache_write: 0,
+        };
+        assert_eq!(t.display_split(), "↑5k ↓7.3k");
+    }
+
+    #[test]
+    fn display_split_with_cache() {
+        let t = TokenUsage {
+            input: 1_200,
+            output: 3_400,
+            cache_read: 800,
+            cache_write: 0,
+        };
+        assert_eq!(t.display_split(), "↑1.2k ↓3.4k 800 cached");
+    }
+
+    #[test]
+    fn display_split_zero() {
+        let t = TokenUsage::default();
+        assert_eq!(t.display_split(), "↑0 ↓0");
     }
 }

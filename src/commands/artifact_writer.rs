@@ -40,6 +40,7 @@ struct AgentDoneRecord {
     output: serde_json::Value,
     findings: Vec<maestro::core::contract::finding::Finding>,
     prompt: String,
+    retry_count: u32,
 }
 struct PipelineItemRecord {
     item_index: usize,
@@ -155,6 +156,7 @@ impl ArtifactWriter {
                 output,
                 findings,
                 prompt,
+                retry_count,
             } => {
                 let stats = self.agents.remove(agent_id).unwrap_or_default();
                 let record = AgentDoneRecord {
@@ -167,6 +169,7 @@ impl ArtifactWriter {
                     output: output.clone(),
                     findings: findings.clone(),
                     prompt: prompt.clone(),
+                    retry_count: *retry_count,
                 };
 
                 // Track pipeline item completion
@@ -356,8 +359,14 @@ impl ArtifactWriter {
         }
         writeln!(
             s,
-            "| Elapsed  | {:.1}s                     |\n",
+            "| Elapsed  | {:.1}s                     |",
             record.elapsed_ms as f64 / 1000.0
+        )
+        .unwrap();
+        writeln!(
+            s,
+            "| Retries  | {}                         |",
+            record.retry_count
         )
         .unwrap();
 

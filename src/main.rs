@@ -99,6 +99,9 @@ struct GenerateArgs {
         help = "Backend to use (default: auto-detect or prompt)"
     )]
     backend: Option<String>,
+
+    #[arg(long, help = "Model for NL→Lua planning (overrides config)")]
+    model: Option<String>,
 }
 
 #[derive(Debug, clap::Args)]
@@ -241,6 +244,7 @@ let cli = Cli {
                 nl: "do something".into(),
                 output: None,
                 backend: Some("does-not-exist".into()),
+                model: None,
             }),
             log_level: Some("debug".into()),
             log_file: None,
@@ -260,6 +264,7 @@ let cli = Cli {
                 nl: "do something".into(),
                 output: None,
                 backend: Some("mock".into()),
+                model: None,
             }),
             log_level: None,
             log_file: None,

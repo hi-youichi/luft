@@ -84,16 +84,20 @@ pub fn format_event_line(evt: &AgentEvent) -> String {
         }
         AgentProgress { agent_id, delta, .. } => format!("agent {agent_id} · {}", format_delta(delta)),
         AcpRaw { kind, .. } => format!("acp raw: {kind}"),
-AgentDone { agent_id, status, tokens, elapsed_ms, name, .. } => {
+AgentDone { agent_id, status, tokens, elapsed_ms, name, retry_count, .. } => {
             let fallback = agent_id.to_string();
             let label = name.as_deref().unwrap_or(&fallback);
-            format!("agent {} done: {status:?} ({elapsed_ms}ms, {} tok)", label, tokens.display_total())
+            let mut parts = vec![format!("{status:?}"), format!("{}ms", elapsed_ms), tokens.display_split()];
+            if *retry_count > 0 {
+                parts.push(format!("{} retries", retry_count));
+            }
+            format!("agent {} done: {}", label, parts.join(", "))
         }
         PhaseDone { phase_id, ok, failed, .. } => {
             format!("phase {phase_id} done: {ok} ok, {failed} failed")
         }
-        RunDone { status, total_tokens, .. } => {
-            format!("run done: {status:?} ({} tok)", total_tokens.display_total())
+RunDone { status, total_tokens, .. } => {
+            format!("run done: {status:?} ({})", total_tokens.display_split())
         }
         Log { level, msg, .. } => format!("log [{level:?}] {msg}"),
         BudgetSet { time_limit_ms, max_rounds, .. } => {
@@ -164,7 +168,7 @@ fn format_delta(delta: &ProgressDelta) -> String {
         ProgressDelta::Message { text } => format!("msg: {}", truncate(text, 80)),
         ProgressDelta::ToolCall { name, summary } => format!("tool: {name} {summary}"),
         ProgressDelta::FileEdit { path } => format!("edit: {}", path.display()),
-        ProgressDelta::Tokens { usage } => format!("tokens: {} tok", usage.display_total()),
+        ProgressDelta::Tokens { usage } => format!("tokens: {}", usage.display_split()),
     }
 }
 
@@ -379,6 +383,7 @@ mod tests {
                     output: serde_json::Value::Null,
                     findings: Vec::new(),
                     prompt: String::new(),
+                    retry_count: 0,
                 },
                 "agent ",
             ),
@@ -394,6 +399,7 @@ mod tests {
                     output: serde_json::Value::Null,
                     findings: Vec::new(),
                     prompt: String::new(),
+                    retry_count: 2,
                 },
                 "agent analyze-auth done",
             ),
@@ -602,7 +608,7 @@ mod tests {
                         cache_write: 0,
                     },
                 },
-                "tokens: 15",
+                "tokens: ↑10 ↓5",
             ),
         ];
         for (delta, needle) in cases {

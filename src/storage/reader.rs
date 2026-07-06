@@ -34,6 +34,7 @@ pub struct AgentOverview {
     pub elapsed_ms: i64,
     pub started_ts: String,
     pub done_ts: Option<String>,
+    pub retry_count: i64,
 }
 
 /// One row of an agent's conversation stream.
@@ -179,7 +180,8 @@ pub async fn get_agent_overview(
 ) -> StorageResult<AgentOverview> {
     let r = sqlx::query(
         r#"SELECT agent_id, phase_id, model, status, prompt_preview,
-                  input_tokens, output_tokens, elapsed_ms, started_ts, done_ts
+                  input_tokens, output_tokens, elapsed_ms, started_ts, done_ts,
+                  retry_count
            FROM agents WHERE run_id = ? AND agent_id = ?"#,
     )
     .bind(run_id)
@@ -198,6 +200,7 @@ pub async fn get_agent_overview(
         elapsed_ms: r.try_get("elapsed_ms")?,
         started_ts: r.try_get("started_ts")?,
         done_ts: r.try_get("done_ts")?,
+        retry_count: r.try_get("retry_count")?,
     })
 }
 
@@ -205,7 +208,8 @@ pub async fn get_agent_overview(
 pub async fn get_run_agents(pool: &DbPool, run_id: RunId) -> StorageResult<Vec<AgentOverview>> {
     let rows = sqlx::query(
         r#"SELECT agent_id, phase_id, model, status, prompt_preview,
-                  input_tokens, output_tokens, elapsed_ms, started_ts, done_ts
+                  input_tokens, output_tokens, elapsed_ms, started_ts, done_ts,
+                  retry_count
            FROM agents
            WHERE run_id = ?
            ORDER BY started_ts"#,
@@ -227,6 +231,7 @@ pub async fn get_run_agents(pool: &DbPool, run_id: RunId) -> StorageResult<Vec<A
                 elapsed_ms: r.try_get("elapsed_ms")?,
                 started_ts: r.try_get("started_ts")?,
                 done_ts: r.try_get("done_ts")?,
+                retry_count: r.try_get("retry_count")?,
             })
         })
         .collect()
@@ -456,6 +461,7 @@ mod tests {
                 output: serde_json::Value::Null,
                 findings: Vec::new(),
                 prompt: String::new(),
+                retry_count: 0,
             })
             .await
             .unwrap();

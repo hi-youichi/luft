@@ -168,6 +168,7 @@ impl Scheduler {
                 output: serde_json::Value::Null,
                 findings: Vec::new(),
                 prompt: task.prompt.clone(),
+                retry_count: 0,
             });
             return Err(SchedulerError::QuotaExceeded {
                 limit: self.config.quota_per_run,
@@ -197,6 +198,7 @@ impl Scheduler {
                     output: serde_json::Value::Null,
                     findings: Vec::new(),
                     prompt: task.prompt.clone(),
+                    retry_count: 0,
                 });
                 self.cleanup_agent(run_id, task.agent_id);
                 return Err(cancel_kind(&run_cancel));
@@ -380,6 +382,7 @@ impl Scheduler {
                 Err(_) => Vec::new(),
             },
             prompt: task.prompt.clone(),
+            retry_count: attempt,
         });
         tracing::info!(?status, elapsed_ms, "agent finished");
 

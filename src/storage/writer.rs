@@ -97,8 +97,9 @@ impl EventWriter {
                 output: _,
                 findings: _,
                 prompt: _,
+                retry_count,
             } => {
-                self.write_agent_done(*run_id, *agent_id, status, *tokens, *elapsed_ms)
+                self.write_agent_done(*run_id, *agent_id, status, *tokens, *elapsed_ms, *retry_count)
                     .await?;
             }
             AgentEvent::PhaseDone {
@@ -512,6 +513,7 @@ impl EventWriter {
         status: &AgentStatus,
         tokens: crate::core::contract::ids::TokenUsage,
         elapsed_ms: u64,
+        retry_count: u32,
     ) -> StorageResult<()> {
         sqlx::query(
             "UPDATE agents
@@ -521,7 +523,8 @@ impl EventWriter {
                  cache_read_tokens = ?,
                  cache_write_tokens = ?,
                  done_ts = strftime('%Y-%m-%dT%H:%M:%fZ','now'),
-                 elapsed_ms = ?
+                 elapsed_ms = ?,
+                 retry_count = ?
              WHERE run_id = ? AND agent_id = ?",
         )
         .bind(agent_status_str(status.clone()))
@@ -530,6 +533,7 @@ impl EventWriter {
         .bind(tokens.cache_read as i64)
         .bind(tokens.cache_write as i64)
         .bind(elapsed_ms as i64)
+        .bind(retry_count as i64)
         .bind(run_id)
         .bind(agent_id)
         .execute(&self.pool)
@@ -1099,6 +1103,7 @@ mod tests {
             output: serde_json::Value::Null,
             findings: Vec::new(),
             prompt: String::new(),
+            retry_count: 0,
         })
         .await
         .unwrap();

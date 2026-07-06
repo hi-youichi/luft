@@ -44,6 +44,8 @@ struct AgentEntry {
     /// spinner keeps showing the latest token total even when the next delta
     /// is a `ToolCall` (which doesn't carry token info).
     latest_tokens: Option<TokenUsage>,
+    reasoning_chars: usize,
+    assistant_chars: usize,
 }
 
 struct PhaseEntry {
@@ -121,9 +123,10 @@ impl PhaseRenderer {
                 status,
                 tokens,
                 elapsed_ms,
+                retry_count,
                 ..
             } => {
-                self.on_agent_done(*agent_id, status.clone(), *tokens, *elapsed_ms);
+                self.on_agent_done(*agent_id, status.clone(), *tokens, *elapsed_ms, *retry_count);
             }
             AgentEvent::PhaseDone {
                 phase_id,
@@ -428,6 +431,8 @@ impl PhaseRenderer {
                     pb: Some(pb),
                     tool_calls: 0,
                     latest_tokens: None,
+                    reasoning_chars: 0,
+                    assistant_chars: 0,
                 },
             );
         } else {
@@ -439,6 +444,8 @@ impl PhaseRenderer {
                     pb: None,
                     tool_calls: 0,
                     latest_tokens: None,
+                    reasoning_chars: 0,
+                    assistant_chars: 0,
                 },
             );
         }
@@ -450,6 +457,7 @@ impl PhaseRenderer {
         status: AgentStatus,
         tokens: TokenUsage,
         elapsed_ms: u64,
+        retry_count: u32,
     ) {
         // Find and remove the agent from whichever phase holds it.
         let entry = self
@@ -463,16 +471,20 @@ impl PhaseRenderer {
         };
 
         let (icon, detail) = match status {
-            AgentStatus::Ok => (
-                style("✓").green().bold(),
-                format!(
-                    "{} · {} tok · {} {}",
+            AgentStatus::Ok => {
+                let mut parts = vec![
                     fmt_dur(elapsed_ms),
-                    tokens.display_total(),
-                    entry.tool_calls,
-                    calls_noun(entry.tool_calls)
-                ),
-            ),
+                    tokens.display_split(),
+                    format!("{} {}", entry.tool_calls, calls_noun(entry.tool_calls)),
+                ];
+                if retry_count > 0 {
+                    parts.push(format!("{} retries", retry_count));
+                }
+                (
+                    style("✓").green().bold(),
+                    parts.join(" · "),
+                )
+            }
             AgentStatus::Error => (style("✗").red().bold(), "ERROR".into()),
             AgentStatus::Cancelled => (style("⊘").yellow().bold(), "CANCELLED".into()),
             AgentStatus::TimedOut => (style("⏱").yellow().bold(), "TIMEOUT".into()),
@@ -522,8 +534,12 @@ impl PhaseRenderer {
             ProgressDelta::ToolCall { .. } => {
                 entry.tool_calls += 1;
             }
-            ProgressDelta::Message { .. } => {
-                // Message chunks don't affect counters/tokens.
+            ProgressDelta::Message { text } => {
+                if text.starts_with("[reasoning]") {
+                    entry.reasoning_chars += text.len();
+                } else {
+                    entry.assistant_chars += text.len();
+                }
             }
             _ => {}
         }
@@ -531,13 +547,11 @@ impl PhaseRenderer {
         // Re-render the spinner message only when we have one.
         if let Some(pb) = &entry.pb {
             match delta {
-                ProgressDelta::Tokens { .. } | ProgressDelta::ToolCall { .. } => {
+                ProgressDelta::Tokens { .. }
+                | ProgressDelta::ToolCall { .. }
+                | ProgressDelta::Message { .. } => {
                     pb.set_message(format_live(entry));
                 }
-                // Deliberately ignored: `Message` deltas would otherwise
-                // overwrite the spinner with a streaming-text preview. We
-                // keep the metric columns (`label · tok · calls`) stable
-                // and let users read streaming text via the event log.
                 _ => {}
             }
         }
@@ -585,9 +599,9 @@ impl PhaseRenderer {
 
         self.print("");
         self.print(&format!(
-            "╰─ Run done · {} · {} tok · {}",
+            "╰─ Run done · {} · {} · {}",
             status_str,
-            total_tokens.display_total(),
+            total_tokens.display_split(),
             fmt_dur(elapsed_ms),
         ));
     }
@@ -616,19 +630,34 @@ fn format_live(entry: &AgentEntry) -> String {
     let tok = entry
         .latest_tokens
         .unwrap_or_default()
-        .display_total();
-    format!(
-        "{} · {} tok · {} {}",
+        .display_split();
+    let mut s = format!(
+        "{} · {} · {} {}",
         entry.label,
         tok,
         entry.tool_calls,
         calls_noun(entry.tool_calls)
-    )
+    );
+    if entry.reasoning_chars > 0 || entry.assistant_chars > 0 {
+        s.push_str(&format!(
+            " · R:{} A:{}",
+            fmt_chars(entry.reasoning_chars),
+            fmt_chars(entry.assistant_chars)
+        ));
+    }
+    s
 }
 
-/// Singular/plural noun for tool-call count.
 fn calls_noun(n: u32) -> &'static str {
     if n == 1 { "call" } else { "calls" }
+}
+
+fn fmt_chars(n: usize) -> String {
+    if n >= 1000 {
+        format!("{:.1}k", n as f64 / 1000.0)
+    } else {
+        n.to_string()
+    }
 }
 
 // ── Formatting helpers ────────────────────────────────────
@@ -683,6 +712,8 @@ mod tests {
             pb: None,
             tool_calls,
             latest_tokens: tokens,
+            reasoning_chars: 0,
+            assistant_chars: 0,
         }
     }
 
@@ -798,6 +829,7 @@ mod tests {
             output: serde_json::Value::Null,
             findings: Vec::<Finding>::new(),
             prompt: String::new(),
+            retry_count: 0,
         }
     }
 
@@ -962,13 +994,13 @@ mod tests {
     #[test]
     fn format_live_zero_calls_no_tokens() {
         let e = fake_entry("researcher-a", 0, None);
-        assert_eq!(format_live(&e), "researcher-a · 0 tok · 0 calls");
+        assert_eq!(format_live(&e), "researcher-a · ↑0 ↓0 · 0 calls");
     }
 
     #[test]
     fn format_live_singular_call() {
         let e = fake_entry("researcher-a", 1, None);
-        assert_eq!(format_live(&e), "researcher-a · 0 tok · 1 call");
+        assert_eq!(format_live(&e), "researcher-a · ↑0 ↓0 · 1 call");
     }
 
     #[test]
@@ -983,7 +1015,7 @@ mod tests {
                 cache_write: 0,
             }),
         );
-        assert_eq!(format_live(&e), "researcher-a · 4.7k tok · 5 calls");
+        assert_eq!(format_live(&e), "researcher-a · ↑4.7k ↓0 · 5 calls");
     }
 
     #[test]
@@ -998,7 +1030,7 @@ mod tests {
                 cache_write: 0,
             }),
         );
-        assert_eq!(format_live(&e), "x · 1.5B tok · 2 calls");
+        assert_eq!(format_live(&e), "x · ↑1.5B ↓0 · 2 calls");
     }
 
     #[test]
@@ -1010,15 +1042,10 @@ mod tests {
     }
 
     #[test]
-    fn message_delta_does_not_overwrite_spinner_metrics() {
-        // Regression: Message deltas used to overwrite the spinner with a
-        // streaming-text preview, breaking the stable `label · tok · calls`
-        // display. Now they must be no-ops for the spinner.
+    fn message_delta_updates_spinner_with_char_counts() {
         use indicatif::ProgressDrawTarget;
 
         let mut r = PhaseRenderer::new(true);
-        // Swap the MultiProgress's draw target out for a hidden one so the
-        // test doesn't pollute stderr.
         r.mp = MultiProgress::with_draw_target(ProgressDrawTarget::hidden());
 
         let phase_id: PhaseId = 1;
@@ -1030,22 +1057,20 @@ mod tests {
         r.handle(&evt_tool_call(agent_id));
         r.handle(&evt_tool_call(agent_id));
 
-        // Snapshot the spinner message established by the metrics deltas.
-        let metrics_msg = r
+        let before_msg = r
             .phases
             .values()
             .find_map(|p| p.agents.get(&agent_id))
             .and_then(|e| e.pb.as_ref().map(|pb| pb.message()))
             .expect("spinner should exist in tty mode");
         assert!(
-            metrics_msg.contains("1.2k tok") && metrics_msg.contains("2 calls"),
-            "metrics msg should show 1.2k tok · 2 calls, got: {metrics_msg:?}",
+            before_msg.contains("↑1.2k") && before_msg.contains("2 calls"),
+            "metrics msg should show metrics, got: {before_msg:?}",
         );
+        assert!(!before_msg.contains("R:"), "no R: before messages arrive");
 
-        // Now flood with Message deltas — spinner message must not change.
-        r.handle(&evt_message(agent_id, "thinking..."));
-        r.handle(&evt_message(agent_id, "more reasoning..."));
-        r.handle(&evt_message(agent_id, "still going..."));
+        r.handle(&evt_message(agent_id, "[reasoning] thinking hard"));
+        r.handle(&evt_message(agent_id, "hello world"));
 
         let after_msg = r
             .phases
@@ -1053,9 +1078,13 @@ mod tests {
             .find_map(|p| p.agents.get(&agent_id))
             .and_then(|e| e.pb.as_ref().map(|pb| pb.message()))
             .expect("spinner should still exist");
-        assert_eq!(
-            after_msg, metrics_msg,
-            "Message delta must not overwrite the metrics spinner message",
+        assert!(
+            after_msg.contains("R:") && after_msg.contains("A:"),
+            "spinner should show R:/A: after messages, got: {after_msg:?}",
+        );
+        assert!(
+            after_msg.contains("↑1.2k") && after_msg.contains("2 calls"),
+            "metrics must remain stable, got: {after_msg:?}",
         );
     }
 
