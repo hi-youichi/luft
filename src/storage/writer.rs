@@ -328,7 +328,8 @@ impl EventWriter {
             // and checkpoint, no dedicated SQL table needed.
             AgentEvent::PhaseSpanStarted { .. }
             | AgentEvent::PhaseSpanDone { .. }
-            | AgentEvent::PlanPreview { .. } => {}
+            | AgentEvent::PlanPreview { .. }
+            | AgentEvent::SchemaRetry { .. } => {}
         }
 
         // All events are appended to the audit log for replay.
@@ -762,6 +763,7 @@ fn audit_metadata(event: &AgentEvent) -> (Option<RunId>, &'static str) {
         AgentEvent::PhaseSpanStarted { run_id, .. } => (Some(*run_id), "phase_span_started"),
         AgentEvent::PhaseSpanDone { run_id, .. } => (Some(*run_id), "phase_span_done"),
         AgentEvent::PlanPreview { run_id, .. } => (Some(*run_id), "plan_preview"),
+        AgentEvent::SchemaRetry { run_id, .. } => (Some(*run_id), "schema_retry"),
     }
 }
 

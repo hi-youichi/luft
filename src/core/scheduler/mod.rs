@@ -259,6 +259,12 @@ impl Scheduler {
                                 );
                                 break Err(SchedulerError::SchemaValidation(error));
                             }
+                            let _ = events.send(AgentEvent::SchemaRetry {
+                                run_id,
+                                agent_id: task.agent_id,
+                                attempt: schema_retry_count,
+                                max: self.config.retry.schema_retry_max,
+                            });
                             tracing::warn!(
                                 error = %error,
                                 attempt = schema_retry_count,

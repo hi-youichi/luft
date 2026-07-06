@@ -205,6 +205,15 @@ pub enum AgentEvent {
         elapsed_ms: u64,
         status: String,
     },
+    /// Agent output failed schema validation and is being retried with corrective
+    /// feedback injected into the prompt. Consumers (CLI, event log) can use this
+    /// to inform users that an extra LLM round-trip is underway.
+    SchemaRetry {
+        run_id: RunId,
+        agent_id: AgentId,
+        attempt: u32,
+        max: u32,
+    },
     /// Plan preview — emitted before execution starts, from the `meta` table.
     /// Lists the declared phases so the CLI can render a plan overview before
     /// real-time execution output begins.

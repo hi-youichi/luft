@@ -236,6 +236,26 @@ impl PhaseRenderer {
             } => {
                 self.on_plan_preview(reasoning, phases);
             }
+            AgentEvent::SchemaRetry {
+                agent_id,
+                attempt,
+                max,
+                ..
+            } => {
+                let label = self
+                    .phases
+                    .values()
+                    .find_map(|p| p.agents.get(agent_id))
+                    .map(|e| &e.label)
+                    .map(|s| s.as_str())
+                    .unwrap_or("?");
+                self.print(&format!(
+                    "│   {} · schema mismatch · retry {}/{}",
+                    style(label).yellow(),
+                    attempt,
+                    max,
+                ));
+            }
             AgentEvent::AgentProgress {
                 agent_id, delta, ..
             } => {

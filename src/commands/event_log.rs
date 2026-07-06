@@ -138,6 +138,14 @@ AgentDone { agent_id, status, tokens, elapsed_ms, name, .. } => {
         PhaseSpanDone { span_id, name, elapsed_ms, status, .. } => {
             format!("phase span#{span_id} done: {name} ({status}, {elapsed_ms}ms)")
         }
+        SchemaRetry {
+            agent_id,
+            attempt,
+            max,
+            ..
+        } => {
+            format!("schema retry {attempt}/{max} (agent {agent_id})")
+        }
         PlanPreview { reasoning, phases, .. } => {
             let labels: Vec<String> = phases.iter().map(|p| {
                 if p.dynamic {
