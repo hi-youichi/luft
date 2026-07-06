@@ -281,6 +281,7 @@ pub async fn prepare(
     backend: Arc<dyn AgentBackend>,
     base_dir: &Path,
     run_ctx: &RunContext,
+    max_concurrency: Option<usize>,
 ) -> Result<PreparedRun> {
     let run_dir = base_dir.join(&spec.run_dir_name);
 
@@ -322,7 +323,23 @@ pub async fn prepare(
     // Scheduler. Journaling is handled inside the runtime (cache-key aware), so
     // no scheduler-level callback is required.
     let registry = BackendRegistry::new().with(backend);
-    let scheduler = Scheduler::new(SchedulerConfig::default(), registry, None);
+    let default_cfg = SchedulerConfig::default();
+    let actual_concurrency = max_concurrency.unwrap_or(default_cfg.max_concurrency);
+    if actual_concurrency != default_cfg.max_concurrency {
+        tracing::info!(
+            concurrency = actual_concurrency,
+            default = default_cfg.max_concurrency,
+            "using custom concurrency limit"
+        );
+    }
+    let scheduler = Scheduler::new(
+        SchedulerConfig {
+            max_concurrency: actual_concurrency,
+            ..default_cfg
+        },
+        registry,
+        None,
+    );
     scheduler.init_run_with(spec.run_id, run_ctx.events.clone());
 
     // Forward the scheduler event stream into BOTH:
@@ -1101,7 +1118,7 @@ mod tests {
         };
 
         let backend = make_prepare_backend();
-        let _prepared = prepare(&spec, backend, dir.path(), &run_ctx).await.unwrap();
+        let _prepared = prepare(&spec, backend, dir.path(), &run_ctx, None).await.unwrap();
 
         // Fresh run: workflow.lua should have been written
         assert!(
@@ -1153,7 +1170,7 @@ mod tests {
         };
 
         let backend = make_prepare_backend();
-        let _prepared = prepare(&spec, backend, dir.path(), &run_ctx).await.unwrap();
+        let _prepared = prepare(&spec, backend, dir.path(), &run_ctx, None).await.unwrap();
 
         // Resume should NOT overwrite workflow.lua
         let content = std::fs::read_to_string(run_dir.join("workflow.lua")).unwrap();

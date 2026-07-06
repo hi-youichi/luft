@@ -1,8 +1,8 @@
 [package]
 name = "maestro"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
-description = "Maestro — multi-agent orchestration runtime (v0.1)"
+description = "Maestro — multi-agent orchestration runtime (v0.2)"
 license = "MIT"
 
 # Standalone workspace: detach from the parent loom workspace so Maestro can be

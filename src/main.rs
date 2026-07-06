@@ -178,6 +178,9 @@ struct RunArgs {
 
     #[arg(long, help = "Model for NL→Lua planning only (overrides --model for planner)")]
     planner_model: Option<String>,
+
+    #[arg(long, help = "Max number of agents running in parallel (default: auto 4-16)")]
+    max_concurrency: Option<usize>,
 }
 
 #[tokio::main]
@@ -290,6 +293,7 @@ let cli = Cli {
                 verbose: false,
                 model: None,
                 planner_model: None,
+                max_concurrency: None,
             }),
             log_level: None,
             log_file: None,
@@ -323,6 +327,7 @@ let cli = Cli {
                 verbose: false,
                 model: None,
                 planner_model: None,
+                max_concurrency: None,
             }),
             log_level: None,
             log_file: None,

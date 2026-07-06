@@ -143,7 +143,8 @@ pub async fn run_workflow(args: RunArgs) -> Result<()> {
 
         let backend2 = backend::create_backend(&backend_id, !args.no_acp_raw, model.clone())?;
 
-        let prepared = svc::prepare(&spec, backend2, &base_dir, &ctx).await?;
+        let prepared =
+            svc::prepare(&spec, backend2, &base_dir, &ctx, args.max_concurrency).await?;
 
         if spec.resuming {
             println!(
