@@ -208,7 +208,7 @@ impl PipelineExecutor {
     /// Items flow through each stage sequentially. Stage 0 processes all items
     /// first, then each item moves to Stage 1, etc. Within each stage, items
     /// are processed concurrently up to `max_inflight`.
-    pub async fn execute(
+    pub fn execute(
         &self,
         items: Vec<serde_json::Value>,
     ) -> Result<PipelineResult, PipelineError> {
@@ -386,7 +386,6 @@ use mlua::{Function, Lua, Table, Value};
 pub(crate) fn register_pipeline_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<()> {
     let globals = lua.globals();
     let run_id = cx.run_id();
-    let handle = cx.handle.clone();
     let events = cx.events();
 
     let pipeline_fn = lua.create_function(move |lua, params: Table| {
@@ -459,7 +458,7 @@ pub(crate) fn register_pipeline_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<
 
         let executor = PipelineExecutor::new(config, Some(events), run_id);
         tracing::debug!(n_items = items.len(), n_stages, "pipeline SDK invoked");
-        let result = handle.block_on(executor.execute(items)).map_err(|e| {
+        let result = executor.execute(items).map_err(|e| {
             tracing::error!(error = %e, "pipeline execution failed");
             mlua::Error::RuntimeError(format!("pipeline: execution error: {}", e))
         })?;
@@ -543,7 +542,7 @@ mod tests {
         ];
 
         let executor = PipelineExecutor::new(config, None, uuid::Uuid::nil());
-        let result = executor.execute(items).await.unwrap();
+        let result = executor.execute(items).unwrap();
 
         assert_eq!(result.items.len(), 2);
         assert_eq!(result.stats.ok, 2);
@@ -581,7 +580,7 @@ mod tests {
         ];
 
         let executor = PipelineExecutor::new(config, None, uuid::Uuid::nil());
-        let result = executor.execute(items).await.unwrap();
+        let result = executor.execute(items).unwrap();
 
         assert_eq!(result.items.len(), 2);
         // Item 0 should succeed, item 1 should fail
@@ -598,7 +597,7 @@ mod tests {
     async fn test_pipeline_empty_items() {
         let config = PipelineConfig::default();
         let executor = PipelineExecutor::new(config, None, uuid::Uuid::nil());
-        let result = executor.execute(vec![]).await;
+        let result = executor.execute(vec![]);
         assert!(matches!(result, Err(PipelineError::NoItems)));
     }
 
@@ -610,7 +609,7 @@ mod tests {
         };
         let items = vec![json!({"id": 1})];
         let executor = PipelineExecutor::new(config, None, uuid::Uuid::nil());
-        let result = executor.execute(items).await;
+        let result = executor.execute(items);
         assert!(matches!(result, Err(PipelineError::NoStages)));
     }
 }

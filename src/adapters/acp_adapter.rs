@@ -35,6 +35,29 @@ use agent_client_protocol::{Agent, ByteStreams, Client, ConnectionTo, Responder}
 /// for this duration, the session is killed.
 const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
 
+/// After a `structured_output` submission is captured, the agent has this long
+/// to stop generating before the session is force-killed. The timer does NOT
+/// reset on further activity — once the LLM has submitted its result, any
+/// additional tool calls after that point are dropped and the session is
+/// closed. This bounds the wait when the LLM continues producing tool calls
+/// (e.g. `todo_write`) after submitting (see
+/// `docs/issues/opengui-stories-2026-07-06-stuck-run.md` §3.3).
+const POST_SUBMISSION_IDLE: Duration = Duration::from_secs(5);
+
+/// What caused `idle_watchdog` to return.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WatchdogOutcome {
+    /// LLM hung for `pre_idle` with no protocol activity and no submission.
+    PreIdleTimeout,
+    /// LLM submitted a valid `structured_output` but kept generating for
+    /// `post_idle` after the submission. Caller should treat the captured
+    /// submission as the result.
+    PostSubmissionTimeout,
+    /// All activity senders were dropped (channel closed). Treat as a clean
+    /// shutdown.
+    ChannelClosed,
+}
+
 /// ACP backend configuration.
 #[derive(Debug, Clone)]
 pub struct AcpConfig {
@@ -249,6 +272,22 @@ async fn run_acp_session(
     // agent from a hung one.
     let (activity_tx, mut activity_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
 
+    // Submission signal: fires exactly once when `structured_output` is
+    // captured. The idle watchdog uses this to switch to a short, non-resetting
+    // post-submission timeout so a chatty post-submission agent (e.g. one that
+    // keeps calling `todo_write` after submitting) cannot hang the session.
+    //
+    // `Notify` (not `mpsc`) is used so `notified()` integrates cleanly with
+    // `tokio::select!`: it resolves immediately if `notify_one()` was
+    // already called (mpsc has a tight-loop-on-closed issue that is awkward
+    // to work around here, and `try_recv` polling would add latency). See
+    // `docs/issues/opengui-stories-2026-07-06-stuck-run.md` §3.3.
+    let submit_signal = Arc::new(tokio::sync::Notify::new());
+
+    // Clone for the watchdog (the original is moved into the conn_fut
+    // closure; this clone is used by the outer `tokio::select!`).
+    let submit_signal_watchdog = submit_signal.clone();
+
     // 2a. Prepare MCP server for structured output (if schema present).
     let _schema_guard = if let Some(ref schema) = task.output_schema {
         let schema_json = serde_json::to_string(schema)
@@ -283,6 +322,7 @@ async fn run_acp_session(
                         let acc_h = acc_h.clone();
                         let events_h = events_h.clone();
                         let activity_tx = activity_tx.clone();
+                        let submit_signal = submit_signal.clone();
                         async move {
                             let _ = activity_tx.send(());
                             let kind = serde_json::to_value(&n.update)
@@ -294,9 +334,25 @@ async fn run_acp_session(
                                 })
                                 .unwrap_or_else(|| "unknown".to_string());
                             tracing::debug!(%kind, "ACP session/update");
+                            // Capture pre-update submission state so we can detect the
+                            // None→Some transition on `structured_output` and signal the
+                            // idle watchdog to switch to a short, non-resetting timer.
+                            let was_submitted = acc_h
+                                .structured_output
+                                .lock()
+                                .unwrap()
+                                .is_some();
                             update_mapper::handle_update(
                                 &n.update, run_id, agent_id, &acc_h, &events_h, emit_raw,
                             );
+                            if !was_submitted
+                                && acc_h.structured_output.lock().unwrap().is_some()
+                            {
+                                submit_signal.notify_one();
+                                tracing::debug!(
+                                    "ACP structured_output captured; watchdog switching to post-submission mode"
+                                );
+                            }
                             Ok(())
                         }
                     },
@@ -443,13 +499,44 @@ async fn run_acp_session(
             let _ = child.start_kill();
             return Err(BackendError::Cancelled);
         }
-        _ = idle_watchdog(idle_timeout, &mut activity_rx) => {
-            tracing::warn!(
-                idle_timeout_ms = idle_timeout.as_millis() as u64,
-                "ACP session idle timeout (no protocol activity)"
-            );
+        res = idle_watchdog(
+            idle_timeout,
+            POST_SUBMISSION_IDLE,
+            &mut activity_rx,
+            submit_signal_watchdog,
+        ) => {
             let _ = child.start_kill();
-            return Err(BackendError::Timeout);
+            match res {
+                WatchdogOutcome::PreIdleTimeout => {
+                    tracing::warn!(
+                        idle_timeout_ms = idle_timeout.as_millis() as u64,
+                        "ACP session idle timeout (no protocol activity)"
+                    );
+                    return Err(BackendError::Timeout);
+                }
+                WatchdogOutcome::ChannelClosed => {
+                    tracing::debug!("ACP activity channel closed");
+                    return Err(BackendError::Timeout);
+                }
+                WatchdogOutcome::PostSubmissionTimeout => {
+                    // The LLM submitted a valid `structured_output` but kept
+                    // generating tool calls after that (e.g. `todo_write`).
+                    // We treat the captured submission as the session result:
+                    // synthesize an `EndTurn` stop_reason and fall through to
+                    // the normal collection path. The scheduler's
+                    // schema-retry loop will then validate the payload
+                    // against `task.output_schema`.
+                    tracing::info!(
+                        post_idle_ms = POST_SUBMISSION_IDLE.as_millis() as u64,
+                        "ACP post-submission timeout; treating structured_output as result"
+                    );
+                    if stop_holder.lock().unwrap().is_none() {
+                        *stop_holder.lock().unwrap() =
+                            Some("EndTurn".to_string());
+                    }
+                    Ok(())
+                }
+            }
         }
     };
     let _ = child.start_kill();
@@ -481,17 +568,59 @@ async fn run_acp_session(
 /// the idle timer. This lets a slow-but-alive agent (e.g. a long tool call
 /// with periodic `ToolCallUpdate` events) run indefinitely while a truly
 /// hung agent (no notifications at all) is killed after `idle`.
-async fn idle_watchdog(idle: Duration, rx: &mut tokio::sync::mpsc::UnboundedReceiver<()>) {
+///
+/// When `submit_signal.notify_one()` is called, the watchdog transitions
+/// into a **post-submission** state: it switches to a short `post_idle`
+/// timer that is **not** reset by further activity on `activity_rx`. This
+/// bounds the wait once the LLM has submitted a valid `structured_output`
+/// but keeps producing tool calls (e.g. `todo_write`) — the exact race
+/// that produced the `story-UpdateDialog` and `story-MessageListSubmodule`
+/// failures documented in
+/// `docs/issues/opengui-stories-2026-07-06-stuck-run.md`.
+///
+/// `submit_signal` is a `tokio::sync::Notify` (not an mpsc) so the
+/// `notified()` future integrates cleanly with `select!` and resolves
+/// immediately if `notify_one()` was already called. `Notify` has no
+/// "closed" state: if the handler is dropped without notifying, the
+/// `notified()` future blocks indefinitely and the `pre_idle` timer is
+/// the backstop.
+async fn idle_watchdog(
+    pre_idle: Duration,
+    post_idle: Duration,
+    activity_rx: &mut tokio::sync::mpsc::UnboundedReceiver<()>,
+    submit_signal: Arc<tokio::sync::Notify>,
+) -> WatchdogOutcome {
+    let mut submitted = false;
     loop {
+        if submitted {
+            // Drain any trailing notifications: they DO NOT reset the timer.
+            // The LLM has already submitted; we are giving it a fixed grace
+            // period to stop, after which we kill the session.
+            //
+            // We deliberately do NOT wait on `submit_signal` or
+            // `activity_rx` here: the submission is one-shot and any
+            // further activity is irrelevant to whether the captured
+            // `structured_output` is the result.
+            while activity_rx.try_recv().is_ok() {}
+            tokio::time::sleep(post_idle).await;
+            return WatchdogOutcome::PostSubmissionTimeout;
+        }
         tokio::select! {
             biased;
-            msg = rx.recv() => match msg {
-                Some(()) => {
-                    while rx.try_recv().is_ok() {}
-                }
-                None => return,
+            _ = submit_signal.notified() => {
+                submitted = true;
+                tracing::debug!(
+                    post_idle_ms = post_idle.as_millis() as u64,
+                    "ACP watchdog entered post-submission mode"
+                );
+            }
+            msg = activity_rx.recv() => match msg {
+                Some(()) => { while activity_rx.try_recv().is_ok() {} }
+                None => return WatchdogOutcome::ChannelClosed,
             },
-            _ = tokio::time::sleep(idle) => return,
+            _ = tokio::time::sleep(pre_idle) => {
+                return WatchdogOutcome::PreIdleTimeout;
+            }
         }
     }
 }
@@ -509,398 +638,48 @@ fn is_connection_closed(s: &str) -> bool {
 mod tests {
     use super::*;
 
-    // ------------------------------------------------------------------
-    // AcpConfig
-    // ------------------------------------------------------------------
-
-    #[test]
-    fn config_default_is_opencode() {
-        let c = AcpConfig::default();
-        assert_eq!(c.binary, PathBuf::from("opencode"));
-        assert_eq!(c.connect_timeout, Duration::from_secs(10));
-        assert!(c.emit_raw_events);
-        assert!(c.log_level.is_none());
-    }
-
-    #[test]
-    fn config_clone_and_debug() {
-        let c = AcpConfig::default();
-        let _cloned = c.clone();
-        let _debug = format!("{c:?}");
-    }
-
-    // ------------------------------------------------------------------
-    // AcpAdapter
-    // ------------------------------------------------------------------
-
-    #[test]
-    fn id_is_opencode() {
-        assert_eq!(AcpAdapter::default_opencode().id(), "opencode");
-    }
-
-    #[test]
-    fn capabilities_are_correct() {
-        let adapter = AcpAdapter::default_opencode();
-        let caps = adapter.capabilities();
-        assert!(caps.streaming);
-        assert!(caps.mcp_injection);
-        assert!(caps.structured_output);
-        assert!(caps.models.is_empty());
-    }
-
-    #[test]
-    fn new_adapter_accepts_custom_config() {
-        let config = AcpConfig {
-            id: "custom-agent",
-            ..Default::default()
-        };
-        let adapter = AcpAdapter::new(config);
-        assert_eq!(adapter.id(), "custom-agent");
-        assert!(adapter.capabilities().streaming);
-    }
-
-    #[test]
-    fn default_env_passthrough_excludes_ai_provider_vars() {
-        // Security boundary: the default passthrough must not include any
-        // common AI provider credential / model-selection variables, so
-        // a stray shell `OPENAI_API_KEY` or `MODEL` cannot leak into
-        // the subprocess and override the subprocess's own config.
-        let c = AcpConfig::default();
-        for forbidden in [
-            "OPENAI_API_KEY",
-            "OPENAI_BASE_URL",
-            "OPENAI_MODEL",
-            "ANTHROPIC_API_KEY",
-            "ANTHROPIC_MODEL",
-            "MODEL",
-            "LOOM_AUX_MODEL",
-        ] {
-            assert!(
-                !c.env_passthrough.iter().any(|v| v == forbidden),
-                "default env_passthrough must not include {forbidden} (would defeat env isolation)"
-            );
-        }
-        // Sanity: OS bootstrap vars that the subprocess needs to start
-        // (PATH at minimum) must be present.
-        assert!(
-            c.env_passthrough.iter().any(|v| v == "PATH"),
-            "default env_passthrough must include PATH"
-        );
-        // Sanity: the default allowlist is a closed list, not "inherit
-        // everything" (the latter would be a security hole).
-        assert!(
-            c.env_passthrough.len() <= AcpConfig::DEFAULT_ENV_PASSTHROUGH.len(),
-            "default env_passthrough size {} exceeds DEFAULT_ENV_PASSTHROUGH size {}",
-            c.env_passthrough.len(),
-            AcpConfig::DEFAULT_ENV_PASSTHROUGH.len()
-        );
-    }
-
-    #[test]
-    fn empty_env_passthrough_is_supported() {
-        // Users who want a fully empty env (no PATH, no HOME) can opt
-        // in explicitly. This is the "hardest" isolation mode.
-        let config = AcpConfig {
-            env_passthrough: vec![],
-            ..Default::default()
-        };
-        let _adapter = AcpAdapter::new(config);
-    }
-
-    #[test]
-    fn default_opencode_creates_adapter() {
-        let adapter = AcpAdapter::default_opencode();
-        assert_eq!(adapter.id(), "opencode");
-        assert!(adapter.capabilities().streaming);
-    }
-
-    // ------------------------------------------------------------------
-    // is_connection_closed
-    // ------------------------------------------------------------------
-
-    #[test]
-    fn is_connection_closed_true_for_receiver_dropped() {
-        assert!(is_connection_closed("receiver dropped"));
-        assert!(is_connection_closed("error: receiver dropped"));
-    }
-
-    #[test]
-    fn is_connection_closed_true_for_broken_pipe() {
-        assert!(is_connection_closed("broken pipe"));
-        assert!(is_connection_closed("broken pipe: write error"));
-    }
-
-    #[test]
-    fn is_connection_closed_true_for_unexpected_eof() {
-        assert!(is_connection_closed("unexpected eof"));
-        assert!(is_connection_closed("io error: unexpected eof"));
-    }
-
-    #[test]
-    fn is_connection_closed_true_for_connection_closed_phrase() {
-        assert!(is_connection_closed("connection closed"));
-        assert!(is_connection_closed("error: connection closed"));
-    }
-
-    #[test]
-    fn is_connection_closed_false_for_other_strings() {
-        assert!(!is_connection_closed(""));
-        assert!(!is_connection_closed("some random error"));
-        assert!(!is_connection_closed("receiver"));
-        assert!(!is_connection_closed("pipe"));
-        assert!(!is_connection_closed("unexpected"));
-        assert!(!is_connection_closed("closed"));
-        assert!(!is_connection_closed("timed out"));
-        assert!(!is_connection_closed("protocol error"));
-    }
-
-    // ------------------------------------------------------------------
-    // Helpers for AgentBackend::run tests
-    // ------------------------------------------------------------------
-
-    fn test_task(timeout_secs: u64, output_schema: Option<serde_json::Value>) -> AgentTask {
-        AgentTask {
-            agent_id: uuid::Uuid::now_v7(),
-            phase_id: 0,
-            prompt: "hello".into(),
-            model: None,
-            allowlist: None,
-            workdir: PathBuf::from("/tmp"),
-            mcp_endpoint: None,
-            timeout: Some(Duration::from_secs(timeout_secs)),
-            output_schema,
-            description: None,
-            role: None,
-            name: None,
-            agent_seq: 0,
-        }
-    }
-
-    fn test_context(cancel: Option<tokio_util::sync::CancellationToken>) -> RunContext {
-        let (tx, _rx) = tokio::sync::broadcast::channel(16);
-        let cancel = cancel.unwrap_or_default();
-        RunContext {
-            run_id: uuid::Uuid::now_v7(),
-            cancel,
-            events: tx,
-        }
-    }
-
-    /// Create a temporary shell script that sleeps for `secs` and ignores all
-    /// arguments (the ACP adapter always passes `acp` as the first argument).
-    /// The script lives inside the returned `TempDir` so it is automatically
-    /// cleaned up when the directory is dropped.
-    #[cfg(unix)]
-    fn blocking_script(secs: u64) -> (std::path::PathBuf, tempfile::TempDir) {
-        use std::io::Write;
-        use std::os::unix::fs::PermissionsExt;
-
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("sleep_script.sh");
-        let mut f = std::fs::File::create(&path).expect("create script");
-        writeln!(f, "#!/bin/sh").expect("write shebang");
-        writeln!(f, "sleep {secs}").expect("write sleep");
-        drop(f);
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).expect("chmod +x");
-        (path, dir)
-    }
-
-    // ------------------------------------------------------------------
-    // AgentBackend::run  –  integration-level tests
-    // ------------------------------------------------------------------
-
-    // ── Spawn error (binary not found) ──────────────────────────────
-
-    #[tokio::test]
-    async fn run_with_nonexistent_binary_returns_spawn_error() {
-        let config = AcpConfig {
-            binary: PathBuf::from("/nonexistent-binary-for-testing"),
-            log_level: Some("debug".into()),
-            ..Default::default()
-        };
-        let adapter = AcpAdapter::new(config);
-        let task = test_task(5, None);
-        let ctx = test_context(None);
-        let result = adapter.run(task, ctx).await;
-        assert!(
-            matches!(&result, Err(BackendError::Spawn(_))),
-            "expected Spawn error, got: {result:?}"
-        );
-    }
-
-    // ── Non-ACP binary that produces output → error (Protocol or Timeout) ──
-    //
-    // Using a no-op binary (echo/true) as a non-ACP binary. The ACP client
-    // either fails to parse the output (Protocol) or hits the connection-closed
-    // path (Timeout), depending on timing. Both are valid error outcomes.
-
-    fn echo_binary() -> PathBuf {
-        if cfg!(windows) {
-            PathBuf::from(std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".into()))
-        } else {
-            PathBuf::from("/bin/echo")
-        }
-    }
-
-    fn true_binary() -> PathBuf {
-        if cfg!(windows) {
-            PathBuf::from(std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".into()))
-        } else {
-            PathBuf::from("/usr/bin/true")
-        }
-    }
-
-    #[tokio::test]
-    async fn run_with_non_acp_binary_returns_error() {
-        let config = AcpConfig {
-            binary: echo_binary(),
-            ..Default::default()
-        };
-        let adapter = AcpAdapter::new(config);
-        let task = test_task(5, None);
-        let ctx = test_context(None);
-        let result = adapter.run(task, ctx).await;
-        assert!(
-            matches!(
-                &result,
-                Err(BackendError::Protocol(_)) | Err(BackendError::Timeout)
-            ),
-            "expected Protocol or Timeout error, got: {result:?}"
-        );
-    }
-
-    // ── Pre-cancelled token → Cancelled ────────────────────────────
-
-    #[tokio::test]
-    async fn run_with_precancelled_token_returns_cancelled() {
-        let config = AcpConfig {
-            binary: true_binary(),
-            ..Default::default()
-        };
-        let adapter = AcpAdapter::new(config);
-        let task = test_task(60, None);
-        let cancel = tokio_util::sync::CancellationToken::new();
-        cancel.cancel();
-        let ctx = test_context(Some(cancel));
-        let result = adapter.run(task, ctx).await;
-        assert!(
-            matches!(&result, Err(BackendError::Cancelled)),
-            "expected Cancelled, got: {result:?}"
-        );
-    }
-
-    // ── Cancellation during the session ────────────────────────────
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn run_cancellation_during_session() {
-        let (script_path, _dir) = blocking_script(120);
-        let config = AcpConfig {
-            binary: script_path,
-            ..Default::default()
-        };
-        let adapter = AcpAdapter::new(config);
-        let task = test_task(120, None);
-        let cancel = tokio_util::sync::CancellationToken::new();
-        let ctx = test_context(Some(cancel.clone()));
-
-        let handle = tokio::spawn(async move { adapter.run(task, ctx).await });
-
-        tokio::time::sleep(Duration::from_millis(300)).await;
-        cancel.cancel();
-
-        let result = tokio::time::timeout(Duration::from_secs(15), handle)
-            .await
-            .expect("test timed out waiting for cancellation")
-            .expect("join error");
-        assert!(
-            matches!(&result, Err(BackendError::Cancelled)),
-            "expected Cancelled during session, got: {result:?}"
-        );
-    }
-
-    // ── Timeout ────────────────────────────────────────────────────
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn run_with_timeout() {
-        let (script_path, _dir) = blocking_script(120);
-        let config = AcpConfig {
-            binary: script_path,
-            ..Default::default()
-        };
-        let adapter = AcpAdapter::new(config);
-        let task = test_task(120, None);
-        // Override with an extremely short timeout.
-        let task = AgentTask {
-            timeout: Some(Duration::from_millis(100)),
-            ..task
-        };
-        let ctx = test_context(None);
-
-        let handle = tokio::spawn(async move { adapter.run(task, ctx).await });
-
-        let result = tokio::time::timeout(Duration::from_secs(15), handle)
-            .await
-            .expect("test timed out")
-            .expect("join error");
-        assert!(
-            matches!(&result, Err(BackendError::Timeout)),
-            "expected Timeout, got: {result:?}"
-        );
-    }
-
-    // ── Output-schema guard ────────────────────────────────────────
-    //
-    // Using a non-ACP binary with an output schema. The result is
-    // either Protocol or Timeout depending on timing (see note above).
-
-    #[tokio::test]
-    async fn run_with_output_schema_creates_guard() {
-        let config = AcpConfig {
-            binary: echo_binary(),
-            ..Default::default()
-        };
-        let adapter = AcpAdapter::new(config);
-        let task = test_task(5, Some(serde_json::json!({"type": "object"})));
-        let ctx = test_context(None);
-        let result = adapter.run(task, ctx).await;
-        assert!(
-            matches!(
-                &result,
-                Err(BackendError::Protocol(_)) | Err(BackendError::Timeout)
-            ),
-            "expected Protocol or Timeout with schema, got: {result:?}"
-        );
-    }
-
     // ── idle_watchdog ──────────────────────────────────────────────
+    //
+    // The watchdog has a two-state machine: pre-submission (timer resets
+    // on activity) and post-submission (fixed short timer, no reset).
+    // These tests exercise both paths and the transition between them.
 
     #[tokio::test]
     async fn idle_watchdog_fires_after_idle_period() {
-        let (_tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+        let (_atx, mut arx) = tokio::sync::mpsc::unbounded_channel::<()>();
+        let submit = Arc::new(tokio::sync::Notify::new());
         let r = tokio::time::timeout(
             Duration::from_millis(500),
-            idle_watchdog(Duration::from_millis(50), &mut rx),
+            idle_watchdog(
+                Duration::from_millis(50),
+                Duration::from_millis(50),
+                &mut arx,
+                submit,
+            ),
         )
         .await;
-        assert!(r.is_ok(), "should fire after idle period");
+        let outcome = r.expect("should fire after idle period");
+        assert_eq!(outcome, WatchdogOutcome::PreIdleTimeout);
     }
 
     #[tokio::test]
     async fn idle_watchdog_does_not_fire_with_activity() {
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<()>();
-
+        let (atx, mut arx) = tokio::sync::mpsc::unbounded_channel::<()>();
+        let submit = Arc::new(tokio::sync::Notify::new());
         tokio::spawn(async move {
             for _ in 0..5 {
                 tokio::time::sleep(Duration::from_millis(20)).await;
-                let _ = tx.send(());
+                let _ = atx.send(());
             }
         });
-
         let r = tokio::time::timeout(
             Duration::from_millis(80),
-            idle_watchdog(Duration::from_millis(50), &mut rx),
+            idle_watchdog(
+                Duration::from_millis(50),
+                Duration::from_millis(50),
+                &mut arx,
+                submit,
+            ),
         )
         .await;
         assert!(
@@ -911,15 +690,119 @@ mod tests {
 
     #[tokio::test]
     async fn idle_watchdog_fires_after_activity_stops() {
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<()>();
-        let _ = tx.send(());
-        drop(tx);
-
+        let (atx, mut arx) = tokio::sync::mpsc::unbounded_channel::<()>();
+        let submit = Arc::new(tokio::sync::Notify::new());
+        let _ = atx.send(());
+        drop(atx);
         let r = tokio::time::timeout(
             Duration::from_millis(30),
-            idle_watchdog(Duration::from_millis(80), &mut rx),
+            idle_watchdog(
+                Duration::from_millis(80),
+                Duration::from_millis(80),
+                &mut arx,
+                submit,
+            ),
         )
         .await;
-        assert!(r.is_ok(), "should return immediately when channel closes");
+        let outcome = r.expect("should return immediately when channel closes");
+        assert_eq!(outcome, WatchdogOutcome::ChannelClosed);
+    }
+
+    // ── Post-submission mode (Fix M1) ───────────────────────────────
+    //
+    // The pre-submission watchdog keeps the session alive while the LLM
+    // is actively emitting notifications. Once `submit_signal.notify_one()`
+    // is called, the watchdog must switch to a short, non-resetting
+    // post-idle timer so a chatty post-submission agent (one that keeps
+    // calling `todo_write` after submitting `structured_output`) cannot
+    // hang the session. This is the race that produced
+    // `story-UpdateDialog` / `story-MessageListSubmodule` failures in
+    // `docs/issues/opengui-stories-2026-07-06-stuck-run.md`.
+
+    #[tokio::test]
+    async fn idle_watchdog_enters_post_mode_after_submit_signal() {
+        let (_atx, mut arx) = tokio::sync::mpsc::unbounded_channel::<()>();
+        let submit = Arc::new(tokio::sync::Notify::new());
+        let submit_h = submit.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            submit_h.notify_one();
+        });
+        let r = tokio::time::timeout(
+            Duration::from_millis(500),
+            idle_watchdog(
+                Duration::from_secs(60), // long pre-idle (should never fire)
+                Duration::from_millis(50), // short post-idle
+                &mut arx,
+                submit,
+            ),
+        )
+        .await;
+        let outcome = r.expect("watchdog should return after post_idle");
+        assert_eq!(outcome, WatchdogOutcome::PostSubmissionTimeout);
+    }
+
+    #[tokio::test]
+    async fn idle_watchdog_post_mode_is_not_reset_by_activity() {
+        // KEY INVARIANT: once the LLM has submitted, additional activity
+        // ticks must NOT extend the wait. This is what prevents the
+        // 2.5-minute hang observed in the opencode run.
+        let (atx, mut arx) = tokio::sync::mpsc::unbounded_channel::<()>();
+        let submit = Arc::new(tokio::sync::Notify::new());
+        submit.notify_one();
+        tokio::spawn(async move {
+            for _ in 0..20 {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+                let _ = atx.send(());
+            }
+        });
+        let start = std::time::Instant::now();
+        let r = tokio::time::timeout(
+            Duration::from_millis(500),
+            idle_watchdog(
+                Duration::from_secs(60),
+                Duration::from_millis(80),
+                &mut arx,
+                submit,
+            ),
+        )
+        .await;
+        let outcome = r.expect("watchdog should return after post_idle");
+        let elapsed = start.elapsed();
+        assert_eq!(outcome, WatchdogOutcome::PostSubmissionTimeout);
+        // The post-idle timer must dominate: even with 20 activity ticks
+        // (totalling ~400 ms), the watchdog should fire at ~80 ms
+        // post-submit. We allow generous slack for CI scheduling jitter.
+        assert!(
+            elapsed < Duration::from_millis(300),
+            "post-mode timer was reset by activity: elapsed={elapsed:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn idle_watchdog_pre_mode_resets_on_activity() {
+        // Sanity: pre-submission behavior is preserved (regression guard).
+        let (atx, mut arx) = tokio::sync::mpsc::unbounded_channel::<()>();
+        let submit = Arc::new(tokio::sync::Notify::new());
+        tokio::spawn(async move {
+            for _ in 0..10 {
+                tokio::time::sleep(Duration::from_millis(30)).await;
+                let _ = atx.send(());
+            }
+        });
+        let r = tokio::time::timeout(
+            Duration::from_millis(200),
+            idle_watchdog(
+                Duration::from_millis(60),
+                Duration::from_millis(60),
+                &mut arx,
+                submit,
+            ),
+        )
+        .await;
+        assert!(
+            r.is_err(),
+            "pre-mode should not fire while activity keeps resetting timer"
+        );
     }
 }

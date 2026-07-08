@@ -78,7 +78,7 @@ pub(super) fn register(lua: &Lua, cx: &SdkContext) -> mlua::Result<()> {
                     pending.iter().map(|p| (p.task.clone(), p.backend.clone())).collect();
                 let results = handle.block_on(sched.run_parallel(run_id, tasks));
 
-                for (p, res) in pending.iter().zip(results.into_iter()) {
+                for (p, res) in pending.iter().zip(results) {
                     let slot = match res {
                         Ok(r) => {
                             tracing::debug!(agent_id = %p.agent_id, "parallel() agent completed");
