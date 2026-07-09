@@ -28,9 +28,9 @@ use crate::core::contract::backend::{
     AgentBackend, AgentCapabilities, AgentResult, AgentTask, BackendError, RunContext, ToolPolicy,
 };
 use crate::core::contract::event::EventSender;
-use crate::core::contract::ids::{AgentId, RunId};
 #[cfg(feature = "unstable_end_turn_token_usage")]
 use crate::core::contract::ids::TokenUsage;
+use crate::core::contract::ids::{AgentId, RunId};
 use async_trait::async_trait;
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -151,13 +151,25 @@ impl AcpConfig {
     /// [`AcpConfig::env_passthrough`].
     pub const DEFAULT_ENV_PASSTHROUGH: &'static [&'static str] = &[
         // OS / loader
-        "PATH", "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT",
+        "PATH",
+        "SYSTEMROOT",
+        "WINDIR",
+        "COMSPEC",
+        "PATHEXT",
         // User / home
-        "USERPROFILE", "HOME", "USER", "USERNAME", "LOGNAME",
+        "USERPROFILE",
+        "HOME",
+        "USER",
+        "USERNAME",
+        "LOGNAME",
         // Temp
-        "TMPDIR", "TMP", "TEMP",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
         // Locale
-        "LANG", "LC_ALL", "LC_CTYPE",
+        "LANG",
+        "LC_ALL",
+        "LC_CTYPE",
         // Shell (sometimes needed for spawned sub-shells)
         "SHELL",
     ];
@@ -195,6 +207,13 @@ impl AcpAdapter {
     pub fn default_opencode() -> Self {
         Self::new(AcpConfig::default())
     }
+
+    /// Returns the configuration this adapter was built with. Useful for
+    /// introspection / diagnostics and for tests that need to distinguish
+    /// adapter instances beyond their [`AgentBackend::id`].
+    pub fn config(&self) -> &AcpConfig {
+        &self.config
+    }
 }
 
 #[async_trait]
@@ -210,6 +229,10 @@ impl AgentBackend for AcpAdapter {
             structured_output: true,
             models: vec![],
         }
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 
     async fn run(&self, task: AgentTask, ctx: RunContext) -> Result<AgentResult, BackendError> {
@@ -525,11 +548,15 @@ async fn decide_permission(
         permission::decide(policy.as_ref(), &inputs),
         permission::Decision::Approve
     );
-    tracing::debug!(approve, options = req.options.len(), "ACP permission request");
+    tracing::debug!(
+        approve,
+        options = req.options.len(),
+        "ACP permission request"
+    );
     let outcome = match (approve, req.options.first()) {
-        (true, Some(opt)) => RequestPermissionOutcome::Selected(
-            SelectedPermissionOutcome::new(opt.option_id.clone()),
-        ),
+        (true, Some(opt)) => RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
+            opt.option_id.clone(),
+        )),
         _ => RequestPermissionOutcome::Cancelled,
     };
     responder.respond(RequestPermissionResponse::new(outcome))
@@ -578,8 +605,8 @@ async fn session_new(
     let req = NewSessionRequest::new(cwd);
     let req = match schema_file_path {
         Some(sf) => {
-            let maestro_bin = std::env::current_exe()
-                .unwrap_or_else(|_| std::path::PathBuf::from("maestro"));
+            let maestro_bin =
+                std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("maestro"));
             let mcp = McpServerStdio::new("maestro-structured-output", maestro_bin).args(vec![
                 "mcp-structured-output".to_string(),
                 "--schema-file".to_string(),
@@ -626,14 +653,12 @@ async fn validate_and_set_model(
         }
     };
     let valid = match &select.options {
-        SessionConfigSelectOptions::Ungrouped(opts) => opts
+        SessionConfigSelectOptions::Ungrouped(opts) => {
+            opts.iter().any(|o| o.value.0.as_ref() == model_name)
+        }
+        SessionConfigSelectOptions::Grouped(groups) => groups
             .iter()
-            .any(|o| o.value.0.as_ref() == model_name),
-        SessionConfigSelectOptions::Grouped(groups) => groups.iter().any(|g| {
-            g.options
-                .iter()
-                .any(|o| o.value.0.as_ref() == model_name)
-        }),
+            .any(|g| g.options.iter().any(|o| o.value.0.as_ref() == model_name)),
         _ => false,
     };
     if valid {
@@ -675,7 +700,10 @@ async fn send_prompt(
 fn record_prompt_result(
     pr: &agent_client_protocol::schema::PromptResponse,
     stop_holder: &Arc<Mutex<Option<String>>>,
-    #[cfg_attr(not(feature = "unstable_end_turn_token_usage"), allow(unused_variables))]
+    #[cfg_attr(
+        not(feature = "unstable_end_turn_token_usage"),
+        allow(unused_variables)
+    )]
     acc: &Arc<update_mapper::Accumulator>,
 ) {
     tracing::debug!(stop_reason = ?pr.stop_reason, "ACP prompt complete");
@@ -963,7 +991,7 @@ mod tests {
         let r = tokio::time::timeout(
             Duration::from_millis(500),
             idle_watchdog(
-                Duration::from_secs(60), // long pre-idle (should never fire)
+                Duration::from_secs(60),   // long pre-idle (should never fire)
                 Duration::from_millis(50), // short post-idle
                 &mut arx,
                 submit,

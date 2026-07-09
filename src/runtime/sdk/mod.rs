@@ -59,11 +59,13 @@ impl CoroutineBridge {
     }
 
     pub(crate) fn enter_pmap(&self) {
-        self.in_pmap.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.in_pmap
+            .store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
     pub(crate) fn exit_pmap(&self) {
-        self.in_pmap.store(false, std::sync::atomic::Ordering::Relaxed);
+        self.in_pmap
+            .store(false, std::sync::atomic::Ordering::Relaxed);
     }
 
     pub(crate) fn is_in_pmap(&self) -> bool {
@@ -72,7 +74,10 @@ impl CoroutineBridge {
 
     /// Store a pending task and return its request id for yielding.
     pub(crate) fn deposit(&self, task: PendingTask) -> u64 {
-        let id = self.counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+        let id = self
+            .counter
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            + 1;
         self.pending.lock().unwrap().insert(id, task);
         id
     }

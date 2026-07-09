@@ -280,10 +280,8 @@ mod tests {
     #[test]
     fn init_creates_parent_directories() {
         let _lock = LOG_LOCK.lock().unwrap();
-        let base = std::env::temp_dir().join(format!(
-            "maestro_log_nested_{}",
-            uuid::Uuid::now_v7()
-        ));
+        let base =
+            std::env::temp_dir().join(format!("maestro_log_nested_{}", uuid::Uuid::now_v7()));
         let path = base.join("deep").join("nested").join("file.log");
         assert!(path.parent().unwrap().try_exists().map_or(true, |v| !v));
         assert!(init(None, "info", Some(&path)).is_ok());

@@ -22,6 +22,13 @@ pub trait AgentBackend: Send + Sync {
 
     /// Run one agent task to completion.
     async fn run(&self, task: AgentTask, ctx: RunContext) -> Result<AgentResult, BackendError>;
+
+    /// Upcast hook for downcasting `&dyn AgentBackend` back to a concrete
+    /// backend type. Standard Rust trait-object downcast pattern: each impl
+    /// returns `self`, which `Any::downcast_ref` then narrows to `&Concrete`.
+    /// No default impl is provided — `Self` is unsized on a trait object, so a
+    /// default body `self` would not compile.
+    fn as_any(&self) -> &dyn std::any::Any;
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -154,4 +161,158 @@ pub struct Artifact {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LogRef {
     pub path: PathBuf,
+}
+
+#[cfg(test)]
+mod tests {
+    //! Tests for the `AgentStatus::as_str()` contract introduced by F5.
+    //!
+    //! The persisted `AgentResultCache.status` string is part of the on-disk
+    //! checkpoint contract. Before F5 it was derived from `Debug` formatting,
+    //! which silently broke when a variant was renamed (`TimedOut` → `"TimedOut"`
+    //! → `"timedout"`). The explicit `as_str()` mapping pins the strings so that
+    //! future renames cannot regress existing checkpoints.
+
+    use super::*;
+
+    #[test]
+    fn as_str_ok_returns_ok() {
+        assert_eq!(AgentStatus::Ok.as_str(), "ok");
+    }
+
+    #[test]
+    fn as_str_error_returns_error() {
+        assert_eq!(AgentStatus::Error.as_str(), "error");
+    }
+
+    #[test]
+    fn as_str_cancelled_returns_cancelled() {
+        assert_eq!(AgentStatus::Cancelled.as_str(), "cancelled");
+    }
+
+    #[test]
+    fn as_str_timed_out_returns_snake_case_timed_out() {
+        // The KEY F5 invariant: `TimedOut` Debug is "TimedOut" (lowercased
+        // "timedout"), but the persisted string MUST be "timed_out" with an
+        // underscore so it matches the surrounding snake_case contract.
+        assert_eq!(AgentStatus::TimedOut.as_str(), "timed_out");
+    }
+
+    #[test]
+    fn as_str_timed_out_differs_from_debug_lowercased() {
+        // Regression guard: the bug being fixed. If this ever flips to
+        // `format!("{:?}", status).to_lowercase()`, `TimedOut` would yield
+        // "timedout" (no underscore) and silently corrupt existing checkpoints.
+        let debug_lower = format!("{:?}", AgentStatus::TimedOut).to_lowercase();
+        assert_ne!(AgentStatus::TimedOut.as_str(), debug_lower);
+        assert_eq!(debug_lower, "timedout");
+        assert_eq!(AgentStatus::TimedOut.as_str(), "timed_out");
+    }
+
+    #[test]
+    fn as_str_values_are_unique() {
+        let variants = [
+            AgentStatus::Ok.as_str(),
+            AgentStatus::Error.as_str(),
+            AgentStatus::Cancelled.as_str(),
+            AgentStatus::TimedOut.as_str(),
+        ];
+        for i in 0..variants.len() {
+            for j in (i + 1)..variants.len() {
+                assert_ne!(
+                    variants[i], variants[j],
+                    "AgentStatus::as_str() must produce distinct strings for each variant \
+                     (collision between {:?} and {:?})",
+                    variants[i], variants[j]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn as_str_values_are_non_empty_and_ascii() {
+        for variant in [
+            AgentStatus::Ok,
+            AgentStatus::Error,
+            AgentStatus::Cancelled,
+            AgentStatus::TimedOut,
+        ] {
+            let s = variant.as_str();
+            assert!(!s.is_empty(), "as_str() must not return empty strings");
+            assert!(
+                s.is_ascii(),
+                "as_str() must return ASCII-only strings (got: {:?})",
+                s
+            );
+        }
+    }
+
+    #[test]
+    fn as_str_values_are_snake_case_or_lowercase() {
+        // Each returned string must be either pure lowercase ASCII or
+        // snake_case (lowercase ASCII letters separated by single underscores).
+        // This matches the convention used elsewhere in the codebase
+        // (CheckpointStatus via `rename_all = "lowercase"`, RunStatus, etc.).
+        for variant in [
+            AgentStatus::Ok,
+            AgentStatus::Error,
+            AgentStatus::Cancelled,
+            AgentStatus::TimedOut,
+        ] {
+            let s = variant.as_str();
+            for c in s.chars() {
+                let ok = c.is_ascii_lowercase() || c == '_' || c.is_ascii_digit();
+                assert!(
+                    ok,
+                    "as_str() must return snake_case / lowercase (got {:?} in {:?})",
+                    c, s
+                );
+            }
+            assert!(
+                !s.contains("__"),
+                "as_str() must not produce consecutive underscores (got {:?})",
+                s
+            );
+            assert!(
+                !s.starts_with('_') && !s.ends_with('_'),
+                "as_str() must not start or end with underscore (got {:?})",
+                s
+            );
+        }
+    }
+
+    #[test]
+    fn as_str_return_type_is_static_str() {
+        // Compile-time check: the signature must return &'static str so the
+        // string outlives any AgentStatus instance and the literal lives in
+        // the binary's read-only data.
+        fn returns_static(s: AgentStatus) -> &'static str {
+            s.as_str()
+        }
+        let _: &'static str = returns_static(AgentStatus::Ok);
+    }
+
+    #[test]
+    fn as_str_matches_storage_writer_canonical_mapping() {
+        // The storage layer (`storage/writer.rs::agent_status_str`) already
+        // canonicalises AgentStatus into the snake_case strings that the
+        // on-disk SQLite tables consume. The F5 contract requires that
+        // `AgentStatus::as_str()` agrees with this canonical mapping so
+        // checkpoint persistence and storage persistence do not drift apart.
+        const STORAGE_CANONICAL: &[(&str, AgentStatus)] = &[
+            ("ok", AgentStatus::Ok),
+            ("error", AgentStatus::Error),
+            ("cancelled", AgentStatus::Cancelled),
+            ("timed_out", AgentStatus::TimedOut),
+        ];
+        for (expected, variant) in STORAGE_CANONICAL {
+            assert_eq!(
+                variant.as_str(),
+                *expected,
+                "AgentStatus::{:?}::as_str() must equal {:?} (storage canonical)",
+                variant,
+                expected
+            );
+        }
+    }
 }

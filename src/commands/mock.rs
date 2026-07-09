@@ -42,7 +42,10 @@ pub async fn mock_add(args: MockAddArgs) -> Result<()> {
         );
     }
     if args.backend.is_none() {
-        eprintln!("\u{2139}  no --backend specified, auto-detected: {}", backend_id);
+        eprintln!(
+            "\u{2139}  no --backend specified, auto-detected: {}",
+            backend_id
+        );
     }
 
     let config = crate::config::load_config();
@@ -106,7 +109,11 @@ pub async fn mock_add(args: MockAddArgs) -> Result<()> {
         .and_then(|r| r.as_object())
         .map(|m| m.len())
         .unwrap_or(0);
-    eprintln!("    {} responses, {} agent calls", response_count, names.len());
+    eprintln!(
+        "    {} responses, {} agent calls",
+        response_count,
+        names.len()
+    );
 
     Ok(())
 }

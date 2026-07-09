@@ -9,9 +9,15 @@ pub mod finding;
 pub mod ids;
 pub mod schema;
 
+// backend: AgentBackend (trait), AgentTask, AgentResult, RunContext, BackendError
 pub use backend::*;
+// cache: agent_cache_key (single named export; no wildcard re-export)
 pub use cache::agent_cache_key;
+// event: AgentEvent, EventSender, RunStatus
 pub use event::*;
+// finding: Finding, Severity, Location
 pub use finding::*;
+// ids: RunId, AgentId, PhaseId, TokenUsage
 pub use ids::*;
+// schema: validate_output, SchemaError
 pub use schema::*;

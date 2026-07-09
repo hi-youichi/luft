@@ -37,19 +37,31 @@ mod tests {
     }
 
     #[test]
-    fn backend_is_retrievable_after_register() {
-        let mut registry = BackendRegistry::new();
-        register_acp_backend(&mut registry, AcpConfig::default());
-        assert!(registry.get("opencode").is_ok());
-    }
-
-    #[test]
     fn register_overwrites_existing() {
         let mut registry = BackendRegistry::new();
-        register_acp_backend(&mut registry, AcpConfig::default());
-        register_acp_backend(&mut registry, AcpConfig::default());
+        // Two distinguishable configs: same `id` (so they collide on the
+        // registry key) but different `model`. A correct overwrite replaces
+        // the first registration entirely; a no-op-on-collision or append
+        // implementation would keep the first `model`.
+        let first = AcpConfig {
+            model: Some("first".to_string()),
+            ..AcpConfig::default()
+        };
+        let second = AcpConfig {
+            model: Some("second".to_string()),
+            ..AcpConfig::default()
+        };
+        register_acp_backend(&mut registry, first);
+        register_acp_backend(&mut registry, second);
         let backend = registry.get("opencode").unwrap();
         assert_eq!(backend.id(), "opencode");
+        // Downcast through `as_any` so we can read the per-adapter config
+        // (not just `id`, which is identical for both registrations).
+        let acp = backend
+            .as_any()
+            .downcast_ref::<AcpAdapter>()
+            .expect("registered backend is an AcpAdapter");
+        assert_eq!(acp.config().model.as_deref(), Some("second"));
     }
 
     #[test]

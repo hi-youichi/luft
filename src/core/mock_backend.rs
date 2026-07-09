@@ -7,6 +7,7 @@ use std::time::Duration;
 
 /// How a mocked `run()` call should behave. Behaviours are consumed by call
 /// order; the last entry repeats once exhausted.
+#[derive(Debug, Clone)]
 pub enum MockBehavior {
     Success {
         output: serde_json::Value,
@@ -30,7 +31,7 @@ impl MockBehavior {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum FailKind {
     Spawn,
     Protocol,
@@ -89,6 +90,10 @@ impl AgentBackend for MockBackend {
         AgentCapabilities::default()
     }
 
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     async fn run(&self, task: AgentTask, ctx: RunContext) -> Result<AgentResult, BackendError> {
         match self.next() {
             MockBehavior::Success {
@@ -111,7 +116,10 @@ impl AgentBackend for MockBackend {
                 })
             }
             MockBehavior::Fail { kind, delay } => {
-                tokio::time::sleep(*delay).await;
+                tokio::select! {
+                    _ = tokio::time::sleep(*delay) => {}
+                    _ = ctx.cancel.cancelled() => return Err(BackendError::Cancelled),
+                }
                 Err(kind.to_error())
             }
             MockBehavior::Hang => {

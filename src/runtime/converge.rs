@@ -1511,6 +1511,9 @@ mod tests {
         fn capabilities(&self) -> AgentCapabilities {
             AgentCapabilities::default()
         }
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
         async fn run(
             &self,
             task: AgentTask,
@@ -1542,6 +1545,9 @@ mod tests {
         fn capabilities(&self) -> AgentCapabilities {
             AgentCapabilities::default()
         }
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
         async fn run(
             &self,
             task: AgentTask,
@@ -1572,6 +1578,9 @@ mod tests {
         }
         fn capabilities(&self) -> AgentCapabilities {
             AgentCapabilities::default()
+        }
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
         }
         async fn run(
             &self,

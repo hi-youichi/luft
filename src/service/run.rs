@@ -676,9 +676,13 @@ mod tests {
                 delay: Duration::ZERO,
             }],
         ));
-        let result = resolve_script(ScriptSource::Script("print(1)"), backend, crate::planner::PlannerConfig::default())
-            .await
-            .unwrap();
+        let result = resolve_script(
+            ScriptSource::Script("print(1)"),
+            backend,
+            crate::planner::PlannerConfig::default(),
+        )
+        .await
+        .unwrap();
         assert_eq!(result, "print(1)");
     }
 
@@ -696,9 +700,13 @@ mod tests {
                 delay: Duration::ZERO,
             }],
         ));
-        let result = resolve_script(ScriptSource::Workflow(&path), backend, crate::planner::PlannerConfig::default())
-            .await
-            .unwrap();
+        let result = resolve_script(
+            ScriptSource::Workflow(&path),
+            backend,
+            crate::planner::PlannerConfig::default(),
+        )
+        .await
+        .unwrap();
         assert_eq!(result, "print('hello')");
     }
 
@@ -714,9 +722,13 @@ mod tests {
                 delay: Duration::ZERO,
             }],
         ));
-        let result = resolve_script(ScriptSource::Nl("do something"), backend, crate::planner::PlannerConfig::default())
-            .await
-            .unwrap();
+        let result = resolve_script(
+            ScriptSource::Nl("do something"),
+            backend,
+            crate::planner::PlannerConfig::default(),
+        )
+        .await
+        .unwrap();
         assert!(
             result.contains("report("),
             "planned script must contain report()"
@@ -738,9 +750,13 @@ mod tests {
                 delay: Duration::ZERO,
             }],
         ));
-        let spec = resolve_fresh(ScriptSource::Script("print(1)"), backend, crate::planner::PlannerConfig::default())
-            .await
-            .unwrap();
+        let spec = resolve_fresh(
+            ScriptSource::Script("print(1)"),
+            backend,
+            crate::planner::PlannerConfig::default(),
+        )
+        .await
+        .unwrap();
         assert_eq!(spec.script, "print(1)");
         assert_eq!(spec.task_label, "maestro workflow");
         assert!(!spec.resuming);
@@ -760,9 +776,13 @@ mod tests {
                 delay: Duration::ZERO,
             }],
         ));
-        let spec = resolve_fresh(ScriptSource::Workflow(&path), backend, crate::planner::PlannerConfig::default())
-            .await
-            .unwrap();
+        let spec = resolve_fresh(
+            ScriptSource::Workflow(&path),
+            backend,
+            crate::planner::PlannerConfig::default(),
+        )
+        .await
+        .unwrap();
         assert_eq!(spec.script, "report({ok=true})");
         assert!(spec.task_label.contains("my_workflow.lua"));
         assert!(!spec.resuming);
@@ -780,9 +800,13 @@ mod tests {
                 delay: Duration::ZERO,
             }],
         ));
-        let spec = resolve_fresh(ScriptSource::Nl("build a calculator"), backend, crate::planner::PlannerConfig::default())
-            .await
-            .unwrap();
+        let spec = resolve_fresh(
+            ScriptSource::Nl("build a calculator"),
+            backend,
+            crate::planner::PlannerConfig::default(),
+        )
+        .await
+        .unwrap();
         assert_eq!(spec.task_label, "build a calculator");
         assert!(!spec.resuming);
     }
@@ -1118,7 +1142,9 @@ mod tests {
         };
 
         let backend = make_prepare_backend();
-        let _prepared = prepare(&spec, backend, dir.path(), &run_ctx, None).await.unwrap();
+        let _prepared = prepare(&spec, backend, dir.path(), &run_ctx, None)
+            .await
+            .unwrap();
 
         // Fresh run: workflow.lua should have been written
         assert!(
@@ -1170,7 +1196,9 @@ mod tests {
         };
 
         let backend = make_prepare_backend();
-        let _prepared = prepare(&spec, backend, dir.path(), &run_ctx, None).await.unwrap();
+        let _prepared = prepare(&spec, backend, dir.path(), &run_ctx, None)
+            .await
+            .unwrap();
 
         // Resume should NOT overwrite workflow.lua
         let content = std::fs::read_to_string(run_dir.join("workflow.lua")).unwrap();

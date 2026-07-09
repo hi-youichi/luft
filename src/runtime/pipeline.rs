@@ -205,10 +205,7 @@ impl PipelineExecutor {
     /// Items flow through each stage sequentially. Stage 0 processes all items
     /// first, then each item moves to Stage 1, etc. Within each stage, items
     /// are processed sequentially through each stage.
-    pub fn execute(
-        &self,
-        items: Vec<serde_json::Value>,
-    ) -> Result<PipelineResult, PipelineError> {
+    pub fn execute(&self, items: Vec<serde_json::Value>) -> Result<PipelineResult, PipelineError> {
         if items.is_empty() {
             return Err(PipelineError::NoItems);
         }
@@ -218,11 +215,7 @@ impl PipelineExecutor {
 
         let n_stages = self.config.stages.len();
         let n_items = items.len();
-        tracing::info!(
-            n_stages,
-            n_items,
-            "pipeline execution started"
-        );
+        tracing::info!(n_stages, n_items, "pipeline execution started");
         let run_id = self.run_id;
 
         // Emit PipelineStarted event
@@ -377,7 +370,7 @@ use mlua::{Function, Lua, Table, Value};
 /// Register the `pipeline(params)` SDK function in Lua.
 ///
 /// `params` carries an `items` array, a `stages` array (each a function or a
-    /// `{ label, handler }` table). The handlers run
+/// `{ label, handler }` table). The handlers run
 /// inside the executor, blocking on the shared tokio runtime.
 pub(crate) fn register_pipeline_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<()> {
     let globals = lua.globals();

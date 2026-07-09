@@ -106,17 +106,17 @@ pub(super) fn register(lua: &Lua, cx: &SdkContext) -> mlua::Result<()> {
 
             // ── 2. Create one coroutine per item ──
             let mut co_states: Vec<CoState> = Vec::with_capacity(count);
-            let item_values: Vec<Value> =
-                items.sequence_values::<Value>().collect::<Result<Vec<_>, _>>()?;
+            let item_values: Vec<Value> = items
+                .sequence_values::<Value>()
+                .collect::<Result<Vec<_>, _>>()?;
 
             let real_agent: mlua::Function = lua.globals().get("agent")?;
 
             for (idx, _item) in item_values.iter().enumerate() {
                 let map_fn_ref = map_fn.clone();
                 // Wrap the map_fn with the yield-intercepting agent wrapper
-                let co_fn: mlua::Function = yield_wrapper.call::<mlua::Function>(
-                    (real_agent.clone(), map_fn_ref.clone()),
-                )?;
+                let co_fn: mlua::Function = yield_wrapper
+                    .call::<mlua::Function>((real_agent.clone(), map_fn_ref.clone()))?;
                 let thread = lua.create_thread(co_fn)?;
                 co_states.push(CoState {
                     thread,
@@ -139,14 +139,7 @@ pub(super) fn register(lua: &Lua, cx: &SdkContext) -> mlua::Result<()> {
                         if cs.thread.status() == mlua::ThreadStatus::Resumable {
                             let req_id = extract_req_id(&val)?;
                             dispatch_task(
-                                &bridge,
-                                req_id,
-                                co_idx,
-                                &tx,
-                                &sched,
-                                &handle,
-                                &journal,
-                                run_id,
+                                &bridge, req_id, co_idx, &tx, &sched, &handle, &journal, run_id,
                             );
                         } else {
                             results[cs.item_index] = Some(val);
@@ -200,14 +193,7 @@ pub(super) fn register(lua: &Lua, cx: &SdkContext) -> mlua::Result<()> {
                         if cs.thread.status() == mlua::ThreadStatus::Resumable {
                             let req_id = extract_req_id(&val)?;
                             dispatch_task(
-                                &bridge,
-                                req_id,
-                                co_idx,
-                                &tx,
-                                &sched,
-                                &handle,
-                                &journal,
-                                run_id,
+                                &bridge, req_id, co_idx, &tx, &sched, &handle, &journal, run_id,
                             );
                         } else {
                             results[cs.item_index] = Some(val);
@@ -328,10 +314,10 @@ mod tests {
     use crate::core::contract::backend::RunContext;
     use crate::core::contract::ids::TokenUsage;
     use crate::core::scheduler::{BackendRegistry, SchedulerConfig};
+    use crate::core::Scheduler;
     use crate::core::{FailKind, MockBackend, MockBehavior};
     use crate::runtime::sdk::agent::single;
     use crate::runtime::sdk::{ReportSink, SdkContext};
-    use crate::core::Scheduler;
     use mlua::Lua;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
@@ -413,12 +399,22 @@ mod tests {
         let (lua, cx, _rt) = make_cx(vec![
             MockBehavior::Success {
                 output: serde_json::json!({ "result": "alpha" }),
-                tokens: TokenUsage { input: 10, output: 20, cache_read: 0, cache_write: 0 },
+                tokens: TokenUsage {
+                    input: 10,
+                    output: 20,
+                    cache_read: 0,
+                    cache_write: 0,
+                },
                 delay: Duration::ZERO,
             },
             MockBehavior::Success {
                 output: serde_json::json!({ "result": "beta" }),
-                tokens: TokenUsage { input: 5, output: 15, cache_read: 0, cache_write: 0 },
+                tokens: TokenUsage {
+                    input: 5,
+                    output: 15,
+                    cache_read: 0,
+                    cache_write: 0,
+                },
                 delay: Duration::ZERO,
             },
         ]);
@@ -453,13 +449,23 @@ mod tests {
             // doc1: develop
             MockBehavior::Success {
                 output: serde_json::json!({ "code": "impl_v1" }),
-                tokens: TokenUsage { input: 1, output: 1, cache_read: 0, cache_write: 0 },
+                tokens: TokenUsage {
+                    input: 1,
+                    output: 1,
+                    cache_read: 0,
+                    cache_write: 0,
+                },
                 delay: Duration::ZERO,
             },
             // doc1: review (approved)
             MockBehavior::Success {
                 output: serde_json::json!({ "approved": true }),
-                tokens: TokenUsage { input: 1, output: 1, cache_read: 0, cache_write: 0 },
+                tokens: TokenUsage {
+                    input: 1,
+                    output: 1,
+                    cache_read: 0,
+                    cache_write: 0,
+                },
                 delay: Duration::ZERO,
             },
         ]);
@@ -554,9 +560,18 @@ mod tests {
     #[test]
     fn all_items_fail() {
         let (lua, cx, _rt) = make_cx(vec![
-            MockBehavior::Fail { kind: FailKind::Protocol, delay: Duration::ZERO },
-            MockBehavior::Fail { kind: FailKind::Protocol, delay: Duration::ZERO },
-            MockBehavior::Fail { kind: FailKind::Protocol, delay: Duration::ZERO },
+            MockBehavior::Fail {
+                kind: FailKind::Protocol,
+                delay: Duration::ZERO,
+            },
+            MockBehavior::Fail {
+                kind: FailKind::Protocol,
+                delay: Duration::ZERO,
+            },
+            MockBehavior::Fail {
+                kind: FailKind::Protocol,
+                delay: Duration::ZERO,
+            },
         ]);
         let script = r#"
             return pmap(
@@ -571,7 +586,11 @@ mod tests {
         assert_eq!(results.raw_len(), 3);
         for i in 1..=3 {
             let r: mlua::Table = results.get(i).unwrap();
-            assert!(!r.get::<bool>("ok").unwrap(), "item {} should have failed", i);
+            assert!(
+                !r.get::<bool>("ok").unwrap(),
+                "item {} should have failed",
+                i
+            );
         }
     }
 
@@ -584,7 +603,11 @@ mod tests {
             .load(r#"pmap({1, 2}, function() error("boom") end)"#)
             .eval::<mlua::Value>()
             .unwrap_err();
-        assert!(err.to_string().contains("boom"), "unexpected error: {}", err);
+        assert!(
+            err.to_string().contains("boom"),
+            "unexpected error: {}",
+            err
+        );
     }
 
     // ── coroutine yield/resume is transparent to Lua ──────────
@@ -596,17 +619,32 @@ mod tests {
         let (lua, cx, _rt) = make_cx(vec![
             MockBehavior::Success {
                 output: serde_json::json!({ "step": 1 }),
-                tokens: TokenUsage { input: 1, output: 1, cache_read: 0, cache_write: 0 },
+                tokens: TokenUsage {
+                    input: 1,
+                    output: 1,
+                    cache_read: 0,
+                    cache_write: 0,
+                },
                 delay: Duration::ZERO,
             },
             MockBehavior::Success {
                 output: serde_json::json!({ "step": 2 }),
-                tokens: TokenUsage { input: 1, output: 1, cache_read: 0, cache_write: 0 },
+                tokens: TokenUsage {
+                    input: 1,
+                    output: 1,
+                    cache_read: 0,
+                    cache_write: 0,
+                },
                 delay: Duration::ZERO,
             },
             MockBehavior::Success {
                 output: serde_json::json!({ "step": 3 }),
-                tokens: TokenUsage { input: 1, output: 1, cache_read: 0, cache_write: 0 },
+                tokens: TokenUsage {
+                    input: 1,
+                    output: 1,
+                    cache_read: 0,
+                    cache_write: 0,
+                },
                 delay: Duration::ZERO,
             },
         ]);
@@ -655,9 +693,7 @@ mod tests {
         };
         // 2 docs × 2 agents = 4 behaviors, but interleaved order may vary.
         // Provide enough behaviors for any ordering.
-        let (lua, cx, _rt) = make_cx(vec![
-            mk_dev(), mk_rev(), mk_dev(), mk_rev(),
-        ]);
+        let (lua, cx, _rt) = make_cx(vec![mk_dev(), mk_rev(), mk_dev(), mk_rev()]);
         let script = r#"
             return pmap(
                 { "doc1", "doc2" },
@@ -681,7 +717,11 @@ mod tests {
         for i in 1..=2 {
             let r: mlua::Table = results.get(i).unwrap();
             assert!(r.get::<bool>("ok").unwrap(), "item {} should be ok", i);
-            assert!(r.get::<bool>("approved").unwrap(), "item {} should be approved", i);
+            assert!(
+                r.get::<bool>("approved").unwrap(),
+                "item {} should be approved",
+                i
+            );
         }
     }
 
@@ -704,7 +744,10 @@ mod tests {
                 tokens: TokenUsage::default(),
                 delay: Duration::ZERO,
             },
-            MockBehavior::Fail { kind: FailKind::Protocol, delay: Duration::ZERO },
+            MockBehavior::Fail {
+                kind: FailKind::Protocol,
+                delay: Duration::ZERO,
+            },
             // Extra: in case completion order varies
             MockBehavior::Success {
                 output: serde_json::json!({}),
@@ -716,7 +759,10 @@ mod tests {
                 tokens: TokenUsage::default(),
                 delay: Duration::ZERO,
             },
-            MockBehavior::Fail { kind: FailKind::Protocol, delay: Duration::ZERO },
+            MockBehavior::Fail {
+                kind: FailKind::Protocol,
+                delay: Duration::ZERO,
+            },
         ]);
         let script = r#"
             return pmap(

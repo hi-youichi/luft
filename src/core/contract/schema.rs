@@ -52,19 +52,16 @@ pub fn validate_output(output: &Value, schema: &Value) -> Result<(), SchemaError
         .compile(schema)
         .map_err(|e| SchemaError::InvalidSchema(format!("failed to compile schema: {}", e)))?;
 
-    // Validate the output. Bind the result to extend its lifetime.
-    let validation_result = validator.validate(output);
-    match validation_result {
-        Ok(()) => Ok(()),
-        Err(errors) => {
-            // Collect the first few validation errors (owned strings, no borrow of validator)
-            let details: Vec<String> = errors
-                .take(5)
-                .map(|e| format!("instance {}: {}", e.instance_path, e))
-                .collect();
-            Err(SchemaError::ValidationFailed(details.join("; ")))
-        }
+    if let Err(errors) = validator.validate(output) {
+        // Collect the first few validation errors (owned strings, no borrow of validator)
+        let details: Vec<String> = errors
+            .take(5)
+            .map(|e| format!("instance {}: {}", e.instance_path, e))
+            .collect();
+        return Err(SchemaError::ValidationFailed(details.join("; ")));
     }
+
+    Ok(())
 }
 
 #[cfg(test)]

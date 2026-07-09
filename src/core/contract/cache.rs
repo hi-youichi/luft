@@ -4,6 +4,12 @@ use crate::core::contract::ids::PhaseId;
 use blake3::Hasher;
 use unicode_normalization::UnicodeNormalization;
 
+/// Field separator for `agent_cache_key`. A zero byte is safe because BLAKE3
+/// hashes raw bytes — it cannot appear in any valid `backend_id`, `model`, or
+/// normalized `prompt`, so it cleanly delimits fields and prevents
+/// concatenation collisions (e.g. `("ab", "cd")` vs `("a", "bcd")`).
+const SEP: u8 = 0;
+
 /// Normalise a prompt for cache keying: NFC, unify line endings, collapse
 /// whitespace. Deliberately conservative — only removes formatting noise, not
 /// semantic differences (v0.1 trade-off; v0.2 may add similarity matching).
@@ -28,11 +34,14 @@ pub fn agent_cache_key(
 ) -> String {
     let mut h = Hasher::new();
     h.update(backend_id.as_bytes());
-    h.update(b"\0");
+    h.update(&[SEP]);
     h.update(model.unwrap_or("").as_bytes());
-    h.update(b"\0");
+    h.update(&[SEP]);
     h.update(normalize_prompt(prompt).as_bytes());
-    h.update(b"\0");
+    h.update(&[SEP]);
+    // Big-endian encodes `phase` identically on every architecture, so cache
+    // keys stay stable across platforms for `--resume`. Do NOT switch to
+    // `to_ne_bytes()` — keys would silently diverge on big-endian hosts.
     h.update(&phase.to_be_bytes());
     h.finalize().to_hex().to_string()
 }

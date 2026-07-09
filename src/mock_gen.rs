@@ -210,8 +210,14 @@ fn build_mock_prompt(script: &str, calls: &[AgentCallInfo], fix_error: Option<&s
 
     let mut p = String::with_capacity(script.len() + 2048);
 
-    p.push_str("You are given a Lua workflow script. Generate mock data for every named agent() call.\n\n");
-    p.push_str(&format!("Agent names ({}): {}\n\n", names.len(), names.join(", ")));
+    p.push_str(
+        "You are given a Lua workflow script. Generate mock data for every named agent() call.\n\n",
+    );
+    p.push_str(&format!(
+        "Agent names ({}): {}\n\n",
+        names.len(),
+        names.join(", ")
+    ));
 
     let has_schemas = calls.iter().any(|c| c.schema_raw.is_some());
     if has_schemas {
@@ -308,7 +314,10 @@ pub async fn generate_mock_for_script(
 
     let unnamed: Vec<&AgentCallInfo> = calls.iter().filter(|c| c.name.is_none()).collect();
     if !unnamed.is_empty() {
-        let lines: Vec<String> = unnamed.iter().map(|c| format!("  line {}", c.line)).collect();
+        let lines: Vec<String> = unnamed
+            .iter()
+            .map(|c| format!("  line {}", c.line))
+            .collect();
         anyhow::bail!(
             "found {} agent() calls without name=:\n{}\nEvery agent() call must include a unique name= field.",
             unnamed.len(),
@@ -359,7 +368,11 @@ pub async fn generate_mock_for_script(
                     tracing::warn!("attempt {}: {}", attempt, last_error);
                     continue;
                 }
-                anyhow::bail!("mock generation failed after {} attempts: {}", cfg.max_retries, last_error);
+                anyhow::bail!(
+                    "mock generation failed after {} attempts: {}",
+                    cfg.max_retries,
+                    last_error
+                );
             }
         };
 
@@ -401,7 +414,11 @@ pub async fn generate_mock_for_script(
                     tracing::warn!("attempt {}: {}", attempt, last_error);
                     continue;
                 }
-                anyhow::bail!("mock generation failed after {} attempts: {}", cfg.max_retries, last_error);
+                anyhow::bail!(
+                    "mock generation failed after {} attempts: {}",
+                    cfg.max_retries,
+                    last_error
+                );
             }
         };
 
@@ -414,8 +431,7 @@ pub async fn generate_mock_for_script(
                 .map(|n| n.as_str())
                 .collect();
             if !missing.is_empty() && !has_default {
-                last_error =
-                    format!("missing mock responses for: {}", missing.join(", "));
+                last_error = format!("missing mock responses for: {}", missing.join(", "));
                 if attempt < cfg.max_retries {
                     tracing::warn!("attempt {}: {}", attempt, last_error);
                     continue;

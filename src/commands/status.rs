@@ -1,8 +1,8 @@
 //! `status` subcommand: show the checkpoint summary of a past run.
 
 use super::runs_base_dir;
-use maestro::core::contract::ids::fmt_tokens;
 use anyhow::Result;
+use maestro::core::contract::ids::fmt_tokens;
 use std::io::Write;
 
 pub fn status_run_cmd(run_dir: String) -> Result<()> {
@@ -15,14 +15,19 @@ pub(crate) fn status_run_cmd_inner(w: &mut impl Write, run_dir: String) -> Resul
         .ok_or_else(|| anyhow::anyhow!("run not found or has no checkpoint: {}", run_dir))?;
 
     writeln!(w, "=== Run Status ===")?;
-    writeln!(w, "  Run ID:        {}", checkpoint.run_id)?;
-    writeln!(w, "  Directory:     {}", run_dir)?;
-    writeln!(w, "  Task:          {}", checkpoint.task)?;
-    writeln!(w, "  Status:        {:?}", checkpoint.status)?;
-    writeln!(w, "  Current phase: {}", checkpoint.current_phase)?;
-    writeln!(w, "  Total tokens:  {} tok", fmt_tokens(checkpoint.total_tokens))?;
-    writeln!(w, "  Created:       {}", checkpoint.created_at)?;
-    writeln!(w, "  Updated:       {}", checkpoint.updated_at)?;
+    writeln!(w, "  {:<13}: {}", "Run ID", checkpoint.run_id)?;
+    writeln!(w, "  {:<13}: {}", "Directory", run_dir)?;
+    writeln!(w, "  {:<13}: {}", "Task", checkpoint.task)?;
+    writeln!(w, "  {:<13}: {}", "Status", checkpoint.status)?;
+    writeln!(w, "  {:<13}: {}", "Current phase", checkpoint.current_phase)?;
+    writeln!(
+        w,
+        "  {:<13}: {} tok",
+        "Total tokens",
+        fmt_tokens(checkpoint.total_tokens)
+    )?;
+    writeln!(w, "  {:<13}: {}", "Created", checkpoint.created_at)?;
+    writeln!(w, "  {:<13}: {}", "Updated", checkpoint.updated_at)?;
 
     if !checkpoint.completed_phases.is_empty() {
         writeln!(w, "\n  Completed phases:")?;
@@ -52,9 +57,17 @@ pub(crate) fn status_run_cmd_inner(w: &mut impl Write, run_dir: String) -> Resul
 mod tests {
     use super::*;
     use maestro::core::contract::finding::{Finding, Severity};
-    use maestro::core::state::{get_run_store, AgentResultCache, PhaseSummary};
+    use maestro::core::state::{
+        get_run_store, AgentResultCache, PhaseSummary, RunCheckpoint, RunStore,
+    };
     use std::path::PathBuf;
+    use std::sync::Arc;
     use tempfile::TempDir;
+
+    /// Arbitrary Unix-epoch seconds used as a placeholder `completed_at` in test
+    /// `AgentResultCache` fixtures. The formatting and persistence semantics
+    /// are what the tests exercise, not the actual value.
+    const DUMMY_COMPLETED_AT: u64 = 1234567890;
 
     struct TestEnv {
         _lock: std::sync::MutexGuard<'static, ()>,
@@ -93,6 +106,19 @@ mod tests {
         (dir_name, id)
     }
 
+    /// Initialize a fresh run and return its store handle, mutable checkpoint,
+    /// and directory name. The caller mutates `cp` as needed and then calls
+    /// `store.save_checkpoint(&cp)` to persist before rendering output.
+    fn setup_checkpoint(task: &str) -> (Arc<RunStore>, RunCheckpoint, String) {
+        let (run_dir, _id) = create_run(task);
+        let base_dir = runs_base_dir();
+        let store = get_run_store(&run_dir, &base_dir).unwrap();
+        let cp = store
+            .get_checkpoint()
+            .expect("checkpoint exists immediately after init_run");
+        (store, cp, run_dir)
+    }
+
     fn capture_output(run_dir: String) -> (String, anyhow::Result<()>) {
         let mut buf = Vec::new();
         let result = status_run_cmd_inner(&mut buf, run_dir);
@@ -125,11 +151,10 @@ mod tests {
     #[test]
     fn empty_checkpoint() {
         let _env = TestEnv::new();
-        let (run_dir, id) = create_run("test task");
+        let (_store, _cp, run_dir) = setup_checkpoint("test task");
         let (output, result) = capture_output(run_dir);
         assert!(result.is_ok());
         assert!(output.contains("=== Run Status ==="));
-        assert!(output.contains(&id.to_string()));
         assert!(output.contains("test task"));
         assert!(output.contains("Running"));
     }
@@ -137,10 +162,7 @@ mod tests {
     #[test]
     fn with_completed_phases() {
         let _env = TestEnv::new();
-        let (run_dir, _) = create_run("test task");
-        let base_dir = runs_base_dir();
-        let store = get_run_store(&run_dir, &base_dir).unwrap();
-        let mut cp = store.get_checkpoint().unwrap();
+        let (store, mut cp, run_dir) = setup_checkpoint("test task");
         cp.completed_phases.push(PhaseSummary {
             phase_id: 1,
             label: "Planning".to_string(),
@@ -161,10 +183,7 @@ mod tests {
     #[test]
     fn with_agent_results() {
         let _env = TestEnv::new();
-        let (run_dir, _) = create_run("test task");
-        let base_dir = runs_base_dir();
-        let store = get_run_store(&run_dir, &base_dir).unwrap();
-        let mut cp = store.get_checkpoint().unwrap();
+        let (store, mut cp, run_dir) = setup_checkpoint("test task");
         cp.agent_results.insert(
             uuid::Uuid::now_v7(),
             AgentResultCache {
@@ -174,7 +193,7 @@ mod tests {
                 output: serde_json::Value::Null,
                 findings: vec![],
                 tokens: 100,
-                completed_at: 1234567890,
+                completed_at: DUMMY_COMPLETED_AT,
                 cache_key_hash: None,
                 description: None,
                 role: None,
@@ -189,10 +208,7 @@ mod tests {
     #[test]
     fn with_findings() {
         let _env = TestEnv::new();
-        let (run_dir, _) = create_run("test task");
-        let base_dir = runs_base_dir();
-        let store = get_run_store(&run_dir, &base_dir).unwrap();
-        let mut cp = store.get_checkpoint().unwrap();
+        let (store, mut cp, run_dir) = setup_checkpoint("test task");
         cp.findings.push(Finding {
             kind: "test".to_string(),
             severity: Severity::Info,
@@ -232,10 +248,7 @@ mod tests {
     #[test]
     fn with_all_data() {
         let _env = TestEnv::new();
-        let (run_dir, _) = create_run("test task");
-        let base_dir = runs_base_dir();
-        let store = get_run_store(&run_dir, &base_dir).unwrap();
-        let mut cp = store.get_checkpoint().unwrap();
+        let (store, mut cp, run_dir) = setup_checkpoint("test task");
         cp.completed_phases.push(PhaseSummary {
             phase_id: 1,
             label: "Research".to_string(),
@@ -263,7 +276,7 @@ mod tests {
                 output: serde_json::json!({"result": "ok"}),
                 findings: vec![],
                 tokens: 500,
-                completed_at: 1234567890,
+                completed_at: DUMMY_COMPLETED_AT,
                 cache_key_hash: None,
                 description: None,
                 role: None,

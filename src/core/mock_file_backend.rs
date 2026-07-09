@@ -183,6 +183,10 @@ impl AgentBackend for MockFileBackend {
         AgentCapabilities::default()
     }
 
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     async fn run(&self, task: AgentTask, ctx: RunContext) -> Result<AgentResult, BackendError> {
         let (entry, matched) = self.resolve(&task);
 
@@ -215,10 +219,10 @@ impl AgentBackend for MockFileBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::contract::backend::{RunContext, AgentTask};
+    use crate::core::contract::backend::{AgentTask, RunContext};
+    use std::path::PathBuf;
     use tokio_util::sync::CancellationToken;
     use uuid::Uuid;
-    use std::path::PathBuf;
 
     fn make_task(name: Option<&str>) -> AgentTask {
         AgentTask {
@@ -293,7 +297,10 @@ mod tests {
     #[tokio::test]
     async fn run_unmatched_uses_default() {
         let mb = MockFileBackend::parse(MINIMAL_MOCK).unwrap();
-        let result = mb.run(make_task(Some("unknown")), make_ctx()).await.unwrap();
+        let result = mb
+            .run(make_task(Some("unknown")), make_ctx())
+            .await
+            .unwrap();
         assert_eq!(result.output["text"], "fallback");
     }
 
@@ -306,10 +313,7 @@ mod tests {
 
     #[tokio::test]
     async fn run_no_default_no_match_returns_error() {
-        let mb = MockFileBackend::parse(
-            r#"{"responses": {"x": {"output": {}}}}"#,
-        )
-        .unwrap();
+        let mb = MockFileBackend::parse(r#"{"responses": {"x": {"output": {}}}}"#).unwrap();
         let result = mb.run(make_task(Some("y")), make_ctx()).await.unwrap();
         assert_eq!(result.status, AgentStatus::Error);
     }
@@ -320,7 +324,9 @@ mod tests {
         let stats = mb.stats_handle();
 
         mb.run(make_task(Some("plan")), make_ctx()).await.unwrap();
-        mb.run(make_task(Some("analyze")), make_ctx()).await.unwrap();
+        mb.run(make_task(Some("analyze")), make_ctx())
+            .await
+            .unwrap();
         mb.run(make_task(Some("nope")), make_ctx()).await.unwrap();
         mb.run(make_task(None), make_ctx()).await.unwrap();
 
@@ -338,7 +344,9 @@ mod tests {
         let stats = mb.stats_handle();
 
         mb.run(make_task(Some("plan")), make_ctx()).await.unwrap();
-        mb.run(make_task(Some("analyze")), make_ctx()).await.unwrap();
+        mb.run(make_task(Some("analyze")), make_ctx())
+            .await
+            .unwrap();
 
         let snap = stats.snapshot();
         assert!(snap.all_matched());

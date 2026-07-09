@@ -135,9 +135,7 @@ pub fn info_backend(id: Option<String>) {
                 },
                 binary,
                 config: ConfigView {
-                    args: acp_cfg
-                        .and_then(|c| c.args.clone())
-                        .unwrap_or_default(),
+                    args: acp_cfg.and_then(|c| c.args.clone()).unwrap_or_default(),
                     log_level: acp_cfg.and_then(|c| c.log_level.clone()),
                     connect_timeout_secs: acp_cfg
                         .and_then(|c| c.connect_timeout_secs)
@@ -264,9 +262,7 @@ fn apply_config_update(cfg: &mut MaestroConfig, key: &str, value: &str) -> Resul
             Ok(())
         }
         "acp.args" => {
-            cfg.backend.acp.args = Some(
-                value.split(',').map(|s| s.trim().to_string()).collect(),
-            );
+            cfg.backend.acp.args = Some(value.split(',').map(|s| s.trim().to_string()).collect());
             Ok(())
         }
         _ => Err(format!(

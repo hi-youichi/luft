@@ -28,10 +28,7 @@ pub struct SignalInfo {
 /// Install the process-level signal handler. The returned future runs
 /// indefinitely: first signal triggers graceful shutdown via `cancel`,
 /// second signal force-exits the process.
-pub fn install(
-    sig_tx: broadcast::Sender<SignalInfo>,
-    cancel: CancellationToken,
-) {
+pub fn install(sig_tx: broadcast::Sender<SignalInfo>, cancel: CancellationToken) {
     tokio::spawn(async move {
         let name = wait_for_signal().await;
         eprintln!(

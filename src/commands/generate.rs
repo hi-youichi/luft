@@ -60,7 +60,9 @@ async fn generate_script_with_backend(
                     std::fs::write(&mock_path, json + "\n")?;
                     eprintln!("\u{2705}  Mock data written to {}", mock_path.display());
                 } else {
-                    eprintln!("\u{26a0}  --with-mock requested but planner did not produce mock data");
+                    eprintln!(
+                        "\u{26a0}  --with-mock requested but planner did not produce mock data"
+                    );
                 }
             }
         }
@@ -175,7 +177,8 @@ mod tests {
     #[tokio::test]
     async fn generate_script_with_backend_output_to_stdout() {
         let result =
-            generate_script_with_backend(args("test task", None, None), valid_lua_backend(), None).await;
+            generate_script_with_backend(args("test task", None, None), valid_lua_backend(), None)
+                .await;
         assert!(result.is_ok());
     }
 

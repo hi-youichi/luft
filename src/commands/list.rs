@@ -3,25 +3,39 @@
 use super::runs_base_dir;
 use anyhow::Result;
 
-pub fn list_runs_cmd(limit: Option<usize>) -> Result<()> {
-    // Presentation only: the service layer loads + sorts (newest first) and
-    // skips runs without a checkpoint.
+/// Default cap when the caller doesn't pass an explicit `--limit`.
+pub const DEFAULT_LIMIT: usize = 20;
+
+/// Build the user-facing listing as a single `String`.
+///
+/// Pure aside from the underlying service call so tests can assert on the
+/// rendered output without capturing stdout.
+pub fn format_runs(limit: Option<usize>) -> Result<String> {
     let base_dir = runs_base_dir();
     let runs = maestro::service::query::list_runs(&base_dir)?;
     if runs.is_empty() {
-        println!("No runs found.");
-        return Ok(());
+        return Ok("No runs found.\n".to_string());
     }
 
     let total = runs.len();
-    let limit = limit.unwrap_or(20);
+    let limit = limit.unwrap_or(DEFAULT_LIMIT);
     let shown: Vec<_> = runs.into_iter().take(limit).collect();
 
-    println!("Past runs ({} total, showing {}):", total, shown.len());
+    let mut out = String::new();
+    out.push_str(&format!(
+        "Past runs ({} total, showing {}):\n",
+        total,
+        shown.len()
+    ));
     for run in shown {
-        println!("  {}  [{}]", run.run_dir, run.status);
+        out.push_str(&format!("  {}  [{}]\n", run.run_dir, run.status));
     }
+    Ok(out)
+}
 
+/// CLI entry: print the listing produced by `format_runs`.
+pub fn list_runs_cmd(limit: Option<usize>) -> Result<()> {
+    print!("{}", format_runs(limit)?);
     Ok(())
 }
 
@@ -69,6 +83,18 @@ mod tests {
         run_id
     }
 
+    /// Test helper: create N runs in one call.
+    fn create_runs(n: usize) {
+        for i in 0..n {
+            create_run(&format!("task {}", i));
+        }
+    }
+
+    /// Count indented run lines (header lines start with "Past runs").
+    fn run_line_count(body: &str) -> usize {
+        body.lines().filter(|l| l.starts_with("  ")).count()
+    }
+
     // -----------------------------------------------------------------
     //  Tests
     // -----------------------------------------------------------------
@@ -77,7 +103,12 @@ mod tests {
     fn empty_runs_prints_not_found() {
         let _env = TestEnv::new();
         std::fs::create_dir_all(runs_base_dir()).unwrap();
-        assert!(list_runs_cmd(None).is_ok());
+        let body = format_runs(None).unwrap();
+        assert!(
+            body.contains("No runs found."),
+            "expected empty-state message, got: {body:?}"
+        );
+        assert_eq!(run_line_count(&body), 0);
     }
 
     #[test]
@@ -90,52 +121,72 @@ mod tests {
     fn single_run() {
         let _env = TestEnv::new();
         create_run("test task");
-        assert!(list_runs_cmd(None).is_ok());
+        let body = format_runs(None).unwrap();
+        assert!(
+            body.contains("Past runs (1 total, showing 1):"),
+            "got: {body:?}"
+        );
+        assert_eq!(run_line_count(&body), 1);
     }
 
     #[test]
     fn multiple_runs_all_shown_without_limit() {
         let _env = TestEnv::new();
-        for i in 0..5 {
-            create_run(&format!("task {}", i));
-        }
-        assert!(list_runs_cmd(None).is_ok());
+        create_runs(5);
+        let body = format_runs(None).unwrap();
+        assert!(
+            body.contains("Past runs (5 total, showing 5):"),
+            "got: {body:?}"
+        );
+        assert_eq!(run_line_count(&body), 5);
     }
 
     #[test]
     fn limit_fewer_than_total() {
         let _env = TestEnv::new();
-        for i in 0..10 {
-            create_run(&format!("task {}", i));
-        }
-        assert!(list_runs_cmd(Some(3)).is_ok());
+        create_runs(10);
+        let body = format_runs(Some(3)).unwrap();
+        assert!(
+            body.contains("Past runs (10 total, showing 3):"),
+            "got: {body:?}"
+        );
+        assert_eq!(run_line_count(&body), 3);
     }
 
     #[test]
     fn limit_equal_to_total() {
         let _env = TestEnv::new();
-        for i in 0..3 {
-            create_run(&format!("task {}", i));
-        }
-        assert!(list_runs_cmd(Some(3)).is_ok());
+        create_runs(3);
+        let body = format_runs(Some(3)).unwrap();
+        assert!(
+            body.contains("Past runs (3 total, showing 3):"),
+            "got: {body:?}"
+        );
+        assert_eq!(run_line_count(&body), 3);
     }
 
     #[test]
     fn default_limit_caps_at_twenty() {
         let _env = TestEnv::new();
-        for i in 0..25 {
-            create_run(&format!("task {}", i));
-        }
-        assert!(list_runs_cmd(None).is_ok());
+        create_runs(25);
+        let body = format_runs(None).unwrap();
+        assert!(
+            body.contains(&format!("Past runs (25 total, showing {}):", DEFAULT_LIMIT)),
+            "got: {body:?}"
+        );
+        assert_eq!(run_line_count(&body), DEFAULT_LIMIT);
     }
 
     #[test]
     fn limit_zero() {
         let _env = TestEnv::new();
-        for i in 0..5 {
-            create_run(&format!("task {}", i));
-        }
-        assert!(list_runs_cmd(Some(0)).is_ok());
+        create_runs(5);
+        let body = format_runs(Some(0)).unwrap();
+        assert!(
+            body.contains("Past runs (5 total, showing 0):"),
+            "got: {body:?}"
+        );
+        assert_eq!(run_line_count(&body), 0);
     }
 
     #[test]
@@ -144,7 +195,6 @@ mod tests {
         // `read_dir` inside `list_runs` returns an I/O error.
         let _env = TestEnv::new();
         let base_dir = runs_base_dir();
-        // Create parent dir so we can create a file at the runs path
         std::fs::create_dir_all(base_dir.parent().unwrap()).unwrap();
         std::fs::write(&base_dir, "").unwrap();
         assert!(list_runs_cmd(None).is_err());
@@ -160,6 +210,11 @@ mod tests {
         std::fs::create_dir_all(base_dir.join(&dir_name)).unwrap();
         // Now create a real run so the list is non-empty.
         create_run("real task");
-        assert!(list_runs_cmd(None).is_ok());
+        let body = format_runs(None).unwrap();
+        assert!(
+            body.contains("Past runs (1 total, showing 1):"),
+            "got: {body:?}"
+        );
+        assert_eq!(run_line_count(&body), 1);
     }
 }

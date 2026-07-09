@@ -745,8 +745,310 @@ mod tests {
             let _ = journal.inner.save_checkpoint(&cp);
         }
 
-        // GC with very short duration
+// GC with very short duration
         let cleaned = gc_runs(&run_dir, Duration::from_secs(3600)).unwrap();
         assert_eq!(cleaned, 1);
+    }
+
+    // ----------------------------------------------------------------------
+    // Tests for the F5 contract — AgentResultCache.status persistence.
+    //
+    // cache_agent, record_result, and the JournalCallback impl for
+    // JournalStore all persist AgentResultCache.status. Before F5 the value
+    // was derived from `format!("{:?}", status).to_lowercase()`, which
+    // silently mis-mapped TimedOut → "timedout" (no underscore). The
+    // implementations must now use `AgentStatus::as_str()` and produce
+    // snake_case strings that match the canonical on-disk mapping.
+    // ----------------------------------------------------------------------
+
+    fn read_checkpoint_status_for(
+        run_dir: &std::path::Path,
+        agent_id: AgentId,
+    ) -> Option<String> {
+        let cp_path = run_dir.join("checkpoint.json");
+        let content = std::fs::read_to_string(&cp_path).ok()?;
+        let raw: serde_json::Value = serde_json::from_str(&content).ok()?;
+        let ar = raw.get("agent_results")?.as_object()?;
+        for (_k, v) in ar {
+            if v.get("agent_id").and_then(|id| id.as_str())
+                == Some(&agent_id.to_string())
+            {
+                return v.get("status").and_then(|s| s.as_str()).map(String::from);
+            }
+        }
+        None
+    }
+
+    fn sample_token_usage(input: u64, output: u64) -> TokenUsage {
+        TokenUsage {
+            input,
+            output,
+            cache_read: 0,
+            cache_write: 0,
+        }
+    }
+
+    #[test]
+    fn cache_agent_persists_snake_case_status_for_each_variant() {
+        // F5 KEY test for JournalStore::cache_agent: the persisted status
+        // MUST equal AgentStatus::as_str() (snake_case), not Debug lowercased.
+        // Particularly important for TimedOut which would otherwise round-trip
+        // as "timedout" (no underscore) and break cross-process resume.
+        let dir = tempdir().unwrap();
+        let run_id = uuid::Uuid::now_v7();
+        let journal = JournalStore::new(dir.path()).unwrap();
+        journal.init_run(run_id, "cache_agent F5").unwrap();
+
+        let cases: Vec<(AgentStatus, &str)> = vec![
+            (AgentStatus::Ok, "ok"),
+            (AgentStatus::Error, "error"),
+            (AgentStatus::Cancelled, "cancelled"),
+            (AgentStatus::TimedOut, "timed_out"),
+        ];
+        for (status, expected) in &cases {
+            let agent_id = uuid::Uuid::now_v7();
+            let key = AgentCacheKey::new("prompt", Some("gpt-4"), 1);
+            journal
+                .cache_agent(
+                    &key,
+                    agent_id,
+                    1,
+                    status.clone(),
+                    serde_json::json!({"v": 1}),
+                    vec![],
+                    sample_token_usage(10, 5),
+                )
+                .unwrap();
+
+            let persisted = read_checkpoint_status_for(dir.path(), agent_id)
+                .unwrap_or_else(|| panic!("status missing on disk for {status:?}"));
+            assert_eq!(
+                persisted, *expected,
+                "cache_agent({status:?}) must persist status={expected:?} (snake_case); \
+                 got {persisted:?}. Reverting to Debug formatting would yield \"timedout\" \
+                 for TimedOut and break the on-disk contract."
+            );
+        }
+    }
+
+    #[test]
+    fn cache_agent_timed_out_persists_with_underscore_not_collapsed() {
+        // Strongest F5 regression guard for cache_agent: TimedOut MUST persist
+        // as "timed_out" with an underscore. The buggy Debug-lowercased path
+        // would produce "timedout" and silently corrupt the journal.
+        let dir = tempdir().unwrap();
+        let run_id = uuid::Uuid::now_v7();
+        let journal = JournalStore::new(dir.path()).unwrap();
+        journal.init_run(run_id, "timed-out guard").unwrap();
+
+        let agent_id = uuid::Uuid::now_v7();
+        let key = AgentCacheKey::new("p", None, 0);
+        journal
+            .cache_agent(
+                &key,
+                agent_id,
+                0,
+                AgentStatus::TimedOut,
+                serde_json::json!(null),
+                vec![],
+                sample_token_usage(1, 2),
+            )
+            .unwrap();
+
+        let persisted = read_checkpoint_status_for(dir.path(), agent_id)
+            .expect("status on disk");
+        assert_eq!(
+            persisted, "timed_out",
+            "cache_agent(TimedOut) must persist \"timed_out\"; got {persisted:?}"
+        );
+        assert_ne!(
+            persisted, "timedout",
+            "cache_agent(TimedOut) must NOT collapse to Debug-lowercased \"timedout\""
+        );
+    }
+
+    #[test]
+    fn record_result_persists_snake_case_status_for_each_variant() {
+        // F5 test for JournalStore::record_result: same snake_case contract
+        // applies to the non-event-emitting path used by Lua SDK callbacks.
+        let dir = tempdir().unwrap();
+        let run_id = uuid::Uuid::now_v7();
+        let journal = JournalStore::new(dir.path()).unwrap();
+        journal.init_run(run_id, "record_result F5").unwrap();
+
+        let cases: Vec<(AgentStatus, &str)> = vec![
+            (AgentStatus::Ok, "ok"),
+            (AgentStatus::Error, "error"),
+            (AgentStatus::Cancelled, "cancelled"),
+            (AgentStatus::TimedOut, "timed_out"),
+        ];
+        for (status, expected) in &cases {
+            let agent_id = uuid::Uuid::now_v7();
+            let key = AgentCacheKey::new("p", None, 1);
+            journal.record_result(
+                &key,
+                agent_id,
+                1,
+                status.clone(),
+                serde_json::json!({"r": 1}),
+                vec![],
+                sample_token_usage(2, 3),
+            );
+
+            let persisted = read_checkpoint_status_for(dir.path(), agent_id)
+                .unwrap_or_else(|| panic!("status missing on disk for {status:?}"));
+            assert_eq!(
+                persisted, *expected,
+                "record_result({status:?}) must persist status={expected:?}; got {persisted:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn record_result_timed_out_persists_with_underscore() {
+        // Same regression guard for record_result.
+        let dir = tempdir().unwrap();
+        let run_id = uuid::Uuid::now_v7();
+        let journal = JournalStore::new(dir.path()).unwrap();
+        journal.init_run(run_id, "record_result timed-out").unwrap();
+
+        let agent_id = uuid::Uuid::now_v7();
+        let key = AgentCacheKey::new("p", None, 0);
+        journal.record_result(
+            &key,
+            agent_id,
+            0,
+            AgentStatus::TimedOut,
+            serde_json::json!(null),
+            vec![],
+            sample_token_usage(0, 0),
+        );
+
+        let persisted = read_checkpoint_status_for(dir.path(), agent_id)
+            .expect("status on disk");
+        assert_eq!(persisted, "timed_out");
+        assert_ne!(persisted, "timedout");
+    }
+
+    #[tokio::test]
+    async fn journal_callback_on_agent_done_persists_snake_case_status() {
+        // F5 test for the JournalCallback impl on JournalStore. The scheduler
+        // calls `on_agent_done` when an agent finishes; the persisted
+        // AgentResultCache.status MUST match AgentStatus::as_str() exactly.
+        let dir = tempdir().unwrap();
+        let run_id = uuid::Uuid::now_v7();
+        let journal = std::sync::Arc::new(JournalStore::new(dir.path()).unwrap());
+        journal.init_run(run_id, "callback F5").unwrap();
+
+        let cases: Vec<(AgentStatus, &str)> = vec![
+            (AgentStatus::Ok, "ok"),
+            (AgentStatus::Error, "error"),
+            (AgentStatus::Cancelled, "cancelled"),
+            (AgentStatus::TimedOut, "timed_out"),
+        ];
+        for (status, expected) in &cases {
+            let agent_id = uuid::Uuid::now_v7();
+            use crate::core::scheduler::JournalCallback;
+            journal
+                .on_agent_done(
+                    agent_id,
+                    1,
+                    status.clone(),
+                    serde_json::json!({}),
+                    sample_token_usage(4, 6),
+                )
+                .await;
+
+            let persisted = read_checkpoint_status_for(dir.path(), agent_id)
+                .unwrap_or_else(|| panic!("status missing on disk for {status:?}"));
+            assert_eq!(
+                persisted, *expected,
+                "JournalCallback::on_agent_done({status:?}) must persist status={expected:?}; \
+                 got {persisted:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn record_result_then_reopen_uses_snake_case_status() {
+        // Snake_case persistence must survive a close+reopen cycle so a
+        // resumed process sees the canonical strings (not Debug leftovers).
+        let dir = tempdir().unwrap();
+        let run_id = uuid::Uuid::now_v7();
+        let journal = JournalStore::new(dir.path()).unwrap();
+        journal.init_run(run_id, "reopen F5").unwrap();
+
+        let agent_id = uuid::Uuid::now_v7();
+        let key = AgentCacheKey::new("reopen prompt", Some("gpt-4"), 1);
+        journal.record_result(
+            &key,
+            agent_id,
+            1,
+            AgentStatus::Cancelled,
+            serde_json::json!({"result": "ok"}),
+            vec![],
+            sample_token_usage(7, 11),
+        );
+        drop(journal);
+
+        let j2 = JournalStore::new(dir.path()).unwrap();
+        let cp = j2.open(run_id).expect("open after drop");
+        let cached = cp
+            .agent_results
+            .get(&agent_id)
+            .expect("entry survives reopen");
+        assert_eq!(
+            cached.status, "cancelled",
+            "snake_case status must round-trip through close+reopen"
+        );
+        assert_eq!(cached.tokens, 18);
+    }
+
+    #[test]
+    fn cache_agent_persists_snake_case_status_to_event_log() {
+        // The AgentDone event itself also travels through the same snake_case
+        // contract (via update_from_event → as_str()). Read events.jsonl back
+        // and confirm the event log carries the canonical status.
+        let dir = tempdir().unwrap();
+        let run_id = uuid::Uuid::now_v7();
+        let journal = JournalStore::new(dir.path()).unwrap();
+        journal.init_run(run_id, "event log F5").unwrap();
+
+        let agent_id = uuid::Uuid::now_v7();
+        let key = AgentCacheKey::new("p", None, 1);
+        journal
+            .cache_agent(
+                &key,
+                agent_id,
+                1,
+                AgentStatus::TimedOut,
+                serde_json::json!(null),
+                vec![],
+                sample_token_usage(1, 1),
+            )
+            .unwrap();
+
+        // The persisted AgentResultCache.status must already be verified by
+        // the test above; this test only confirms the event log still parses
+        // and carries the AgentDone event with the right status enum.
+        let log = journal.store().get_event_log().expect("read events.jsonl");
+        let agent_done = log
+            .iter()
+            .find_map(|e| match e {
+                AgentEvent::AgentDone {
+                    agent_id: id,
+                    status,
+                    ..
+                } if id == &agent_id => Some(status.clone()),
+                _ => None,
+            })
+            .expect("AgentDone event in log");
+        // Status enum round-trip is enforced by serde, but the persisted
+        // cache status string (verified above) is the part that the on-disk
+        // contract depends on.
+        assert!(matches!(
+            agent_done,
+            AgentStatus::TimedOut
+        ));
     }
 }

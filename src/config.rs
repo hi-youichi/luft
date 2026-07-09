@@ -114,8 +114,7 @@ pub fn resolve_default_backend(user_specified: Option<&str>) -> String {
 
 /// Resolve model: CLI > config > None.
 pub fn resolve_model(cli: Option<&str>, config: Option<&str>) -> Option<String> {
-    cli.map(String::from)
-        .or_else(|| config.map(String::from))
+    cli.map(String::from).or_else(|| config.map(String::from))
 }
 
 /// Resolve planner model: CLI planner_model > CLI model > config > None.

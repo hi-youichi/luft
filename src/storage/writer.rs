@@ -99,8 +99,15 @@ impl EventWriter {
                 prompt: _,
                 retry_count,
             } => {
-                self.write_agent_done(*run_id, *agent_id, status, *tokens, *elapsed_ms, *retry_count)
-                    .await?;
+                self.write_agent_done(
+                    *run_id,
+                    *agent_id,
+                    status,
+                    *tokens,
+                    *elapsed_ms,
+                    *retry_count,
+                )
+                .await?;
             }
             AgentEvent::PhaseDone {
                 run_id,

@@ -94,9 +94,7 @@ impl PhaseRenderer {
     /// Dispatch an event to the appropriate handler.
     pub fn handle(&mut self, evt: &AgentEvent) {
         match evt {
-            AgentEvent::RunStarted { run_id, task, .. } => {
-                self.on_run_started(*run_id, task)
-            }
+            AgentEvent::RunStarted { run_id, task, .. } => self.on_run_started(*run_id, task),
             AgentEvent::PhaseStarted {
                 phase_id,
                 label,
@@ -132,7 +130,13 @@ impl PhaseRenderer {
                 retry_count,
                 ..
             } => {
-                self.on_agent_done(*agent_id, status.clone(), *tokens, *elapsed_ms, *retry_count);
+                self.on_agent_done(
+                    *agent_id,
+                    status.clone(),
+                    *tokens,
+                    *elapsed_ms,
+                    *retry_count,
+                );
             }
             AgentEvent::PhaseDone {
                 phase_id,
@@ -309,7 +313,10 @@ impl PhaseRenderer {
     /// printer task handles events on the same renderer via a shared mutex.
     pub fn tick_elapsed(&self) {
         if let (Some(start), Some(pb)) = (self.run_start, &self.timer_pb) {
-            pb.set_message(format!("⏱ {}", fmt_clock(start.elapsed().as_millis() as u64)));
+            pb.set_message(format!(
+                "⏱ {}",
+                fmt_clock(start.elapsed().as_millis() as u64)
+            ));
         }
     }
 
@@ -481,10 +488,7 @@ impl PhaseRenderer {
                 if retry_count > 0 {
                     parts.push(format!("{} retries", retry_count));
                 }
-                (
-                    style("✓").green().bold(),
-                    parts.join(" · "),
-                )
+                (style("✓").green().bold(), parts.join(" · "))
             }
             AgentStatus::Error => (style("✗").red().bold(), "ERROR".into()),
             AgentStatus::Cancelled => (style("⊘").yellow().bold(), "CANCELLED".into()),
@@ -628,10 +632,7 @@ impl PhaseRenderer {
 /// Pulled out as a free function so unit tests can verify the format directly
 /// without instantiating a `ProgressBar`.
 fn format_live(entry: &AgentEntry) -> String {
-    let tok = entry
-        .latest_tokens
-        .unwrap_or_default()
-        .display_split();
+    let tok = entry.latest_tokens.unwrap_or_default().display_split();
     let mut s = format!(
         "{} · {} · {} {}",
         entry.label,
@@ -650,7 +651,11 @@ fn format_live(entry: &AgentEntry) -> String {
 }
 
 fn calls_noun(n: u32) -> &'static str {
-    if n == 1 { "call" } else { "calls" }
+    if n == 1 {
+        "call"
+    } else {
+        "calls"
+    }
 }
 
 fn fmt_chars(n: usize) -> String {

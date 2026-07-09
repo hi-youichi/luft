@@ -92,14 +92,16 @@ pub fn fmt_tokens(n: u64) -> String {
             _ => unreachable!("unexpected suffix {suffix}"),
         };
         let v = n as f64 / next_divisor as f64;
-        let s = format!("{:.1}", v);
-        let s = s.trim_end_matches(".0");
-        format!("{}{}", s, next_suffix)
+        fmt_suffix(v, next_suffix)
     } else {
-        let s = format!("{:.1}", v);
-        let s = s.trim_end_matches(".0");
-        format!("{}{}", s, suffix)
+        fmt_suffix(v, suffix)
     }
+}
+
+fn fmt_suffix(v: f64, suffix: &str) -> String {
+    let s = format!("{:.1}", v);
+    let s = s.trim_end_matches(".0");
+    format!("{}{}", s, suffix)
 }
 
 #[cfg(test)]
@@ -322,7 +324,7 @@ mod tests {
             cache_read: 5,
             cache_write: 3,
         };
-        let cloned = t;
+        let cloned = t.clone();
         assert_eq!(cloned, t);
     }
 
@@ -461,7 +463,7 @@ mod tests {
         assert_eq!(fmt_tokens(2_300_000_000), "2.3B");
     }
 
-#[test]
+    #[test]
     fn fmt_tokens_b_whole_no_decimal() {
         assert_eq!(fmt_tokens(10_000_000_000), "10B");
     }
