@@ -216,7 +216,8 @@ fn find_str(v: &serde_json::Value, key: &str) -> Option<String> {
 /// since ACP uses camelCase serialization but some agents may use snake_case.
 fn extract_usage(update: &SessionUpdate) -> Option<TokenUsage> {
     let v = to_json(update);
-    let usage = find_object(&v, "usage")?;
+    let usage = find_object(&v, "usage")
+        .or_else(|| find_object(&v, "token_usage"))?;
     let get = |snake: &str, camel: &str| {
         usage
             .get(snake)
@@ -231,11 +232,13 @@ fn extract_usage(update: &SessionUpdate) -> Option<TokenUsage> {
     if input == 0 && output == 0 {
         return None;
     }
+    let cached = get("cached_tokens", "cachedTokens");
     Some(TokenUsage {
         input,
         output,
         cache_read: get("cache_read_tokens", "cachedReadTokens")
-            .max(get("cache_read", "cached_read")),
+            .max(get("cache_read", "cached_read"))
+            .max(cached),
         cache_write: get("cache_write_tokens", "cachedWriteTokens")
             .max(get("cache_write", "cached_write")),
     })

@@ -13,19 +13,29 @@ use anyhow::Result;
 use maestro::core::contract::backend::RunContext;
 use maestro::core::contract::event::AgentEvent;
 use maestro::core::contract::ids::AgentId;
+use maestro::core::{AgentBackend, MockFileBackend, MockStats};
 use maestro::runtime::Runtime;
 use maestro::service::run as svc;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-pub async fn run_workflow(args: RunArgs) -> Result<()> {
+pub async fn run_workflow(
+    args: RunArgs,
+    parent_cancel: tokio_util::sync::CancellationToken,
+    sig_tx: tokio::sync::broadcast::Sender<crate::signal::SignalInfo>,
+) -> Result<()> {
     let is_nl = args.nl.is_some();
     let backend_id = crate::config::resolve_default_backend(args.backend.as_deref());
     if is_nl && backend_id == "mock" {
         anyhow::bail!(
             "NL mode requires a real LLM backend. \
              Install opencode (https://opencode.ai) or specify --backend <id>"
+        );
+    }
+    if is_nl && backend_id == "mockfile" {
+        anyhow::bail!(
+            "mockfile backend requires --workflow. Use `maestro generate --with-mock` first."
         );
     }
     if is_nl && args.backend.is_none() {
@@ -89,7 +99,8 @@ pub async fn run_workflow(args: RunArgs) -> Result<()> {
     } else if let Some(run_dir) = resume_override {
         svc::resolve_resume(&run_dir, &base_dir)?
     } else {
-        let backend = backend::create_backend(&backend_id, !args.no_acp_raw, model.clone())?;
+        let (backend, _mock_stats) =
+            create_run_backend(&backend_id, args.workflow.as_deref(), !args.no_acp_raw, model.clone())?;
         let source = if let Some(nl) = args.nl.as_deref() {
             svc::ScriptSource::Nl(nl)
         } else if let Some(wf) = args.workflow.as_deref() {
@@ -133,15 +144,36 @@ pub async fn run_workflow(args: RunArgs) -> Result<()> {
     let mut current_script = spec.script.clone();
 
     for attempt in 1..=max_att {
-        let cancel = tokio_util::sync::CancellationToken::new();
-        let (tx, _rx) = tokio::sync::broadcast::channel(2048);
+        let cancel = parent_cancel.child_token();
+        let (tx, _rx_keep) = tokio::sync::broadcast::channel(2048);
         let ctx = RunContext {
             run_id: spec.run_id,
-            cancel,
-            events: tx,
+            cancel: cancel.clone(),
+            events: tx.clone(),
         };
 
-        let backend2 = backend::create_backend(&backend_id, !args.no_acp_raw, model.clone())?;
+        // Spawn a signal forwarder: if an OS signal arrives during this
+        // attempt, translate it into a `SignalReceived` event on the run's
+        // event channel (so it lands in events.jsonl) and cancel the
+        // attempt token.  `rx_keep` stays alive as a subscriber so `tx.send`
+        // never fails even before `run_headless` subscribes its printer.
+        let run_id_sig = spec.run_id;
+        let tx_sig = tx.clone();
+        let cancel_sig = cancel.clone();
+        let mut sig_rx = sig_tx.subscribe();
+        let fwd = tokio::spawn(async move {
+            if let Ok(info) = sig_rx.recv().await {
+                let _ = tx_sig.send(AgentEvent::SignalReceived {
+                    run_id: Some(run_id_sig),
+                    signal: info.signal,
+                    ts: info.ts,
+                });
+                cancel_sig.cancel();
+            }
+        });
+
+        let (backend2, mock_stats) =
+            create_run_backend(&backend_id, args.workflow.as_deref(), !args.no_acp_raw, model.clone())?;
 
         let prepared =
             svc::prepare(&spec, backend2, &base_dir, &ctx, args.max_concurrency).await?;
@@ -181,8 +213,27 @@ pub async fn run_workflow(args: RunArgs) -> Result<()> {
         )
         .await;
 
+        fwd.abort();
+
         match result {
-            Ok(()) => return Ok(()),
+            Ok(()) => {
+                if let Some(ref stats) = mock_stats {
+                    let snap = stats.snapshot();
+                    if !snap.all_matched() {
+                        anyhow::bail!(
+                            "mock coverage incomplete: {} of {} agent calls unmatched{}",
+                            snap.fallback,
+                            snap.total_calls,
+                            if snap.unmatched_names.is_empty() {
+                                String::new()
+                            } else {
+                                format!(": {:?}", snap.unmatched_names)
+                            }
+                        );
+                    }
+                }
+                return Ok(());
+            }
             Err(e) if attempt < max_att => {
                 let err_str = e.to_string();
                 // Schema validation failures are LLM compliance issues, not
@@ -211,6 +262,34 @@ pub async fn run_workflow(args: RunArgs) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Create a backend, intercepting "mockfile" to load a `.mock.json` sidecar.
+#[allow(clippy::type_complexity)]
+fn create_run_backend(
+    backend_id: &str,
+    workflow_path: Option<&Path>,
+    emit_raw: bool,
+    model: Option<String>,
+) -> Result<(Arc<dyn AgentBackend>, Option<Arc<MockStats>>)> {
+    if backend_id == "mockfile" {
+        let wf = workflow_path.ok_or_else(|| {
+            anyhow::anyhow!("--backend mockfile requires --workflow <file>")
+        })?;
+        let mock_path = wf.with_extension("mock.json");
+        if !mock_path.exists() {
+            anyhow::bail!(
+                "mock file not found: {}. Run `maestro generate --with-mock` first.",
+                mock_path.display()
+            );
+        }
+        eprintln!("\u{2139}  Loading mock data from {}", mock_path.display());
+        let mb = MockFileBackend::load(&mock_path)?;
+        let stats = mb.stats_handle();
+        Ok((Arc::new(mb), Some(stats)))
+    } else {
+        Ok((backend::create_backend(backend_id, emit_raw, model)?, None))
+    }
 }
 
 /// Persist the final report value to `path`.

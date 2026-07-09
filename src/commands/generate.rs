@@ -36,24 +36,51 @@ async fn generate_script_with_backend(
 ) -> Result<()> {
     let cfg = maestro::planner::PlannerConfig {
         planner_model,
+        generate_mock: args.with_mock,
         ..Default::default()
     };
 
-    eprintln!("⚙  Generating Lua workflow script…");
+    if args.with_mock {
+        eprintln!("\u{2699}  Generating Lua workflow script + mock data\u{2026}");
+    } else {
+        eprintln!("\u{2699}  Generating Lua workflow script\u{2026}");
+    }
 
     let planned = maestro::planner::plan_workflow(&args.nl, backend, &cfg).await?;
 
     match args.output {
         Some(path) => {
             std::fs::write(&path, &planned.script)?;
-            eprintln!("✅  Written to {}", path.display());
+            eprintln!("\u{2705}  Script written to {}", path.display());
+
+            if args.with_mock {
+                if let Some(ref mock) = planned.mock_data {
+                    let mock_path = mock_file_path(&path);
+                    let json = serde_json::to_string_pretty(mock)?;
+                    std::fs::write(&mock_path, json + "\n")?;
+                    eprintln!("\u{2705}  Mock data written to {}", mock_path.display());
+                } else {
+                    eprintln!("\u{26a0}  --with-mock requested but planner did not produce mock data");
+                }
+            }
         }
         None => {
             println!("{}", planned.script);
+            if args.with_mock {
+                if let Some(ref mock) = planned.mock_data {
+                    eprintln!("\n--- mock.json ---");
+                    eprintln!("{}", serde_json::to_string_pretty(mock)?);
+                }
+            }
         }
     }
 
     Ok(())
+}
+
+/// `foo.lua` -> `foo.mock.json` (replace extension)
+fn mock_file_path(lua_path: &std::path::Path) -> std::path::PathBuf {
+    lua_path.with_extension("mock.json")
 }
 
 #[cfg(test)]
@@ -83,6 +110,7 @@ mod tests {
             backend: backend.map(|s| s.to_string()),
             output: output.map(std::path::PathBuf::from),
             model: None,
+            with_mock: false,
         }
     }
 

@@ -13,10 +13,12 @@ mod backend;
 mod commands;
 mod config;
 mod logging;
+mod signal;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
+use tokio::sync::broadcast;
 
 #[derive(Parser)]
 #[command(name = "maestro")]
@@ -79,6 +81,9 @@ enum Commands {
     /// Lua script utilities.
     #[command(subcommand)]
     Lua(commands::lua_validate::LuaSubcommand),
+    /// Generate mock data for an existing Lua script.
+    #[command(subcommand)]
+    Mock(commands::mock::MockSubcommand),
 }
 
 #[derive(Debug, clap::Args)]
@@ -102,6 +107,9 @@ struct GenerateArgs {
 
     #[arg(long, help = "Model for NL→Lua planning (overrides config)")]
     model: Option<String>,
+
+    #[arg(long, help = "Also generate a .mock.json companion file")]
+    with_mock: bool,
 }
 
 #[derive(Debug, clap::Args)]
@@ -189,18 +197,25 @@ struct RunArgs {
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
-    dispatch(cli).await
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let (sig_tx, _) = broadcast::channel(16);
+    signal::install(sig_tx.clone(), cancel.clone());
+    dispatch(cli, cancel, sig_tx).await
 }
 
 /// Dispatch a parsed CLI to the appropriate handler.
 /// Exposed as a separate function so it can be tested without touching
 /// process-global `std::env::args()`.
-async fn dispatch(cli: Cli) -> Result<()> {
+async fn dispatch(
+    cli: Cli,
+    cancel: tokio_util::sync::CancellationToken,
+    sig_tx: broadcast::Sender<signal::SignalInfo>,
+) -> Result<()> {
     logging::init(cli.log_level.as_deref(), "warn", cli.log_file.as_deref())?;
 
     match cli.command {
         Commands::Generate(args) => commands::generate::generate_script(args).await?,
-        Commands::Run(args) => commands::run::run_workflow(args).await?,
+        Commands::Run(args) => commands::run::run_workflow(args, cancel.clone(), sig_tx.clone()).await?,
         Commands::Workflows => commands::workflows::list_workflows()?,
         Commands::Save { name, output } => commands::save::save_workflow(&name, &output)?,
         Commands::List { limit } => commands::list::list_runs_cmd(limit)?,
@@ -227,6 +242,14 @@ async fn dispatch(cli: Cli) -> Result<()> {
             commands::lua_validate::LuaSubcommand::Validate(args) => {
                 commands::lua_validate::validate_lua(args)?
             }
+            commands::lua_validate::LuaSubcommand::MockCheck(args) => {
+                commands::lua_validate::mock_check(args)?
+            }
+        },
+        Commands::Mock(cmd) => match cmd {
+            commands::mock::MockSubcommand::Add(args) => {
+                commands::mock::mock_add(args).await?
+            }
         },
     }
 
@@ -245,11 +268,14 @@ let cli = Cli {
                 output: None,
                 backend: Some("does-not-exist".into()),
                 model: None,
+                with_mock: false,
             }),
             log_level: Some("debug".into()),
             log_file: None,
         };
-        let err = dispatch(cli).await.unwrap_err();
+        let err = dispatch(cli, tokio_util::sync::CancellationToken::new(), tokio::sync::broadcast::channel::<signal::SignalInfo>(16).0)
+            .await
+            .unwrap_err();
         assert!(
             err.to_string().contains("unknown backend"),
             "expected 'unknown backend' error, got: {}",
@@ -265,11 +291,14 @@ let cli = Cli {
                 output: None,
                 backend: Some("mock".into()),
                 model: None,
+                with_mock: false,
             }),
             log_level: None,
             log_file: None,
         };
-        let err = dispatch(cli).await.unwrap_err();
+        let err = dispatch(cli, tokio_util::sync::CancellationToken::new(), tokio::sync::broadcast::channel::<signal::SignalInfo>(16).0)
+            .await
+            .unwrap_err();
         assert!(
             err.to_string().contains("planner") || err.to_string().contains("real LLM backend"),
             "expected planner or backend error, got: {}",
@@ -303,7 +332,9 @@ let cli = Cli {
             log_level: None,
             log_file: None,
         };
-        let err = dispatch(cli).await.unwrap_err();
+        let err = dispatch(cli, tokio_util::sync::CancellationToken::new(), tokio::sync::broadcast::channel::<signal::SignalInfo>(16).0)
+            .await
+            .unwrap_err();
         assert!(
             err.to_string().contains("unknown backend"),
             "expected 'unknown backend' error, got: {}",
@@ -337,7 +368,9 @@ let cli = Cli {
             log_level: None,
             log_file: None,
         };
-        let err = dispatch(cli).await.unwrap_err();
+        let err = dispatch(cli, tokio_util::sync::CancellationToken::new(), tokio::sync::broadcast::channel::<signal::SignalInfo>(16).0)
+            .await
+            .unwrap_err();
         assert!(
             err.to_string().contains("natural language prompt")
                 || err.to_string().contains("--workflow"),
@@ -353,7 +386,9 @@ let cli = Cli {
             log_level: None,
             log_file: None,
         };
-        dispatch(cli).await.unwrap();
+        dispatch(cli, tokio_util::sync::CancellationToken::new(), tokio::sync::broadcast::channel::<signal::SignalInfo>(16).0)
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
@@ -366,7 +401,9 @@ let cli = Cli {
             log_level: None,
             log_file: None,
         };
-        let err = dispatch(cli).await.unwrap_err();
+        let err = dispatch(cli, tokio_util::sync::CancellationToken::new(), tokio::sync::broadcast::channel::<signal::SignalInfo>(16).0)
+            .await
+            .unwrap_err();
         assert!(
             err.to_string().contains("not implemented"),
             "expected 'not implemented' error, got: {}",
@@ -381,7 +418,9 @@ let cli = Cli {
             log_level: None,
             log_file: None,
         };
-        dispatch(cli).await.unwrap();
+        dispatch(cli, tokio_util::sync::CancellationToken::new(), tokio::sync::broadcast::channel::<signal::SignalInfo>(16).0)
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
@@ -393,7 +432,9 @@ let cli = Cli {
             log_level: None,
             log_file: None,
         };
-        let err = dispatch(cli).await.unwrap_err();
+        let err = dispatch(cli, tokio_util::sync::CancellationToken::new(), tokio::sync::broadcast::channel::<signal::SignalInfo>(16).0)
+            .await
+            .unwrap_err();
         assert!(
             err.to_string().contains("not found") || err.to_string().contains("No such file"),
             "expected 'not found' error, got: {}",
@@ -411,7 +452,9 @@ let cli = Cli {
             log_level: None,
             log_file: None,
         };
-        let err = dispatch(cli).await.unwrap_err();
+        let err = dispatch(cli, tokio_util::sync::CancellationToken::new(), tokio::sync::broadcast::channel::<signal::SignalInfo>(16).0)
+            .await
+            .unwrap_err();
         assert!(
             err.to_string().contains("not found"),
             "expected 'not found' error, got: {}",
@@ -428,7 +471,9 @@ let cli = Cli {
             log_level: None,
             log_file: None,
         };
-        let err = dispatch(cli).await.unwrap_err();
+        let err = dispatch(cli, tokio_util::sync::CancellationToken::new(), tokio::sync::broadcast::channel::<signal::SignalInfo>(16).0)
+            .await
+            .unwrap_err();
         assert!(
             err.to_string().contains("No such file")
                 || err.to_string().contains("os error 2")

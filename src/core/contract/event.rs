@@ -224,6 +224,14 @@ pub enum AgentEvent {
         reasoning: String,
         phases: Vec<PlanPhase>,
     },
+    /// OS signal received (SIGINT / SIGTERM / Ctrl+C). `run_id` is `None` if
+    /// the signal arrived before a run had started. Emitted by the process-
+    /// level signal handler in [`crate::signal`].
+    SignalReceived {
+        run_id: Option<RunId>,
+        signal: String,
+        ts: DateTime<Utc>,
+    },
 }
 
 /// A single phase entry in the plan preview `meta.phases` array.

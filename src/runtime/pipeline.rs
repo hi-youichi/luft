@@ -54,8 +54,6 @@ pub enum PipelineError {
 pub struct PipelineConfig {
     /// Ordered list of stage definitions.
     pub stages: Vec<PipelineStage>,
-    /// Maximum number of items in flight across the pipeline (back-pressure).
-    pub max_inflight: usize,
     /// Timeout in milliseconds for the entire pipeline.
     pub timeout_ms: u64,
 }
@@ -64,7 +62,6 @@ impl Default for PipelineConfig {
     fn default() -> Self {
         Self {
             stages: Vec::new(),
-            max_inflight: 10,
             timeout_ms: 300_000, // 5 minutes
         }
     }
@@ -207,7 +204,7 @@ impl PipelineExecutor {
     ///
     /// Items flow through each stage sequentially. Stage 0 processes all items
     /// first, then each item moves to Stage 1, etc. Within each stage, items
-    /// are processed concurrently up to `max_inflight`.
+    /// are processed sequentially through each stage.
     pub fn execute(
         &self,
         items: Vec<serde_json::Value>,
@@ -224,7 +221,6 @@ impl PipelineExecutor {
         tracing::info!(
             n_stages,
             n_items,
-            max_inflight = self.config.max_inflight,
             "pipeline execution started"
         );
         let run_id = self.run_id;
@@ -381,7 +377,7 @@ use mlua::{Function, Lua, Table, Value};
 /// Register the `pipeline(params)` SDK function in Lua.
 ///
 /// `params` carries an `items` array, a `stages` array (each a function or a
-/// `{ label, handler }` table), and an optional `max_inflight`. The handlers run
+    /// `{ label, handler }` table). The handlers run
 /// inside the executor, blocking on the shared tokio runtime.
 pub(crate) fn register_pipeline_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<()> {
     let globals = lua.globals();
@@ -448,11 +444,9 @@ pub(crate) fn register_pipeline_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<
             ));
         }
 
-        let max_inflight = params.get::<i64>("max_inflight").unwrap_or(5).max(1) as usize;
         let n_stages = stages.len();
         let config = PipelineConfig {
             stages,
-            max_inflight,
             ..Default::default()
         };
 
@@ -532,7 +526,6 @@ mod tests {
                 PipelineStage::new("analyze", append_marker("analyze")),
                 PipelineStage::new("report", append_marker("report")),
             ],
-            max_inflight: 5,
             timeout_ms: 10000,
         };
 
@@ -570,7 +563,6 @@ mod tests {
                     }
                 }),
             ],
-            max_inflight: 5,
             timeout_ms: 10000,
         };
 

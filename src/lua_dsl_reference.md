@@ -203,6 +203,10 @@ Anti-patterns:
               tokens=<int>,                  -- token usage
               findings=<array> }             -- accumulated findings (if any)
 
+    When generating with --with-mock, EVERY agent() call MUST include a unique
+    `name=` field. This name matches mock responses in the .mock.json sidecar.
+    For parallel() fan-out, all items share one name; the mock response is reused.
+
     schema — see Rule 6 for when to use / skip. Example:
       Define named schema tables at the top of the script and reuse them:
         local FINDINGS = {

@@ -160,6 +160,10 @@ RunDone { status, total_tokens, .. } => {
             }).collect();
             format!("plan preview: {reasoning} | phases: {}", labels.join(", "))
         }
+        SignalReceived { run_id, signal, .. } => match run_id {
+            Some(rid) => format!("signal received: {signal} (run {rid})"),
+            None => format!("signal received: {signal} (no active run)"),
+        },
     }
 }
 

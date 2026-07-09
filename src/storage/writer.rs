@@ -123,6 +123,10 @@ impl EventWriter {
             AgentEvent::Log { .. } => {
                 // Logs already captured via tracing; skip to avoid duplication.
             }
+            AgentEvent::SignalReceived { .. } => {
+                // Persisted to events.jsonl via the journal forwarder; not a
+                // SQLite state change, so skip to avoid duplication.
+            }
             AgentEvent::BudgetSet { .. } => {
                 // Budget is a session-level concern; tracked in checkpoint.json.
             }
@@ -767,6 +771,7 @@ fn audit_metadata(event: &AgentEvent) -> (Option<RunId>, &'static str) {
         AgentEvent::PhaseSpanStarted { run_id, .. } => (Some(*run_id), "phase_span_started"),
         AgentEvent::PhaseSpanDone { run_id, .. } => (Some(*run_id), "phase_span_done"),
         AgentEvent::PlanPreview { run_id, .. } => (Some(*run_id), "plan_preview"),
+        AgentEvent::SignalReceived { run_id, .. } => (*run_id, "signal_received"),
         AgentEvent::SchemaRetry { run_id, .. } => (Some(*run_id), "schema_retry"),
     }
 }

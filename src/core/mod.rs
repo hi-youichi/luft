@@ -6,6 +6,7 @@
 pub mod contract;
 pub mod journal;
 pub mod mock_backend;
+pub mod mock_file_backend;
 pub mod run_dir;
 pub mod scheduler;
 pub mod state;
@@ -16,6 +17,7 @@ pub use journal::{
     RunCreationMode,
 };
 pub use mock_backend::{FailKind, MockBackend, MockBehavior};
+pub use mock_file_backend::{MockFileBackend, MockStats, MockStatsSnapshot};
 pub use scheduler::{
     BackendRegistry, JournalCallback, RetryPolicy, Scheduler, SchedulerConfig, SchedulerError,
 };

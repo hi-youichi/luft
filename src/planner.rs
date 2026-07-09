@@ -23,6 +23,8 @@ pub struct PlannerConfig {
     pub planner_model: Option<String>,
     /// Max attempts to (re)generate a valid script before giving up.
     pub max_retries: usize,
+    /// When true, the planner also generates a `.mock.json` companion block.
+    pub generate_mock: bool,
 }
 
 impl Default for PlannerConfig {
@@ -30,6 +32,7 @@ impl Default for PlannerConfig {
         Self {
             planner_model: None,
             max_retries: 3,
+            generate_mock: false,
         }
     }
 }
@@ -39,6 +42,8 @@ impl Default for PlannerConfig {
 pub struct PlannedWorkflow {
     /// The generated Lua script (validated, fence-stripped).
     pub script: String,
+    /// Mock data for `--with-mock` runs (`None` when mock generation is off).
+    pub mock_data: Option<serde_json::Value>,
 }
 
 /// Planner errors.
@@ -73,7 +78,11 @@ pub async fn plan_workflow(
             );
         }
 
-        let prompt = build_prompt(task, (attempt > 0).then_some(last_error.as_str()));
+        let prompt = build_prompt(
+            task,
+            (attempt > 0).then_some(last_error.as_str()),
+            cfg.generate_mock,
+        );
 
         let output = run_planner_agent(&*backend, &prompt, cfg.planner_model.clone())
             .await
@@ -89,7 +98,20 @@ pub async fn plan_workflow(
         };
 
         match validate_generated(&script) {
-            Ok(()) => return Ok(PlannedWorkflow { script }),
+            Ok(()) => {
+                let mock_data = if cfg.generate_mock {
+                    let mock = extract_mock_block(&output);
+                    if mock.is_none() {
+                        tracing::warn!(
+                            "generate_mock requested but no ```json block found in agent output"
+                        );
+                    }
+                    mock
+                } else {
+                    None
+                };
+                return Ok(PlannedWorkflow { script, mock_data });
+            }
             Err(e) => {
                 tracing::warn!(attempt, error = %e, "generated script failed validation");
                 last_error = e;
@@ -146,6 +168,45 @@ fn validate_generated(script: &str) -> Result<(), String> {
     } else {
         Err(result.errors.join("; "))
     }
+}
+
+/// Extract the ```json block from planner output (for mock data).
+fn extract_mock_block(output: &serde_json::Value) -> Option<serde_json::Value> {
+    let text = output_to_text(output)?;
+    let json_str = find_fenced_block_by_lang(&text, "json")?;
+    let trimmed = json_str.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    serde_json::from_str(trimmed).ok()
+}
+
+/// Find a fenced code block by exact language tag.
+fn find_fenced_block_by_lang(text: &str, lang: &str) -> Option<String> {
+    let marker = format!("```{}", lang);
+    let mut from = 0;
+    while let Some(rel) = text[from..].find(&marker) {
+        let fence = from + rel;
+        let after = &text[fence + marker.len()..];
+        let line_end = match after.find('\n') {
+            Some(n) => n,
+            None => {
+                from = fence + marker.len();
+                continue;
+            }
+        };
+        let body_start = fence + marker.len() + line_end + 1;
+        let rest = &text[body_start..];
+        let close = match rest.find("```") {
+            Some(c) => c,
+            None => {
+                from = body_start;
+                continue;
+            }
+        };
+        return Some(rest[..close].trim_end().to_string());
+    }
+    None
 }
 
 /// Coerce the agent output into text and pull out the Lua script.
@@ -272,8 +333,8 @@ fn find_fenced_block(text: &str) -> Option<String> {
 }
 
 /// Build the planner prompt: DSL reference + task (+ optional fix-up error).
-fn build_prompt(task: &str, fix_error: Option<&str>) -> String {
-    let mut p = String::with_capacity(LUA_DSL_REFERENCE.len() + task.len() + 512);
+fn build_prompt(task: &str, fix_error: Option<&str>, generate_mock: bool) -> String {
+    let mut p = String::with_capacity(LUA_DSL_REFERENCE.len() + task.len() + 1024);
     p.push_str(LUA_DSL_REFERENCE);
     p.push_str("\n\n# Task\n\n");
     p.push_str(task);
@@ -283,9 +344,47 @@ fn build_prompt(task: &str, fix_error: Option<&str>) -> String {
         p.push_str(err);
         p.push_str("\n\nFix the script and output a corrected version.\n");
     }
-    p.push_str("\nOutput ONLY one ```lua code block — no prose before or after.\n");
+    if generate_mock {
+        p.push_str(MOCK_GENERATION_INSTRUCTIONS);
+    }
+    p.push_str("\nOutput ONLY one ```lua code block");
+    if generate_mock {
+        p.push_str(" followed by one ```json code block");
+    }
+    p.push_str(" — no prose before or after.\n");
     p
 }
+
+const MOCK_GENERATION_INSTRUCTIONS: &str = r#"
+
+# Mock Data Generation
+
+In ADDITION to the ```lua block, output a second ```json block with mock
+responses for EVERY named agent call. Format:
+
+```json
+{
+  "responses": {
+    "<agent_name>": {
+      "output": <representative JSON matching the agent's expected output>,
+      "tokens": {"input": 100, "output": 50},
+      "status": "ok"
+    }
+  },
+  "default": {
+    "output": {"text": "mock response"},
+    "tokens": {"input": 0, "output": 0}
+  }
+}
+```
+
+Rules:
+1. EVERY agent() call in the Lua script MUST include a unique `name=` field.
+2. For parallel() fan-out, all items share ONE name — the mock response is reused.
+3. Mock output MUST match the agent's schema structure if a schema is defined.
+4. Keep mock output concise but structurally valid.
+5. Output BOTH blocks: ```lua first, then ```json.
+"#;
 
 /// The orchestration DSL spec handed to the planner agent.
 ///
@@ -362,6 +461,7 @@ mod tests {
         let cfg = PlannerConfig {
             planner_model: None,
             max_retries: 2,
+            ..Default::default()
         };
         match plan_workflow("x", backend, &cfg).await.unwrap_err() {
             PlannerError::ExhaustedRetries { attempts, .. } => assert_eq!(attempts, 2),
@@ -377,6 +477,7 @@ mod tests {
         let cfg = PlannerConfig {
             planner_model: None,
             max_retries: 1,
+            ..Default::default()
         };
         assert!(matches!(
             plan_workflow("x", backend, &cfg).await,
@@ -543,7 +644,7 @@ mod tests {
 
     #[test]
     fn test_build_prompt_with_fix_error() {
-        let p = build_prompt("do task", Some("script had syntax error"));
+        let p = build_prompt("do task", Some("script had syntax error"), false);
         assert!(p.contains("do task"));
         assert!(p.contains("previous attempt was rejected"));
         assert!(p.contains("script had syntax error"));
@@ -552,7 +653,7 @@ mod tests {
 
     #[test]
     fn test_build_prompt_without_fix_error() {
-        let p = build_prompt("do task", None);
+        let p = build_prompt("do task", None, false);
         assert!(p.contains("do task"));
         assert!(!p.contains("previous attempt was rejected"));
         assert!(p.contains("Output ONLY"));
@@ -581,8 +682,8 @@ mod tests {
 
     #[test]
     fn test_build_prompt_contains_decomposition_section() {
-        let p = build_prompt("refactor everything", None);
+        let p = build_prompt("refactor everything", None, false);
         assert!(p.contains("Task Decomposition"));
-        assert!(p.contains("phase_begin"));
+        assert!(p.contains("meta.phases") || p.contains("phases"));
     }
 }

@@ -11,6 +11,7 @@ pub type PhaseId = u32;
 
 /// Token usage, accumulated as a run progresses.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
 pub struct TokenUsage {
     pub input: u64,
     pub output: u64,

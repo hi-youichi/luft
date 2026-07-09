@@ -10,6 +10,7 @@ pub mod list;
 pub mod logs;
 pub mod lua_validate;
 pub mod mcp_server;
+pub mod mock;
 pub mod phase_renderer;
 pub mod run;
 pub mod save;

@@ -28,7 +28,7 @@ use console::style;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use maestro::core::contract::backend::AgentStatus;
 use maestro::core::contract::event::{AgentEvent, ProgressDelta, RunStatus};
-use maestro::core::contract::ids::{AgentId, PhaseId, TokenUsage};
+use maestro::core::contract::ids::{AgentId, PhaseId, RunId, TokenUsage};
 
 // ── Data model ────────────────────────────────────────────
 
@@ -65,6 +65,9 @@ pub struct PhaseRenderer {
     /// Task label from `RunStarted`, kept so the header bar can be re-rendered
     /// on each timer tick without storing the formatted prefix separately.
     run_task: Option<String>,
+    /// Run ID captured from `RunStarted`; shown as a short prefix in the
+    /// header line.
+    run_id: Option<RunId>,
     /// Dedicated header bar (TTY only). Carries the
     /// `╭─ Run: <task>  ⏱ Mm SSs` line; updated in place by `tick_elapsed()`
     /// and frozen with the final elapsed time by `on_run_done`. `None` in
@@ -81,6 +84,7 @@ impl PhaseRenderer {
             mp: MultiProgress::new(),
             run_start: None,
             run_task: None,
+            run_id: None,
             timer_pb: None,
             phases: HashMap::new(),
             phase_order: Vec::new(),
@@ -90,7 +94,9 @@ impl PhaseRenderer {
     /// Dispatch an event to the appropriate handler.
     pub fn handle(&mut self, evt: &AgentEvent) {
         match evt {
-            AgentEvent::RunStarted { task, .. } => self.on_run_started(task),
+            AgentEvent::RunStarted { run_id, task, .. } => {
+                self.on_run_started(*run_id, task)
+            }
             AgentEvent::PhaseStarted {
                 phase_id,
                 label,
@@ -271,27 +277,28 @@ impl PhaseRenderer {
 
     // ── Event handlers ───────────────────────────────────
 
-    fn on_run_started(&mut self, task: &str) {
+    fn on_run_started(&mut self, run_id: RunId, task: &str) {
         self.run_start = Some(Instant::now());
         self.run_task = Some(task.to_string());
+        self.run_id = Some(run_id);
+        let short_id = &run_id.to_string()[..8];
+
+        // Print the header as a persistent line (survives in scrollback)
+        // in BOTH TTY and non-TTY modes. In TTY mode we additionally keep
+        // a small ProgressBar for the live ⏱ clock — that bar lives at
+        // the bottom of the terminal and would NOT appear in scrollback,
+        // so the run ID must go through println to be visible later.
+        self.print(&format!(
+            "╭─ Run: {}  {}",
+            style(task).bold(),
+            style(format!("#{short_id}")).dim(),
+        ));
 
         if self.tty {
-            // The header lives in its own ProgressBar so we can rewrite the
-            // elapsed-time suffix in place every second via tick_elapsed().
-            // Tick chars are empty (no spinner glyph) and bar length is 0
-            // so no progress fill visual appears — the bar is purely a
-            // single in-place redrawable line at the top of stderr.
             let pb = self.mp.add(ProgressBar::new(0));
             pb.set_style(ProgressStyle::with_template("{msg}").unwrap());
-            pb.set_message(format!(
-                "╭─ Run: {}  ⏱ {}",
-                style(task).bold(),
-                fmt_clock(0),
-            ));
+            pb.set_message(format!("⏱ {}", fmt_clock(0)));
             self.timer_pb = Some(pb);
-        } else {
-            // Non-TTY: one-shot header, no timer bar (nothing to redraw).
-            self.print(&format!("╭─ Run: {}", style(task).bold()));
         }
         self.print("");
     }
@@ -301,14 +308,8 @@ impl PhaseRenderer {
     /// Designed to be called from a separate tokio interval task while the
     /// printer task handles events on the same renderer via a shared mutex.
     pub fn tick_elapsed(&self) {
-        if let (Some(start), Some(task), Some(pb)) =
-            (self.run_start, self.run_task.as_deref(), &self.timer_pb)
-        {
-            pb.set_message(format!(
-                "╭─ Run: {}  ⏱ {}",
-                style(task).bold(),
-                fmt_clock(start.elapsed().as_millis() as u64),
-            ));
+        if let (Some(start), Some(pb)) = (self.run_start, &self.timer_pb) {
+            pb.set_message(format!("⏱ {}", fmt_clock(start.elapsed().as_millis() as u64)));
         }
     }
 

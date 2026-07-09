@@ -15,6 +15,7 @@ pub mod core;
 
 pub mod adapters;
 pub mod mcp;
+pub mod mock_gen;
 pub mod planner;
 pub mod runtime;
 pub mod service;
