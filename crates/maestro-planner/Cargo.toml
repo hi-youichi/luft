@@ -4,9 +4,10 @@ version = "0.2.0"
 edition = "2021"
 description = "NL to Lua workflow planner for Maestro"
 license = "MIT"
+repository = "https://github.com/hi-youichi/maestro"
 
 [dependencies]
-maestro-core = { path = "../maestro-core" }
+maestro-core = { path = "../maestro-core", version = "0.2.0" }
 maestro-runtime = { path = "../maestro-runtime" }
 mlua = { version = "0.10", features = ["lua54", "vendored", "async", "serialize", "send"] }
 tokio = { version = "1", features = ["full"] }

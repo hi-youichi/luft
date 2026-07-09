@@ -3,6 +3,7 @@ name = "maestro-cli"
 version = { workspace = true }
 edition = { workspace = true }
 license = { workspace = true }
+repository = { workspace = true }
 description = "Maestro CLI — multi-agent orchestration runtime"
 
 [[bin]]
@@ -18,7 +19,7 @@ testing = ["maestro/testing"]
 unstable_end_turn_token_usage = ["maestro/unstable_end_turn_token_usage"]
 
 [dependencies]
-maestro = { path = "../maestro", features = ["testing"] }
+maestro = { path = "../maestro", version = "0.2.0", features = ["testing"] }
 clap = { version = "4", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
 anyhow = "1"

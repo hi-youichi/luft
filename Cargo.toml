@@ -15,6 +15,7 @@ resolver = "2"
 version = "0.2.0"
 edition = "2021"
 license = "MIT"
+repository = "https://github.com/hi-youichi/maestro"
 
 [profile.test]
 opt-level = 2
