@@ -30,6 +30,8 @@ pub enum AgentEvent {
         description: Option<String>,
         #[serde(default)]
         role: Option<String>,
+        #[serde(default)]
+        ts: DateTime<Utc>,
     },
     AgentStarted {
         run_id: RunId,
@@ -89,12 +91,16 @@ pub enum AgentEvent {
         phase_id: PhaseId,
         ok: usize,
         failed: usize,
+        #[serde(default)]
+        ts: DateTime<Utc>,
     },
     RunDone {
         run_id: RunId,
         status: RunStatus,
         total_tokens: TokenUsage,
         report: serde_json::Value,
+        #[serde(default)]
+        ts: DateTime<Utc>,
     },
     Log {
         run_id: RunId,

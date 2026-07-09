@@ -207,6 +207,7 @@ mod tests {
             phase_id: 2,
             ok: 1,
             failed: 0,
+            ts: chrono::Utc::now(),
         };
         let dir = std::env::temp_dir().join(format!("maestro_evlog_{}", uuid::Uuid::now_v7()));
         let mut logger = EventLogger::new(Some(&dir), LogFormat::Jsonl).unwrap();
@@ -283,6 +284,7 @@ mod tests {
                     parent_span_id: None,
                     description: None,
                     role: None,
+                    ts: chrono::Utc::now(),
                 },
                 "phase 1 started",
             ),
@@ -413,6 +415,7 @@ mod tests {
                     phase_id: 1,
                     ok: 2,
                     failed: 0,
+                    ts: chrono::Utc::now(),
                 },
                 "phase 1 done: 2 ok",
             ),
@@ -422,6 +425,7 @@ mod tests {
                     status: RunStatus::Completed,
                     total_tokens: TokenUsage::default(),
                     report: serde_json::json!(null),
+                    ts: chrono::Utc::now(),
                 },
                 "run done",
             ),

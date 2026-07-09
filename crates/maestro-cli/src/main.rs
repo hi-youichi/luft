@@ -75,6 +75,13 @@ enum Commands {
     /// Manage backends (list / info / check).
     #[command(subcommand)]
     Backend(commands::backend::BackendSubcommand),
+    /// Show planned phases for a past run (uses the script's `meta` table when available).
+    Phases {
+        #[arg(help = "Run directory name to inspect")]
+        run_dir: String,
+        #[arg(long, help = "Render phases view as JSON instead of a plain-text table")]
+        json: bool,
+    },
     /// MCP server subcommand for structured output injection (internal).
     #[command(hide = true)]
     McpStructuredOutput(commands::mcp_server::McpStructuredOutputArgs),
@@ -225,18 +232,21 @@ async fn dispatch(
         Commands::Backend(cmd) => match cmd {
             commands::backend::BackendSubcommand::List => commands::backend::list_backends(),
             commands::backend::BackendSubcommand::Info { id } => {
-                commands::backend::info_backend(id)
+                commands::backend::info_backend(id);
             }
             commands::backend::BackendSubcommand::Check { id } => {
-                commands::backend::check_backend(id)
+                commands::backend::check_backend(id);
             }
-            commands::backend::BackendSubcommand::Config { key, value } => {
-                commands::backend::config_backend(key, value)
+            commands::backend::BackendSubcommand::Config { .. } => {
+                anyhow::bail!("backend config subcommand is not yet implemented");
             }
-            commands::backend::BackendSubcommand::Set { id } => {
-                commands::backend::set_default_backend(id)
+            commands::backend::BackendSubcommand::Set { .. } => {
+                anyhow::bail!("backend set subcommand is not yet implemented");
             }
         },
+        Commands::Phases { run_dir, json } => {
+            commands::phases::phases_cmd(run_dir, commands::phases::PhasesArgs { json })?;
+        }
         Commands::McpStructuredOutput(args) => commands::mcp_server::run(args)?,
         Commands::Lua(cmd) => match cmd {
             commands::lua_validate::LuaSubcommand::Validate(args) => {

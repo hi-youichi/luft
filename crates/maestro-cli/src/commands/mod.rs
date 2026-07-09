@@ -12,6 +12,7 @@ pub mod lua_validate;
 pub mod mcp_server;
 pub mod mock;
 pub mod phase_renderer;
+pub mod phases;
 pub mod run;
 pub mod save;
 pub mod status;
@@ -39,6 +40,7 @@ mod tests {
     // -----------------------------------------------------------------
 
     #[test]
+    #[serial_test::serial]
     fn runs_base_dir_last_component_is_runs() {
         let p = runs_base_dir();
         assert_eq!(
@@ -50,6 +52,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn runs_base_dir_immediate_parent_is_dot_maestro() {
         let p = runs_base_dir();
         let parent = p
@@ -64,6 +67,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn runs_base_dir_components_chain_through_dot_then_dot_maestro() {
         let p = runs_base_dir();
         let comps: Vec<String> = p
@@ -79,6 +83,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn runs_base_dir_is_relative_and_not_rooted() {
         let p = runs_base_dir();
         assert!(p.is_relative(), "expected relative path, got {:?}", p);
@@ -87,12 +92,14 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn runs_base_dir_equals_manually_constructed_path() {
         let expected: PathBuf = PathBuf::from(".").join(".maestro").join("runs");
         assert_eq!(runs_base_dir(), expected);
     }
 
     #[test]
+    #[serial_test::serial]
     fn runs_base_dir_is_independent_of_cwd() {
         let _lock = GLOBAL_CWD_LOCK.lock().unwrap();
         let scratch1 = tempfile::tempdir().unwrap();
@@ -111,6 +118,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn runs_base_dir_each_call_returns_a_fresh_pathbuf() {
         let mut first = runs_base_dir();
         let second = runs_base_dir();
@@ -119,6 +127,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn runs_base_dir_joined_child_path_stays_under_base() {
         let base = runs_base_dir();
         let child = base.join("a-run-uuid");
@@ -131,6 +140,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn runs_base_dir_joined_children_are_distinct() {
         let a = runs_base_dir().join("run-a");
         let b = runs_base_dir().join("run-b");
@@ -148,6 +158,7 @@ mod tests {
     // -----------------------------------------------------------------
 
     #[test]
+    #[serial_test::serial]
     fn global_cwd_lock_acquires_and_releases() {
         {
             let _guard = GLOBAL_CWD_LOCK.lock().unwrap();
@@ -156,6 +167,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn global_cwd_lock_blocks_concurrent_acquire_via_try_lock() {
         let _outer = GLOBAL_CWD_LOCK.lock().unwrap();
         let result = GLOBAL_CWD_LOCK.try_lock();
@@ -166,6 +178,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn global_cwd_lock_releases_for_next_caller() {
         let g1 = GLOBAL_CWD_LOCK.lock().unwrap();
         drop(g1);
@@ -173,6 +186,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn global_cwd_lock_is_static_lifetime() {
         // The static must hand out a guard with `'static` lifetime so it can
         // be embedded in long-lived structs (the `TestEnv` pattern in
@@ -184,6 +198,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn global_cwd_lock_is_shared_across_threads() {
         // We hold the main-thread guard for the whole test so other tests in
         // the same binary running in parallel cannot briefly steal the lock
@@ -235,6 +250,7 @@ mod tests {
     // -----------------------------------------------------------------
 
     #[test]
+    #[serial_test::serial]
     fn all_fifteen_subcommand_modules_are_declared() {
         #[allow(unused_imports)]
         {

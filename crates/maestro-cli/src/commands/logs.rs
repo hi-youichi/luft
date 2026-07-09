@@ -74,6 +74,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn run_not_found() {
         let _env = TestEnv::new();
         let err = logs_run_cmd("nonexistent".into(), None).unwrap_err();
@@ -84,6 +85,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn base_dir_does_not_exist() {
         let _env = TestEnv::new();
         let err = logs_run_cmd("some-run".into(), None).unwrap_err();
@@ -94,6 +96,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn no_events() {
         let _env = TestEnv::new();
         let run_dir = create_run_with_events(&[]);
@@ -101,6 +104,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn with_events_default_limit() {
         let _env = TestEnv::new();
         let run_id = rid();
@@ -122,6 +126,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn with_events_custom_limit() {
         let _env = TestEnv::new();
         let run_id = rid();
@@ -138,6 +143,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn limit_exceeds_event_count() {
         let _env = TestEnv::new();
         let run_id = rid();
@@ -154,6 +160,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn limit_zero_shows_nothing() {
         let _env = TestEnv::new();
         let run_id = rid();
@@ -170,6 +177,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn multiple_event_types() {
         let _env = TestEnv::new();
         let run_id = rid();
@@ -190,6 +198,7 @@ mod tests {
                 parent_span_id: None,
                 description: None,
                 role: None,
+                ts: chrono::Utc::now(),
             },
             AgentEvent::AgentStarted {
                 run_id,
@@ -232,6 +241,7 @@ mod tests {
                 phase_id: 0,
                 ok: 1,
                 failed: 0,
+                ts: chrono::Utc::now(),
             },
             AgentEvent::RunDone {
                 run_id,
@@ -243,6 +253,7 @@ mod tests {
                     cache_write: 0,
                 },
                 report: serde_json::json!({"result": "done"}),
+            ts: chrono::Utc::now(),
             },
             AgentEvent::Log {
                 run_id,

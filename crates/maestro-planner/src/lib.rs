@@ -16,6 +16,9 @@ use maestro_runtime::{validate_script, validate_workflow};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+pub mod meta;
+pub use meta::{extract_meta, validate_meta as validate_meta_extracted, MetaPhase, MetaValidation, PlanMeta};
+
 /// Planning configuration.
 #[derive(Debug, Clone)]
 pub struct PlannerConfig {
@@ -37,13 +40,15 @@ impl Default for PlannerConfig {
     }
 }
 
-/// A planned workflow: the generated Lua orchestration script.
+/// A planned workflow: the generated Lua script + its extracted metadata.
 #[derive(Debug, Clone)]
 pub struct PlannedWorkflow {
     /// The generated Lua script (validated, fence-stripped).
     pub script: String,
     /// Mock data for `--with-mock` runs (`None` when mock generation is off).
     pub mock_data: Option<serde_json::Value>,
+    /// Extracted phase structure (`meta = {...}`), if the script declared one.
+    pub meta: Option<PlanMeta>,
 }
 
 /// Planner errors.
@@ -102,15 +107,26 @@ pub async fn plan_workflow(
                 let mock_data = if cfg.generate_mock {
                     let mock = extract_mock_block(&output);
                     if mock.is_none() {
-                        tracing::warn!(
-                            "generate_mock requested but no ```json block found in agent output"
-                        );
+                        tracing::warn!(attempt, "--with-mock requested but no mock block found");
                     }
                     mock
                 } else {
                     None
                 };
-                return Ok(PlannedWorkflow { script, mock_data });
+                let meta = match meta::extract_meta(&script) {
+                    Ok(Some(m)) => {
+                        let v = meta::validate_meta(&m, &script);
+                        for w in &v.warnings { tracing::warn!(warning = %w, "planner meta validation warning"); }
+                        if !v.is_valid() {
+                            last_error = format!("meta validation failed: {}", v.errors.join("; "));
+                            continue;
+                        }
+                        Some(m)
+                    }
+                    Ok(None) => None,
+                    Err(e) => { tracing::warn!(error = %e, "meta extraction failed; ignoring"); None }
+                };
+                return Ok(PlannedWorkflow { script, mock_data, meta });
             }
             Err(e) => {
                 tracing::warn!(attempt, error = %e, "generated script failed validation");

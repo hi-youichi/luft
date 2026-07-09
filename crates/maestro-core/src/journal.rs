@@ -159,6 +159,21 @@ impl JournalStore {
         Ok(())
     }
 
+    /// Initialize a new run with declarative workflow metadata.
+    pub fn init_run_with_meta(
+        &self,
+        run_id: RunId,
+        task: &str,
+        workflow_meta: serde_json::Value,
+    ) -> Result<(), JournalError> {
+        tracing::info!(
+            %run_id, %task,
+            "initializing run in journal with meta"
+        );
+        self.inner.init_run_with_meta(run_id, task, workflow_meta)?;
+        Ok(())
+    }
+
     /// Open an existing run and rebuild the cache index from persisted data.
     ///
     /// This is the entry point for `--resume`. It:

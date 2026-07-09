@@ -48,6 +48,7 @@ impl EventWriter {
                 description,
                 role,
                 parent_span_id: _,
+                ..
             } => {
                 self.write_phase_started(
                     *run_id,
@@ -114,6 +115,7 @@ impl EventWriter {
                 phase_id,
                 ok,
                 failed,
+                ..
             } => {
                 self.write_phase_done(*run_id, *phase_id, *ok, *failed)
                     .await?;
@@ -123,6 +125,7 @@ impl EventWriter {
                 status,
                 total_tokens,
                 report,
+                ..
             } => {
                 self.write_run_done(*run_id, status, *total_tokens, report)
                     .await?;
@@ -884,6 +887,7 @@ mod tests {
                 cache_write: 0,
             },
             report: serde_json::json!({"result": "ok"}),
+        ts: chrono::Utc::now(),
         })
         .await
         .unwrap();
@@ -1160,6 +1164,7 @@ mod tests {
             parent_span_id: None,
             description: None,
             role: None,
+            ts: chrono::Utc::now(),
         })
         .await
         .unwrap();
@@ -1169,6 +1174,7 @@ mod tests {
             phase_id: 1,
             ok: 2,
             failed: 1,
+        ts: chrono::Utc::now(),
         })
         .await
         .unwrap();

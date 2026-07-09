@@ -194,6 +194,7 @@ pub fn check_backend(id: Option<String>) {
     }
 }
 
+#[allow(dead_code)]
 pub fn config_backend(key: Option<String>, value: Option<String>) {
     match (key, value) {
         (None, None) => {
@@ -224,6 +225,7 @@ pub fn config_backend(key: Option<String>, value: Option<String>) {
     }
 }
 
+#[allow(dead_code)]
 fn apply_config_update(cfg: &mut MaestroConfig, key: &str, value: &str) -> Result<(), String> {
     match key {
         "default" => {
@@ -272,6 +274,7 @@ fn apply_config_update(cfg: &mut MaestroConfig, key: &str, value: &str) -> Resul
     }
 }
 
+#[allow(dead_code)]
 pub fn set_default_backend(id: String) {
     let mut cfg = load_config().unwrap_or_default();
     cfg.backend.default = Some(id.clone());

@@ -477,6 +477,7 @@ mod tests {
                 cache_write: 0,
             },
             report: serde_json::json!({}),
+        ts: chrono::Utc::now(),
         })
         .await
         .unwrap();

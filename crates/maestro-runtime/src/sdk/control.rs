@@ -89,6 +89,7 @@ pub(crate) fn register_control_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<(
                 parent_span_id,
                 description,
                 role,
+                ts: chrono::Utc::now(),
             });
             Ok(phase_id as i64)
         })?;

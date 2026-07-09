@@ -1648,6 +1648,7 @@ dependencies = [
  "anyhow",
  "maestro-core",
  "maestro-runtime",
+ "mlua",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
@@ -1663,6 +1664,7 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "chrono",
  "dashmap",
  "futures",
  "maestro-core",

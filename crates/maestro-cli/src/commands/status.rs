@@ -127,6 +127,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn run_not_found() {
         let _env = TestEnv::new();
         std::fs::create_dir_all(runs_base_dir()).unwrap();
@@ -137,6 +138,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn dir_exists_but_no_checkpoint() {
         let _env = TestEnv::new();
         let base_dir = runs_base_dir();
@@ -149,6 +151,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn empty_checkpoint() {
         let _env = TestEnv::new();
         let (_store, _cp, run_dir) = setup_checkpoint("test task");
@@ -160,6 +163,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn with_completed_phases() {
         let _env = TestEnv::new();
         let (store, mut cp, run_dir) = setup_checkpoint("test task");
@@ -181,6 +185,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn with_agent_results() {
         let _env = TestEnv::new();
         let (store, mut cp, run_dir) = setup_checkpoint("test task");
@@ -206,6 +211,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn with_findings() {
         let _env = TestEnv::new();
         let (store, mut cp, run_dir) = setup_checkpoint("test task");
@@ -225,6 +231,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn run_dir_is_file_io_error() {
         let _env = TestEnv::new();
         let base_dir = runs_base_dir();
@@ -246,6 +253,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn with_all_data() {
         let _env = TestEnv::new();
         let (store, mut cp, run_dir) = setup_checkpoint("test task");

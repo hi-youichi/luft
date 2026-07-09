@@ -8,6 +8,7 @@ license = "MIT"
 [dependencies]
 maestro-core = { path = "../maestro-core" }
 maestro-runtime = { path = "../maestro-runtime" }
+mlua = { version = "0.10", features = ["lua54", "vendored", "async", "serialize", "send"] }
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["compat"] }
 serde = { version = "1", features = ["derive"] }

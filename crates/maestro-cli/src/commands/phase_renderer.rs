@@ -772,6 +772,7 @@ mod tests {
             parent_span_id: None,
             description: None,
             role: None,
+            ts: chrono::Utc::now(),
         }
     }
 
@@ -850,6 +851,7 @@ mod tests {
                 cache_write: 0,
             },
             report: serde_json::json!(null),
+            ts: chrono::Utc::now(),
         }
     }
 
