@@ -40,9 +40,15 @@ pub(crate) fn status_run_cmd_inner(w: &mut impl Write, run_dir: String) -> Resul
         }
     }
 
-    let agent_count = checkpoint.agent_results.len();
-    if agent_count > 0 {
-        writeln!(w, "\n  Agent results: {} agents", agent_count)?;
+    let total_started = checkpoint.started_agent_ids.len();
+    let completed = checkpoint.agent_results.len();
+    let running = total_started.saturating_sub(completed);
+    if total_started > 0 || running > 0 {
+        writeln!(
+            w,
+            "\n  Agents: {} total, {} done, {} running",
+            total_started, completed, running,
+        )?;
     }
 
     let findings_count = checkpoint.findings.len();
@@ -189,10 +195,12 @@ mod tests {
     fn with_agent_results() {
         let _env = TestEnv::new();
         let (store, mut cp, run_dir) = setup_checkpoint("test task");
+        let agent_id = uuid::Uuid::now_v7();
+        cp.started_agent_ids.push(agent_id);
         cp.agent_results.insert(
             uuid::Uuid::now_v7(),
             AgentResultCache {
-                agent_id: uuid::Uuid::now_v7(),
+                agent_id,
                 phase_id: 1,
                 status: "completed".to_string(),
                 output: serde_json::Value::Null,
@@ -207,7 +215,7 @@ mod tests {
         store.save_checkpoint(&cp).unwrap();
         let (output, result) = capture_output(run_dir);
         assert!(result.is_ok());
-        assert!(output.contains("Agent results: 1 agents"));
+        assert!(output.contains("Agents: 1 total, 1 done, 0 running"));
     }
 
     #[test]
@@ -275,6 +283,8 @@ mod tests {
             description: None,
             role: None,
         });
+        cp.started_agent_ids.push(uuid::Uuid::now_v7()); // completed agent
+        cp.started_agent_ids.push(uuid::Uuid::now_v7()); // running agent
         cp.agent_results.insert(
             uuid::Uuid::now_v7(),
             AgentResultCache {
@@ -306,7 +316,7 @@ mod tests {
         assert!(output.contains("Implement"));
         assert!(output.contains("ok=5"));
         assert!(output.contains("failed=2"));
-        assert!(output.contains("Agent results: 1 agents"));
+        assert!(output.contains("Agents: 2 total, 1 done, 1 running"));
         assert!(output.contains("Findings: 1 total"));
     }
 }

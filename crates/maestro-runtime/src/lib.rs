@@ -1,8 +1,47 @@
-//! `runtime` — mlua orchestration runtime (M2). See code-design §4.
+//! # maestro-runtime
 //!
-//! The runtime executes Lua orchestration scripts in a sandboxed mlua VM.
-//! Scripts call SDK primitives (`agent`, `parallel`, `converge`, `report`) which
-//! bridge to the scheduler. The sandbox blocks `io`/`os`/`fs`/`network`.
+//! **Sandboxed Lua orchestration VM.**
+//!
+//! The runtime executes Maestro orchestration scripts in a sandboxed
+//! [`mlua`] VM. Scripts call SDK primitives that bridge to the scheduler
+//! — the script is pure orchestration and cannot touch the filesystem, shell,
+//! or network directly.
+//!
+//! ## SDK Primitives
+//!
+//! Lua scripts call these global functions:
+//!
+//! | Primitive | Description |
+//! |-----------|-------------|
+//! | `agent(opts)` | Run a single agent task; returns `AgentResult` |
+//! | `parallel(items, map_fn)` | Fan-out: run `map_fn(item)` for each item concurrently, barrier-sync results |
+//! | `pipeline(items, stages)` | Streaming pipeline: items flow through stages without barrier sync |
+//! | `workflow(path, args?)` | Invoke a nested sub-workflow |
+//! | `converge(opts)` | Multi-round consensus: agents iterate until convergence or round limit |
+//! | `phase_begin(name)` / `phase_end(span)` | Structural progress spans for observability |
+//! | `report(value)` | Emit the final workflow output (required) |
+//! | `log(msg, level?)` | Structured log event |
+//! | `budget(time_ms?, rounds?)` | Set runtime limits hint |
+//! | `json.encode(value)` / `json.decode(str)` | JSON helpers (pure Lua, no `io`) |
+//!
+//! ## Sandbox Security Model
+//!
+//! The following Lua standard libraries are **removed** from the VM:
+//!
+//! - `io.*` — no file I/O
+//! - `os.*` — no process / environment access
+//! - `package.*` — no module loading
+//! - `require`, `dofile`, `loadfile` — no external code execution
+//!
+//! Only orchestration primitives and `math`, `string`, `table`, `json` are available.
+//! This guarantees that scripts — which may be **LLM-generated** — cannot escape
+//! the orchestration layer.
+//!
+//! ## Validation
+//!
+//! Before execution, scripts are validated via [`validate`] (syntax + forbidden
+//! globals) and [`validate_workflow`] (structural checks: `report()` presence,
+//! span pairing, meta consistency).
 
 mod converge;
 mod error;

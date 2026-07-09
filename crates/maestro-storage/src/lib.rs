@@ -1,13 +1,30 @@
-//! SQLite-backed structured persistence for Maestro.
+//! # maestro-storage
 //!
-//! Replaces the JSONL events.jsonl + checkpoint.json pair with a queryable,
-//! relational store. See `docs/design/sqlite-persistence.md` for design.
+//! **SQLite-backed structured persistence for Maestro.**
 //!
-//! Module layout:
-//! - [`db`]     — connection pool + schema migration
-//! - [`writer`] — `AgentEvent` → SQL write path
-//! - [`reader`] — UI-ready query API
-//! - [`error`]  — unified error type
+//! Replaces the JSONL `events.jsonl` + `checkpoint.json` pair with a queryable,
+//! relational store. Provides a UI-ready query API for listing runs, inspecting
+//! agent turns, and searching event spans.
+//!
+//! ## Module Layout
+//!
+//! | Module | Responsibility |
+//! |--------|---------------|
+//! | [`db`] | Connection pool (`DbPool`) + schema migration |
+//! | [`writer`] | `AgentEvent` → SQL write path ([`EventWriter`]) |
+//! | [`reader`] | UI-ready query API: [`get_run_overview`], [`get_agent_turns`], etc. |
+//! | [`error`] | Unified [`StorageError`] type |
+//!
+//! ## Usage
+//!
+//! ```no_run
+//! use maestro_storage::{open_db, EventWriter};
+//!
+//! let pool = open_db("./.maestro/runs/latest/maestro.db")?;
+//! let writer = EventWriter::new(pool.clone());
+//! // writer.write_event(&event)?;
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
 
 pub mod db;
 pub mod error;

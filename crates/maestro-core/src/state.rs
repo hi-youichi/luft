@@ -37,6 +37,10 @@ pub struct RunCheckpoint {
     pub completed_spans: Vec<PhaseSpanSummary>,
     #[serde(default)]
     pub workflow_meta: Option<serde_json::Value>,
+    /// Every agent_id that has received an `AgentStarted` event, in arrival
+    /// order. Used to compute "running" = started − done.
+    #[serde(default)]
+    pub started_agent_ids: Vec<AgentId>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -160,6 +164,7 @@ impl RunStore {
             updated_at: current_timestamp(),
             completed_spans: vec![],
             workflow_meta: None,
+            started_agent_ids: vec![],
         };
 
         // Save checkpoint
@@ -202,6 +207,7 @@ impl RunStore {
             updated_at: current_timestamp(),
             completed_spans: vec![],
             workflow_meta: Some(workflow_meta),
+            started_agent_ids: vec![],
         };
 
         self.save_checkpoint(&checkpoint)?;
@@ -300,6 +306,11 @@ impl RunStore {
                     };
                     checkpoint.agent_results.insert(*agent_id, cache);
                     checkpoint.total_tokens += tokens.total();
+                }
+                AgentEvent::AgentStarted { agent_id, .. } => {
+                    if !checkpoint.started_agent_ids.contains(agent_id) {
+                        checkpoint.started_agent_ids.push(*agent_id);
+                    }
                 }
                 AgentEvent::PhaseDone { phase_id, .. } => {
                     if *phase_id > 0 {

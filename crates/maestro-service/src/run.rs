@@ -872,6 +872,7 @@ mod tests {
             updated_at: 0,
             completed_spans: vec![],
             workflow_meta: None,
+            started_agent_ids: vec![],
         };
         std::fs::write(
             dir.join("checkpoint.json"),

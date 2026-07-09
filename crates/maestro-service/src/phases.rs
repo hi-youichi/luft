@@ -465,6 +465,7 @@ mod tests {
             updated_at: 2000,
             completed_spans: vec![],
             workflow_meta: meta.map(|m| serde_json::to_value(m).unwrap()),
+            started_agent_ids: vec![],
         }
     }
 

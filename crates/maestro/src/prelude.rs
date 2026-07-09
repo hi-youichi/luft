@@ -1,4 +1,10 @@
-//! Prelude: convenient re-exports for the most common Maestro types.
+//! # Maestro Prelude
+//!
+//! Convenient re-exports of the most common types. Intended usage:
+//!
+//! ```no_run
+//! use maestro::prelude::*;
+//! ```
 
 pub use maestro_core::contract::backend::{
     AgentBackend, AgentCapabilities, AgentResult, AgentStatus, AgentTask,

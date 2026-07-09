@@ -1,14 +1,37 @@
-//! `planner` — NL → Lua planner.
+//! # maestro-planner
 //!
-//! Aligns with Claude Code Dynamic Workflows: instead of classifying the task
-//! with keywords and filling fixed templates, the planner asks an LLM *agent*
-//! to generate a Lua orchestration script for the task. The model acts as a
-//! compiler (NL → DSL); the runtime then executes the script deterministically.
+//! **Natural-language → Lua orchestration script planner.**
+//!
+//! Instead of classifying the task with keywords and filling fixed templates,
+//! the planner asks an LLM *agent* to generate a Lua orchestration script for
+//! the task. The model acts as a compiler (NL → DSL); the runtime then executes
+//! the script deterministically.
+//!
+//! ## Flow
+//!
+//! ```text
+//!  User NL task
+//!       │
+//!       ▼
+//!  ┌─────────────────┐     ┌──────────────────┐
+//!  │ LUA_DSL_REFERENCE│ ──► │  Planner Agent   │
+//!  │ (system prompt)  │     │  (backend.run)   │
+//!  └─────────────────┘     └────────┬─────────┘
+//!                                    │
+//!                            ┌───────▼────────┐
+//!                            │ validate_script │ ── fail ──► retry (up to max_retries)
+//!                            └───────┬────────┘
+//!                                    │ pass
+//!                            ┌───────▼────────┐
+//!                            │ PlannedWorkflow │
+//!                            │  (script+meta)  │
+//!                            └────────────────┘
+//! ```
 //!
 //! The generated script orchestrates only — it never touches the filesystem or
-//! shell (the Lua sandbox forbids `io`/`os`, see [`crate::runtime`]). All real
-//! work — reading files, grepping, editing, web search — happens inside the
-//! `agent()` prompts the script spawns at runtime.
+//! shell (the Lua sandbox forbids `io`/`os`). All real work — reading files,
+//! grepping, editing, web search — happens inside the `agent()` prompts the
+//! script spawns at runtime.
 
 use maestro_core::contract::backend::{AgentBackend, AgentTask, RunContext};
 use maestro_core::contract::event::AgentEvent;

@@ -1,7 +1,46 @@
-//! `maestro-core` — frozen contracts + scheduler + journal + state.
+//! # maestro-core
 //!
-//! Core has no internal dependency: it only defines the traits, types,
-//! scheduling logic and persistence that every other module builds on.
+//! **Frozen contracts, scheduler, journal, and state management.**
+//!
+//! `maestro-core` is the zero-dependency foundation of the Maestro ecosystem.
+//! It defines the traits, types, scheduling logic, and persistence interfaces
+//! that every other crate builds on. Types defined here are **frozen contracts**
+//! — breaking changes are treated as major version bumps.
+//!
+//! ## Module Overview
+//!
+//! | Module | Responsibility |
+//! |--------|---------------|
+//! | [`contract`] | Cross-crate traits and types: [`AgentBackend`], [`AgentTask`], [`AgentResult`], [`AgentEvent`], [`Finding`] |
+//! | [`scheduler`] | Concurrency-limited agent dispatcher with retry and journal callbacks |
+//! | [`journal`] | Checkpoint store for run resume — write agent results, read on restart |
+//! | [`state`] | Run/phase state machine: [`RunCheckpoint`], [`CheckpointStatus`] |
+//! | [`run_dir`] | Filesystem layout helpers for `.maestro/runs/<run-id>/` |
+//!
+//! ## Stability Guarantees
+//!
+//! - **Traits** ([`AgentBackend`], [`JournalCallback`]): signatures are stable
+//!   within a minor version. Implementations in downstream crates are safe.
+//! - **Structs** ([`AgentTask`], [`AgentResult`], [`RunCheckpoint`]): fields
+//!   are `pub` and additive only (new fields require `#[serde(default)]` or a
+//!   major bump).
+//! - **Enums** ([`AgentStatus`], [`BackendError`], [`RunStatus`]): variants are
+//!   additive — new variants may appear in minor releases.
+//!
+//! ## Feature Flags
+//!
+//! | Feature | Description |
+//! |---------|-------------|
+//! | `testing` | Exports [`MockBackend`], [`MockFileBackend`], and test data generators |
+//!
+//! [`AgentBackend`]: contract::backend::AgentBackend
+//! [`AgentTask`]: contract::backend::AgentTask
+//! [`AgentResult`]: contract::backend::AgentResult
+//! [`AgentEvent`]: contract::event::AgentEvent
+//! [`Finding`]: contract::finding::Finding
+//! [`JournalCallback`]: scheduler::JournalCallback
+//! [`MockBackend`]: mock_backend::MockBackend
+//! [`MockFileBackend`]: mock_file_backend::MockFileBackend
 
 pub mod contract;
 pub mod journal;

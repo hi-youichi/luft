@@ -15,8 +15,9 @@ pub struct StatusOutput {
     pub status: String,
     pub current_phase: u32,
     pub completed_phases: usize,
-    pub total_agents: usize,
+    pub total_started: usize,
     pub completed_agents: usize,
+    pub running_agents: usize,
     pub total_tokens: u64,
     pub created_at: String,
     pub updated_at: String,
@@ -38,12 +39,12 @@ impl From<(&str, &RunCheckpoint)> for StatusOutput {
             status: format!("{:?}", cp.status).to_lowercase(),
             current_phase: cp.current_phase,
             completed_phases: cp.completed_phases.len(),
-            total_agents: cp.agent_results.len(),
-            completed_agents: cp
-                .agent_results
-                .values()
-                .filter(|r| r.status == "ok")
-                .count(),
+            total_started: cp.started_agent_ids.len(),
+            completed_agents: cp.agent_results.len(),
+            running_agents: cp
+                .started_agent_ids
+                .len()
+                .saturating_sub(cp.agent_results.len()),
             total_tokens: cp.total_tokens,
             created_at: created,
             updated_at: updated,
@@ -238,6 +239,7 @@ mod tests {
             updated_at: 1719000100,
             completed_spans: vec![],
             workflow_meta: None,
+            started_agent_ids: vec![],
         };
         let output = StatusOutput::from(("run_dir", &cp));
         assert_eq!(output.run_id, run_id.to_string());
@@ -246,8 +248,9 @@ mod tests {
         assert_eq!(output.status, "running");
         assert_eq!(output.current_phase, 1);
         assert_eq!(output.completed_phases, 0);
-        assert_eq!(output.total_agents, 0);
+        assert_eq!(output.total_started, 0);
         assert_eq!(output.completed_agents, 0);
+        assert_eq!(output.running_agents, 0);
         assert_eq!(output.total_tokens, 0);
         assert!(!output.created_at.is_empty());
         assert!(!output.updated_at.is_empty());
@@ -291,13 +294,15 @@ mod tests {
             updated_at: 1719000100,
             completed_spans: vec![],
             workflow_meta: None,
+            started_agent_ids: vec![agent_id],
         };
         let output = StatusOutput::from(("run_dir", &cp));
         assert_eq!(output.status, "completed");
         assert_eq!(output.current_phase, 2);
         assert_eq!(output.completed_phases, 1);
-        assert_eq!(output.total_agents, 1);
+        assert_eq!(output.total_started, 1);
         assert_eq!(output.completed_agents, 1);
+        assert_eq!(output.running_agents, 0);
         assert_eq!(output.total_tokens, 500);
     }
 

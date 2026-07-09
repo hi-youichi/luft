@@ -1,12 +1,44 @@
-//! `adapters` — OpenCode ACP backend (P0-A).
+//! # maestro-adapters
+//!
+//! **ACP (Agent Communication Protocol) backend for Maestro.**
 //!
 //! [`AcpAdapter`] connects to an `opencode acp` subprocess as an ACP **client**
-//! and implements [`AgentBackend`](maestro_core::contract::backend::AgentBackend).
-//! Submodules:
-//! - [`acp_adapter`] — config + adapter + one-shot session lifecycle
-//! - [`update_mapper`] — ACP `SessionUpdate` → Maestro `ProgressDelta`
-//! - [`permission`] — non-interactive `request_permission` decisions
-//! - [`result_collector`] — stop reason + message → `AgentResult`
+//! and implements the `AgentBackend` trait from `maestro-core`.
+//!
+//! ## Architecture
+//!
+//! ```text
+//!  Maestro Runtime                    AcpAdapter
+//!       │                                  │
+//!       │  AgentTask                        │  spawn `opencode acp`
+//!       ├──────────────────────────────────►│
+//!       │                                   ├──── ACP Session.Create ────► opencode
+//!       │                                   │◄─── SessionUpdate(event) ─── opencode
+//!       │  AgentEvent::AgentProgress        │
+//!       │◄──────────────────────────────────┤
+//!       │                                   ├──── Session.Stop ───────────► opencode
+//!       │  AgentResult                      │
+//!       │◄──────────────────────────────────┘
+//! ```
+//!
+//! ## Module Layout
+//!
+//! | Module | Responsibility |
+//! |--------|---------------|
+//! | `acp_adapter` | Config, adapter, one-shot session lifecycle |
+//! | `update_mapper` | ACP `SessionUpdate` → Maestro `ProgressDelta` |
+//! | `permission` | Non-interactive `request_permission` decisions |
+//! | `result_collector` | Stop reason + message → `AgentResult` |
+//!
+//! ## Quick Start
+//!
+//! ```no_run
+//! use maestro_adapters::{AcpAdapter, AcpConfig, register_acp_backend};
+//! use maestro_core::BackendRegistry;
+//!
+//! let mut registry = BackendRegistry::new();
+//! register_acp_backend(&mut registry, AcpConfig::default());
+//! ```
 
 mod acp_adapter;
 mod permission;

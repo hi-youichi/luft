@@ -1,4 +1,58 @@
-//! AgentBackend control-plane contract (§1.2). `core` ↔ `adapters` boundary.
+//! # AgentBackend Contract
+//!
+//! The [`AgentBackend`] trait is the **control-plane boundary** between Maestro's
+//! orchestration runtime and the agent execution environment. Prompt goes in,
+//! structured [`AgentResult`] comes out.
+//!
+//! ## Implementing a Backend
+//!
+//! ```no_run
+//! use maestro_core::contract::backend::*;
+//! use async_trait::async_trait;
+//!
+//! struct MyBackend;
+//!
+/// impl MyBackend {
+///     fn new() -> Self { Self }
+/// }
+///
+/// #[async_trait]
+/// impl AgentBackend for MyBackend {
+///     fn id(&self) -> &'static str { "my-backend" }
+///
+///     fn capabilities(&self) -> AgentCapabilities {
+///         AgentCapabilities {
+///             streaming: true,
+///             ..Default::default()
+///         }
+///     }
+///
+///     async fn run(&self, task: AgentTask, ctx: RunContext)
+///         -> Result<AgentResult, BackendError>
+///     {
+///         // 1. Observe cancellation
+///         if ctx.cancel.is_cancelled() {
+///             return Err(BackendError::Cancelled);
+///         }
+///
+///         // 2. Execute the agent task (your custom logic)
+///         let output = serde_json::json!({ "text": "hello" });
+///
+///         // 3. Return structured result
+///         Ok(AgentResult {
+///             agent_id: task.agent_id,
+///             status: AgentStatus::Ok,
+///             output,
+///             findings: vec![],
+///             tokens_used: Default::default(),
+///             artifacts: vec![],
+///             logs: LogRef::default(),
+///         })
+///     }
+///
+///     fn as_any(&self) -> &dyn std::any::Any { self }
+/// }
+/// ```
 
 use crate::contract::event::EventSender;
 use crate::contract::finding::Finding;
@@ -10,8 +64,20 @@ use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
 /// A pluggable agent backend (e.g. OpenCode via ACP). Prompt in, structured
-/// result out. Implementations should observe `ctx.cancel` and return promptly
-/// with [`BackendError::Cancelled`] when it fires.
+/// result out.
+///
+/// # Contract
+///
+/// - **Cancellation**: implementations **must** observe `ctx.cancel` and return
+///   promptly with [`BackendError::Cancelled`] when the token fires.
+/// - **Id stability**: [`id()`](Self::id) must return a stable string for the
+///   backend's lifetime — it is used as the registry key.
+/// - **Thread safety**: the trait requires `Send + Sync`; backends are typically
+///   wrapped in `Arc<dyn AgentBackend>` and shared across tasks.
+/// - **Downcasting**: implement [`as_any()`](Self::as_any) by returning `self`
+///   to allow callers to downcast to the concrete backend type.
+///
+/// See the [module docs](self) for a complete implementation example.
 #[async_trait]
 pub trait AgentBackend: Send + Sync {
     /// Stable backend id, e.g. "opencode".
