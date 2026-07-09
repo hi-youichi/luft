@@ -24,6 +24,8 @@ path = "src/bin/fake_acp.rs"
 [features]
 # Expose MockBackend to integration tests / downstream test harnesses.
 testing = []
+# Forwarded from agent-client-protocol: enables `PromptResponse::usage`.
+unstable_end_turn_token_usage = ["agent-client-protocol/unstable_end_turn_token_usage"]
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }

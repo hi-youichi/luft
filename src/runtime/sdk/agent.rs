@@ -10,14 +10,16 @@
 
 mod journal;
 mod parallel;
+mod pmap;
 mod single;
 
 use crate::runtime::sdk::SdkContext;
 use mlua::Lua;
 
-/// Register `agent` and `parallel` as Lua globals.
+/// Register `agent`, `parallel`, and `pmap` as Lua globals.
 pub(crate) fn register_agent_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<()> {
     single::register(lua, cx)?;
     parallel::register(lua, cx)?;
+    pmap::register(lua, cx)?;
     Ok(())
 }
