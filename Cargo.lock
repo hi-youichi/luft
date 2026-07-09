@@ -1554,6 +1554,45 @@ dependencies = [
 name = "maestro"
 version = "0.2.0"
 dependencies = [
+ "anyhow",
+ "chrono",
+ "maestro-adapters",
+ "maestro-core",
+ "maestro-planner",
+ "maestro-runtime",
+ "maestro-service",
+ "maestro-storage",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "maestro-adapters"
+version = "0.2.0"
+dependencies = [
+ "agent-client-protocol",
+ "anyhow",
+ "async-trait",
+ "maestro-core",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "maestro-cli"
+version = "0.2.0"
+dependencies = [
  "agent-client-protocol",
  "anyhow",
  "async-trait",
@@ -1566,18 +1605,111 @@ dependencies = [
  "futures",
  "indicatif",
  "jsonschema",
+ "maestro",
  "mlua",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "maestro-core"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "blake3",
+ "chrono",
+ "dashmap",
+ "futures",
+ "jsonschema",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "unicode-normalization",
+ "uuid",
+]
+
+[[package]]
+name = "maestro-planner"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "maestro-core",
+ "maestro-runtime",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "maestro-runtime"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "dashmap",
+ "futures",
+ "maestro-core",
+ "mlua",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "maestro-service"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "maestro-core",
+ "maestro-planner",
+ "maestro-runtime",
+ "maestro-storage",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "maestro-storage"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "maestro-core",
  "serde",
  "serde_json",
  "sqlx",
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
- "tokio-util",
- "toml",
  "tracing",
- "tracing-subscriber",
- "unicode-normalization",
  "uuid",
 ]
 
@@ -2363,6 +2495,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b90c488738ecb4fb0262f41f43bc40efc5868d9fb744319ddf5f5317f417bfac"
 dependencies = [
  "darling",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "serial_test"
+version = "3.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "699f4197115b8a7e7ff19c9a315a4bd6fffec26cc4626ef45ecaea389e081c6d"
+dependencies = [
+ "futures-executor",
+ "futures-util",
+ "log",
+ "once_cell",
+ "parking_lot",
+ "serial_test_derive",
+]
+
+[[package]]
+name = "serial_test_derive"
+version = "3.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94e153fc76e1c6a068703d6d29c508a0b15c061c4b7e43da59cc097bc342673c"
+dependencies = [
  "proc-macro2",
  "quote",
  "syn",

@@ -1,0 +1,30 @@
+[package]
+name = "maestro-core"
+version = "0.2.0"
+edition = "2021"
+description = "Maestro core contracts: AgentBackend trait, scheduling, journaling, state"
+license = "MIT"
+
+[features]
+testing = []
+
+[dependencies]
+async-trait = "0.1"
+thiserror = "1"
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v7", "serde"] }
+chrono = { version = "0.4", features = ["serde", "clock"] }
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+dashmap = "6"
+blake3 = "1"
+unicode-normalization = "0.1"
+jsonschema = "0.18"
+tracing = "0.1"
+tempfile = "3"
+futures = "0.3"
+
+[dev-dependencies]
+tempfile = "3"

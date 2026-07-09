@@ -1,63 +1,20 @@
-[package]
-name = "maestro"
+[workspace]
+members = [
+    "crates/maestro-core",
+    "crates/maestro-storage",
+    "crates/maestro-runtime",
+    "crates/maestro-adapters",
+    "crates/maestro-planner",
+    "crates/maestro-service",
+    "crates/maestro",
+    "crates/maestro-cli",
+]
+resolver = "2"
+
+[workspace.package]
 version = "0.2.0"
 edition = "2021"
-description = "Maestro — multi-agent orchestration runtime (v0.2)"
 license = "MIT"
-
-# Standalone workspace: detach from the parent loom workspace so Maestro can be
-# built, tested, versioned and released independently (see dev-plan §3).
-[workspace]
-
-[lib]
-name = "maestro"
-path = "src/lib.rs"
-
-[[bin]]
-name = "maestro"
-path = "src/main.rs"
-
-[[bin]]
-name = "fake_acp"
-path = "src/bin/fake_acp.rs"
-
-[features]
-# Expose MockBackend to integration tests / downstream test harnesses.
-testing = []
-# Forwarded from agent-client-protocol: enables `PromptResponse::usage`.
-unstable_end_turn_token_usage = ["agent-client-protocol/unstable_end_turn_token_usage"]
-
-[dependencies]
-clap = { version = "4", features = ["derive"] }
-tokio = { version = "1", features = ["full"] }
-async-trait = "0.1"
-thiserror = "1"
-anyhow = "1"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-futures = "0.3"
-uuid = { version = "1", features = ["v7", "serde"] }
-chrono = { version = "0.4", features = ["serde"] }
-tokio-util = { version = "0.7", features = ["compat"] }
-dashmap = "6"
-agent-client-protocol = { version = "0.14", features = ["unstable_end_turn_token_usage"] }
-blake3 = "1"
-unicode-normalization = "0.1"
-indicatif = "0.17"
-console = "0.15"
-mlua = { version = "0.10", features = ["lua54", "vendored", "async", "serialize", "send"] }
-jsonschema = "0.18"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
-tempfile = "3"
-toml = "0.8"
-dirs = "5"
-
-# Storage (SQLite via sqlx)
-sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "chrono", "uuid", "json", "macros", "migrate"] }
-
-[dev-dependencies]
-tempfile = "3"
 
 [profile.test]
 opt-level = 2
