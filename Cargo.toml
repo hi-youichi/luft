@@ -1,14 +1,14 @@
 [workspace]
 members = [
-    "crates/maestro-core",
-    "crates/maestro-storage",
-    "crates/maestro-runtime",
-    "crates/maestro-adapters",
-    "crates/maestro-planner",
-    "crates/maestro-service",
-    "crates/maestro",
-    "crates/maestro-mcp",
-    "crates/maestro-cli",
+    "crates/luft-core",
+    "crates/luft-storage",
+    "crates/luft-runtime",
+    "crates/luft-adapters",
+    "crates/luft-planner",
+    "crates/luft-service",
+    "crates/luft",
+    "crates/luft-mcp",
+    "crates/luft-cli",
 ]
 resolver = "2"
 
@@ -16,7 +16,7 @@ resolver = "2"
 version = "0.3.0"
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/hi-youichi/maestro"
+repository = "https://github.com/hi-youichi/luft"
 
 [profile.test]
 opt-level = 2

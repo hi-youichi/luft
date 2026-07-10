@@ -17,10 +17,10 @@ dist-ssr/
 /blob-report/
 /.playwright/
 
-# ── Maestro runtime data ──────────────────────────────
-.maestro/runs/
-.maestro/*.db
-.maestro/*.db-*
+# ── Luft runtime data ─────────────────────────────────
+.luft/runs/
+.luft/*.db
+.luft/*.db-*
 
 # ── Loom agent workspace ──────────────────────────────
 .loom

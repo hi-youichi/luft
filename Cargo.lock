@@ -1551,17 +1551,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "maestro"
+name = "luft"
 version = "0.3.0"
 dependencies = [
  "anyhow",
  "chrono",
- "maestro-adapters",
- "maestro-core",
- "maestro-planner",
- "maestro-runtime",
- "maestro-service",
- "maestro-storage",
+ "luft-adapters",
+ "luft-core",
+ "luft-planner",
+ "luft-runtime",
+ "luft-service",
+ "luft-storage",
  "serde",
  "serde_json",
  "tempfile",
@@ -1573,13 +1573,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "maestro-adapters"
+name = "luft-adapters"
 version = "0.3.0"
 dependencies = [
  "agent-client-protocol",
  "anyhow",
  "async-trait",
- "maestro-core",
+ "luft-core",
  "serde",
  "serde_json",
  "tempfile",
@@ -1590,7 +1590,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "maestro-cli"
+name = "luft-cli"
 version = "0.3.0"
 dependencies = [
  "agent-client-protocol",
@@ -1605,8 +1605,8 @@ dependencies = [
  "futures",
  "indicatif",
  "jsonschema",
- "maestro",
- "maestro-mcp",
+ "luft",
+ "luft-mcp",
  "mlua",
  "serde",
  "serde_json",
@@ -1621,7 +1621,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "maestro-core"
+name = "luft-core"
 version = "0.3.0"
 dependencies = [
  "anyhow",
@@ -1643,16 +1643,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "maestro-mcp"
+name = "luft-mcp"
 version = "0.3.0"
 dependencies = [
  "anyhow",
  "chrono",
- "maestro",
- "maestro-core",
- "maestro-planner",
- "maestro-runtime",
- "maestro-service",
+ "luft",
+ "luft-core",
+ "luft-planner",
+ "luft-runtime",
+ "luft-service",
  "serde",
  "serde_json",
  "tempfile",
@@ -1662,12 +1662,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "maestro-planner"
+name = "luft-planner"
 version = "0.3.0"
 dependencies = [
  "anyhow",
- "maestro-core",
- "maestro-runtime",
+ "luft-core",
+ "luft-runtime",
  "mlua",
  "serde",
  "serde_json",
@@ -1679,7 +1679,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "maestro-runtime"
+name = "luft-runtime"
 version = "0.3.0"
 dependencies = [
  "anyhow",
@@ -1687,7 +1687,7 @@ dependencies = [
  "chrono",
  "dashmap",
  "futures",
- "maestro-core",
+ "luft-core",
  "mlua",
  "serde",
  "serde_json",
@@ -1700,15 +1700,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "maestro-service"
+name = "luft-service"
 version = "0.3.0"
 dependencies = [
  "anyhow",
  "chrono",
- "maestro-core",
- "maestro-planner",
- "maestro-runtime",
- "maestro-storage",
+ "luft-core",
+ "luft-planner",
+ "luft-runtime",
+ "luft-storage",
  "serde",
  "serde_json",
  "tempfile",
@@ -1719,12 +1719,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "maestro-storage"
+name = "luft-storage"
 version = "0.3.0"
 dependencies = [
  "anyhow",
  "chrono",
- "maestro-core",
+ "luft-core",
  "serde",
  "serde_json",
  "sqlx",

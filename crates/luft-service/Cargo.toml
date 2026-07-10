@@ -1,0 +1,25 @@
+[package]
+name = "luft-service"
+version = "0.3.0"
+edition = "2021"
+description = "Presentation-free run/query API for Luft"
+license = "MIT"
+repository = "https://github.com/hi-youichi/luft"
+
+[dependencies]
+luft-core = { path = "../luft-core", version = "0.3.0" }
+luft-runtime = { path = "../luft-runtime", version = "0.3.0" }
+luft-storage = { path = "../luft-storage", version = "0.3.0" }
+luft-planner = { path = "../luft-planner", version = "0.3.0" }
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+tracing = "0.1"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v7", "serde"] }
+
+[dev-dependencies]
+tempfile = "3"
+luft-core = { path = "../luft-core", version = "0.3.0", features = ["testing"] }

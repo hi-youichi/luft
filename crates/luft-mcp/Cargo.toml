@@ -1,0 +1,25 @@
+[package]
+name = "luft-mcp"
+version = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+description = "MCP server crate — exposes workflow authoring resources and execution tools to external AI clients"
+
+[dependencies]
+luft        = { path = "../luft", version = "0.3.0", features = ["testing"] }
+luft-service   = { path = "../luft-service", version = "0.3.0" }
+luft-runtime   = { path = "../luft-runtime", version = "0.3.0" }
+luft-planner   = { path = "../luft-planner", version = "0.3.0" }
+luft-core      = { path = "../luft-core", version = "0.3.0" }
+serde          = { version = "1", features = ["derive"] }
+serde_json     = "1"
+anyhow         = "1"
+tokio          = { version = "1", features = ["rt", "rt-multi-thread", "sync", "io-util"] }
+tracing        = "0.1"
+
+[dev-dependencies]
+tempfile = "3"
+uuid     = { version = "1", features = ["v7"] }
+chrono   = "0.4"
+tokio     = { version = "1", features = ["rt", "rt-multi-thread", "sync", "io-util", "macros"] }

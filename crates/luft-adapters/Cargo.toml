@@ -1,0 +1,23 @@
+[package]
+name = "luft-adapters"
+version = "0.3.0"
+edition = "2021"
+description = "ACP backend adapter for Luft"
+license = "MIT"
+repository = "https://github.com/hi-youichi/luft"
+
+[features]
+unstable_end_turn_token_usage = ["agent-client-protocol/unstable_end_turn_token_usage"]
+
+[dependencies]
+luft-core = { path = "../luft-core", version = "0.3.0" }
+agent-client-protocol = { version = "0.14" }
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+async-trait = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+anyhow = "1"
+uuid = { version = "1", features = ["v7", "serde"] }
+tempfile = "3"
