@@ -1,4 +1,4 @@
-# Maestro 日志系统审计
+# Luft 日志系统审计
 
 ## 1. 覆盖率现状
 
@@ -43,7 +43,7 @@
 ## 5. 日志示例（正常重试链路）
 
 ```text
-2026-06-07T10:04:07  INFO tracing initialized, log_file=maestro.log
+2026-06-07T10:04:07  INFO tracing initialized, log_file=luft.log
 2026-06-07T10:04:12  INFO no --backend specified, auto-detected: opencode
 2026-06-07T10:04:13  INFO planning attempt attempt=1 max_retries=3
 2026-06-07T10:04:13  INFO ACP session starting binary=opencode agent_id=b33c... prompt_len=3818 run_id=b32b...

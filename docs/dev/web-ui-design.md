@@ -1,8 +1,8 @@
-# Maestro Web UI 设计文档
+# Luft Web UI 设计文档
 
 > 状态：草案 v0.1 | 更新：2025-08-19
 >
-> 本文档定义 Maestro Web 界面的视觉风格、页面结构、布局规范和交互细节。
+> 本文档定义 Luft Web 界面的视觉风格、页面结构、布局规范和交互细节。
 >
 > 配套文档：
 > - [Web UI 前端开发方案](./web-ui-frontend-plan.md) — React + Vite + shadcn/ui 技术栈、组件、实现
@@ -25,7 +25,7 @@
 
 ## 1. 设计目标
 
-Maestro 是基于 Lua 的多智能体编排运行时。Web UI 的核心价值：
+Luft 是基于 Lua 的多智能体编排运行时。Web UI 的核心价值：
 
 - **编排过程可视化**：Phase → Agent 层级结构、实时进度、token 消耗一目了然
 - **运行历史管理**：列表、筛选、检索历史 Run，查看报告与 Findings
@@ -50,7 +50,7 @@ Maestro 是基于 Lua 的多智能体编排运行时。Web UI 的核心价值：
 参考产品：Grafana、Datadog、Honeycomb、Linear。
 
 选择理由：
-- Maestro 核心场景是**监控多 Agent 编排过程**（Phase/Agent 层级、token 统计、收敛验证），属于数据可视化场景
+- Luft 核心场景是**监控多 Agent 编排过程**（Phase/Agent 层级、token 统计、收敛验证），属于数据可视化场景
 - 需要承载高信息密度（事件流、Agent 卡片网格、进度条）
 - 开发者受众，偏好专业、克制的视觉语言
 
@@ -141,7 +141,7 @@ Maestro 是基于 Lua 的多智能体编排运行时。Web UI 的核心价值：
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  ◉ maestro    Dashboard   Runs   Workflows   Backends   ▶ Run │
+│  ◉ luft    Dashboard   Runs   Workflows   Backends   ▶ Run │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -191,7 +191,7 @@ Workflows ──────┘                  │
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  ◉ maestro    [Dashboard]  Runs  Workflows  Backends   ▶ Run │
+│  ◉ luft    [Dashboard]  Runs  Workflows  Backends   ▶ Run │
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
 │   活跃 Runs (2)                  最近完成                     │
@@ -235,7 +235,7 @@ Workflows ──────┘                  │
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  ◉ maestro   Dashboard  [Runs]  Workflows  Backends   ▶ Run │
+│  ◉ luft   Dashboard  [Runs]  Workflows  Backends   ▶ Run │
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
 │  [状态: 全部 ▾]  [时间: 今天 ▾]  🔍 搜索 task...   12 runs  │
@@ -290,7 +290,7 @@ Workflows ──────┘                  │
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  ◉ maestro   Dashboard  [Runs › #r4f2a]  Workflows  ▶ Run  │
+│  ◉ luft   Dashboard  [Runs › #r4f2a]  Workflows  ▶ Run  │
 ├─────────────────────────────────────────────────────────────┤
 │  ‹ 返回列表                                                 │
 │                                                             │
@@ -403,7 +403,7 @@ Lua 脚本管理，列表 + 编辑器双栏。
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  ◉ maestro   Dashboard  Runs  [Workflows]  Backends  ▶ Run  │
+│  ◉ luft   Dashboard  Runs  [Workflows]  Backends  ▶ Run  │
 ├──────────────────┬──────────────────────────────────────────┤
 │                  │                                          │
 │  WORKFLOWS       │  code-review.lua              [▶ 试运行] │
@@ -444,7 +444,7 @@ LLM provider 配置，卡片网格。
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  ◉ maestro   Dashboard  Runs  Workflows  [Backends]  ▶ Run │
+│  ◉ luft   Dashboard  Runs  Workflows  [Backends]  ▶ Run │
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
 │  BACKENDS                                        [+ 添加]   │
@@ -678,7 +678,7 @@ Run 详情页右上角提供密度切换：
 
 ### 优先级
 
-Maestro Web UI 以 **Desktop 优先**（开发者工具，通常在大屏使用）。
+Luft Web UI 以 **Desktop 优先**（开发者工具，通常在大屏使用）。
 Mobile 仅保证可读（查看 Run 状态/进度），不保证可编辑（Workflow 编辑器不适配小屏）。
 
 ---

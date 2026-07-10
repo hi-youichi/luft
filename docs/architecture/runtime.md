@@ -8,7 +8,7 @@
 
 ## 1. 职责与边界
 
-`runtime` 是 Maestro 的**编排执行引擎**。它向上承接一段 Lua 脚本（来自 `--workflow` 文件或 `planner` 生成），向下把脚本里的原语调用翻译成对 `core::Scheduler` 的 `run_agent`/`run_parallel` 调用，并按 `JournalStore` 的 cache key 跳过已完成的 agent。
+`runtime` 是 Luft 的**编排执行引擎**。它向上承接一段 Lua 脚本（来自 `--workflow` 文件或 `planner` 生成），向下把脚本里的原语调用翻译成对 `core::Scheduler` 的 `run_agent`/`run_parallel` 调用，并按 `JournalStore` 的 cache key 跳过已完成的 agent。
 
 ```
    cli::run ──► Runtime::new(scheduler, run_ctx, args, journal, handle)
@@ -125,7 +125,7 @@ io  ·  os  ·  debug  ·  package  ·  require  ·  loadfile  ·  dofile  ·  l
 
 ## 7. Converge：对抗性验证算法
 
-`execute_convergence()` 是区分 Maestro 与"简单并行"的关键能力——agent 互相验证后结果才交付用户。
+`execute_convergence()` 是区分 Luft 与"简单并行"的关键能力——agent 互相验证后结果才交付用户。
 
 ```
 for round in 1..=max_rounds:

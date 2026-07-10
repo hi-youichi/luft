@@ -1,4 +1,4 @@
-# `maestro backend` 命令 — 后端管理 CLI
+# `luft backend` 命令 — 后端管理 CLI
 
 > **路线图引用**: `roadmap.md` §CLI 增强
 > **状态**: 设计阶段
@@ -13,15 +13,15 @@
 | # | 问题 | 影响 |
 |---|------|------|
 | 1 | 无命令查看可用后端列表 | 用户不知道有 `mock`/`opencode` 两种选择 |
-| 2 | 无后端连通性检测 | `maestro run` 在 opencode 未安装时静默 fallback 到 mock，或报出不易理解的 spawn 错误 |
+| 2 | 无后端连通性检测 | `luft run` 在 opencode 未安装时静默 fallback 到 mock，或报出不易理解的 spawn 错误 |
 | 3 | 后端选择仅靠 `--backend` 参数 + auto-detect | 无法持久化默认后端偏好 |
 | 4 | `AcpConfig` 字段（binary, log-level, timeout）不可在外部查看或修改 | 调试需改代码 |
-| 5 | 在 `opencode` 未安装时，`maestro run` NL 模式的报错信息不精确 | 用户付出时间等待 planner←→mock 循环耗尽后才知道问题 |
+| 5 | 在 `opencode` 未安装时，`luft run` NL 模式的报错信息不精确 | 用户付出时间等待 planner←→mock 循环耗尽后才知道问题 |
 
 用户痛点场景：
 
 ```
-$ maestro run "write a research report"
+$ luft run "write a research report"
 # ... 等 30+ 秒，mock backend 反复重试 planner 后 ...
 Error: planner exhausted
 # 实际问题是：opencode 未安装，auto-detect 返回了 mock
@@ -31,10 +31,10 @@ Error: planner exhausted
 
 ## 2. 目标架构
 
-新增 `maestro backend` 子命令，5 个子子命令：
+新增 `luft backend` 子命令，5 个子子命令：
 
 ```
-maestro backend
+luft backend
 ├── list      列出所有可用后端 (id + 能力)
 ├── info [id] 查看指定后端的详细配置与能力
 ├── check [id]探测后端是否可用（binary 在 PATH？能否握手？）
@@ -56,7 +56,7 @@ src/
 ### 2.2 config.rs — 持久化配置
 
 ```toml
-# $XDG_CONFIG_HOME/maestro/config.toml
+# $XDG_CONFIG_HOME/luft/config.toml
 [backend]
 default = "opencode"
 
@@ -70,7 +70,7 @@ emit_raw_events = true           # 透传 ACP session/update 为 acp_raw 事件
 
 设计要点：
 
-- 配置路径：`dirs::config_dir()/maestro/config.toml`（跨平台：Linux `~/.config/`, macOS `~/Library/Application Support/`, Windows `%APPDATA%`）
+- 配置路径：`dirs::config_dir()/luft/config.toml`（跨平台：Linux `~/.config/`, macOS `~/Library/Application Support/`, Windows `%APPDATA%`）
 - 优先级链：CLI 参数 `--backend` > config 文件 `default` > auto-detect
 - info / check 不指定 id 时使用默认后端（优先级链解析结果）
 - 只读操作（list/info/check）不依赖 config 文件；写操作（config/set）在无 config 文件时自动创建父目录及文件
@@ -78,7 +78,7 @@ emit_raw_events = true           # 透传 ACP session/update 为 acp_raw 事件
 `config.rs` 公开 API：
 
 ```rust
-pub struct MaestroConfig {
+pub struct LuftConfig {
     pub backend: BackendConfig,
 }
 
@@ -96,8 +96,8 @@ pub struct AcpConfigOverride {
     pub emit_raw_events: Option<bool>,
 }
 
-pub fn load_config() -> Result<Option<MaestroConfig>>;
-pub fn save_config(config: &MaestroConfig) -> Result<()>;
+pub fn load_config() -> Result<Option<LuftConfig>>;
+pub fn save_config(config: &LuftConfig) -> Result<()>;
 pub fn merge_with_backend_factory(user_backend: Option<&str>) -> String;  // 参数 > config > detect
 ```
 
@@ -125,38 +125,38 @@ pub enum BackendSubcommand {
 | `list_backends()` | 硬编码已知后端列表（`mock`, `opencode`），各自调用 `capabilities()` |
 | `info_backend(id)` | 通过优先级链解析 id → `backend::create_backend` → 打印全量能力 + 配置 |
 | `check_backend(id)` | `which_exists` 检测 binary；opencode 时尝试 `--version` 确认是 ACP agent；mock 写死 `Ok` |
-| `config_backend(key, val)` | 无参数 → 以 JSON 打印 `MaestroConfig`；有 `key=value` → 更新并落盘 |
-| `set_default_backend(id)` | 更新 `MaestroConfig.backend.default` 并落盘；不做 id 校验（run 时失败） |
+| `config_backend(key, val)` | 无参数 → 以 JSON 打印 `LuftConfig`；有 `key=value` → 更新并落盘 |
+| `set_default_backend(id)` | 更新 `LuftConfig.backend.default` 并落盘；不做 id 校验（run 时失败） |
 
 ---
 
 ## 3. 用户交互示例
 
-### 3.1 `maestro backend list`
+### 3.1 `luft backend list`
 
 ```
-$ maestro backend list
+$ luft backend list
      id     │ streaming │ mcp_injection │ structured_output │ models
 ────────────┼───────────┼───────────────┼───────────────────┼─────────
   opencode  │       ✓   │           ✓   │                ✓  │ (any)
   mock      │       ✗   │           ✗   │                ✗  │ (n/a)
 ```
 
-### 3.2 `maestro backend check opencode`
+### 3.2 `luft backend check opencode`
 
 ```
-$ maestro backend check opencode
+$ luft backend check opencode
 ✓ opencode binary found at /usr/local/bin/opencode (v1.2.3)
 ✓ ACP initialize handshake succeeded (42ms)
 
-$ maestro backend check mock
+$ luft backend check mock
 ✓ mock backend is always available
 ```
 
-### 3.3 `maestro backend info`
+### 3.3 `luft backend info`
 
 ```
-$ maestro backend info opencode
+$ luft backend info opencode
 {
   "id": "opencode",
   "capabilities": {
@@ -174,7 +174,7 @@ $ maestro backend info opencode
   }
 }
 
-$ maestro backend info
+$ luft backend info
 # 未指定 id → 使用默认后端 (通过优先级链解析)
 {
   "id": "opencode",
@@ -182,10 +182,10 @@ $ maestro backend info
 }
 ```
 
-### 3.4 `maestro backend config`
+### 3.4 `luft backend config`
 
 ```
-$ maestro backend config
+$ luft backend config
 {
     "backend": {
       "default": "opencode",
@@ -199,14 +199,14 @@ $ maestro backend config
     }
 }
 
-$ maestro backend config backend.acp.log_level debug
+$ luft backend config backend.acp.log_level debug
 ✓ config updated
 ```
 
-### 3.5 `maestro backend set mock`
+### 3.5 `luft backend set mock`
 
 ```
-$ maestro backend set mock
+$ luft backend set mock
 ✓ Config saved: default backend = "mock"
 ```
 
@@ -217,7 +217,7 @@ $ maestro backend set mock
 | # | 决策 | 选择 | 理由 |
 |---|------|------|------|
 | D1 | 配置格式 | TOML（`toml` crate） | Rust 生态标准，可读性好，与 Cargo.toml 同风格 |
-| D2 | 配置路径 | `dirs::config_dir()/maestro/config.toml` | XDG 标准（跨平台），非项目本地 |
+| D2 | 配置路径 | `dirs::config_dir()/luft/config.toml` | XDG 标准（跨平台），非项目本地 |
 | D3 | 优先级链 | CLI 参数 > config 文件 > auto-detect | 最可预测：显式 > 持久化 > 自动 |
 | D4 | `check` 是否真连 ACP | 发 initialize 但不发 session/new | 验证 binary 是 ACP agent 而非壳，但避免副作用 |
 | D5 | mock 的 `check` 行为 | 永远返回可用 | MockBackend 无需外部依赖 |
@@ -230,8 +230,8 @@ $ maestro backend set mock
 
 ```
          CLI 参数                Config 文件               Auto-detect
-    maestro run --backend X    $XDG_CONFIG_HOME/         detect_available_backends()
-                                maestro/config.toml       (扫描 opencode/loom-acp)
+    luft run --backend X    $XDG_CONFIG_HOME/         detect_available_backends()
+                                luft/config.toml       (扫描 opencode/loom-acp)
         ↓                         ↓                         ↓
     explicit                   persisted                  fallback
     (最高优先级)                 (次高)                    (最低)

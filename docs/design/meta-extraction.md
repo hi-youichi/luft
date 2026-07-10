@@ -2,7 +2,7 @@
 
 > **状态**：方案设计（待评审）
 > **最后更新**：2025-08-19
-> **目标**：让 Lua 脚本携带声明式 `meta`（phase 结构），planner 提取并持久化到 checkpoint，`maestro phases` 直接从 checkpoint 读完整 phase 结构——不再依赖 events 重建。
+> **目标**：让 Lua 脚本携带声明式 `meta`（phase 结构），planner 提取并持久化到 checkpoint，`luft phases` 直接从 checkpoint 读完整 phase 结构——不再依赖 events 重建。
 > **参考**：[Claude Code Dynamic Workflows](https://code.claude.com/docs/en/workflows) · [lua-workflow-spec.md](../dev/lua-workflow-spec.md) §1.3
 
 ---
@@ -32,7 +32,7 @@ RunSpec { script, meta }             ← 扩展
     ↓
 RunCheckpoint { ..., workflow_meta } ← 扩展
     ↓
-maestro phases <run_dir>             ← 直接读 checkpoint
+luft phases <run_dir>             ← 直接读 checkpoint
 ```
 
 ---
@@ -459,7 +459,7 @@ if !spec.resuming {
 
 ---
 
-## 5. `maestro phases` 简化
+## 5. `luft phases` 简化
 
 ### 5.1 数据来源变化
 
@@ -607,7 +607,7 @@ pub fn execute(&self, script: &str) -> Result<serde_json::Value, ScriptError> {
 
 ### 8.5 向后兼容测试
 
-- 用 `.maestro/runs/` 下现有的 run（无 meta 的 checkpoint）跑 `phases` → 走降级路径，不报错。
+- 用 `.luft/runs/` 下现有的 run（无 meta 的 checkpoint）跑 `phases` → 走降级路径，不报错。
 - 用现有 `examples/*.lua`（无 main()）跑 `run` → 正常执行。
 
 ---
@@ -633,7 +633,7 @@ Step 10 手动验证                   — cargo run -- run --backend mock → p
 
 ## 10. 不在范围内
 
-- **预执行审批 UI**：Claude Code 用 meta.phases 展示「将如何运行」给用户确认。Maestro CLI 暂不做（未来 TUI 可加）。
+- **预执行审批 UI**：Claude Code 用 meta.phases 展示「将如何运行」给用户确认。Luft CLI 暂不做（未来 TUI 可加）。
 - **meta.phases 严格匹配 phase() 调用**：Lua 可动态调 phase()，静态校验只做 warn。
 - **depends_on 的执行序约束**：meta 声明依赖但不强制——执行序由脚本控制。
 - **converge 的 phase_id 修复**：converge 当前被禁用，单独处理。

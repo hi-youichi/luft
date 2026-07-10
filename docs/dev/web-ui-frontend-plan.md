@@ -1,4 +1,4 @@
-# Maestro Web UI 前端开发方案
+# Luft Web UI 前端开发方案
 
 > 状态：草案 v0.1 | 更新：2025-08-19
 >
@@ -837,7 +837,7 @@ body {
 - Agent 卡片状态/token/耗时正确
 - 点击 Agent 卡片弹出详情抽屉
 - 事件流正确显示历史事件
-- 与 CLI `maestro status` 数据一致
+- 与 CLI `luft status` 数据一致
 
 ---
 
@@ -950,7 +950,7 @@ body {
 | 请求去重 | 内置 | 需手写 | 不支持 |
 | 代码量 | 极少 | 大 | 中 |
 
-> Maestro 的数据以服务端状态为主（Run 列表、详情、事件），TanStack Query 专为这种场景设计。
+> Luft 的数据以服务端状态为主（Run 列表、详情、事件），TanStack Query 专为这种场景设计。
 
 ### 9.2 为什么手动类型对齐而非自动生成
 
@@ -967,7 +967,7 @@ body {
 | 暗色主题 | 易定制 | 固定风格 |
 | Vite 集成 | 无需 web worker 配置 | 需要配置 worker |
 
-> Maestro 只编辑 Lua，不需要 Monaco 的多语言 IntelliSense。
+> Luft 只编辑 Lua，不需要 Monaco 的多语言 IntelliSense。
 
 ### 9.4 为什么 WebSocket paused 用 ref 而非依赖
 
@@ -1088,7 +1088,7 @@ export default defineConfig({
 ### 10.5 启动命令
 
 ```bash
-# 终端 1：后端（需要先实现 maestro serve，见后端方案）
+# 终端 1：后端（需要先实现 luft serve，见后端方案）
 cargo run -- serve --port 3000
 
 # 终端 2：前端开发服务器

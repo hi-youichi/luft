@@ -23,10 +23,10 @@ SQLite + WAL 解决以上全部：原生 SQL 查询/分页/聚合、读写并发
 ## 1. 拓扑：全局单 DB
 
 ```
-.maestro/
-  maestro.db          ← 全局唯一数据库
-  maestro.db-wal      ← WAL 文件（自动管理）
-  maestro.db-shm      ← 共享内存（自动管理）
+.luft/
+  luft.db          ← 全局唯一数据库
+  luft.db-wal      ← WAL 文件（自动管理）
+  luft.db-shm      ← 共享内存（自动管理）
   runs/{run_id}/      ← 保留：agent 工作目录、临时文件等非 DB 数据
 ```
 
@@ -559,7 +559,7 @@ sqlx::migrate!("migrations").run(&pool).await?;
 
 ### 6.2 旧数据导入
 
-提供 CLI 子命令 `maestro import <run_dir>`，将旧的 `events.jsonl` + `checkpoint.json` 导入 SQLite：
+提供 CLI 子命令 `luft import <run_dir>`，将旧的 `events.jsonl` + `checkpoint.json` 导入 SQLite：
 
 ```rust
 // 伪代码
@@ -670,7 +670,7 @@ pub async fn gc_runs(pool: &DbPool, older_than: Duration) -> Result<u64> {
 
 ### 9.3 备份
 
-`maestro.db` 是单文件，可以直接复制备份（WAL 模式下用 `sqlite3 .backup` 或停止写入后复制）。
+`luft.db` 是单文件，可以直接复制备份（WAL 模式下用 `sqlite3 .backup` 或停止写入后复制）。
 
 ---
 
@@ -681,7 +681,7 @@ pub async fn gc_runs(pool: &DbPool, older_than: Duration) -> Result<u64> {
 | **P1: Schema + Writer** | 加 sqlx 依赖；建 migrations；实现 `EventWriter`；改造 forwarder | 所有 agent 交互数据进入 SQLite |
 | **P2: ProgressDelta 扩展** | 扩展 `ProgressDelta` 字段 + 改造 `update_mapper` | 数据完整性（role/tool_call_id/input/output） |
 | **P3: 查询 API** | 实现 `reader.rs` 的查询函数（list_runs / get_agent_turns / get_run_overview / get_run_tree） | UI 可以直接消费 |
-| **P4: FTS + 旧数据迁移** | FTS5 全文索引 + `maestro import` 命令 | 搜索能力 + 历史数据不丢失 |
+| **P4: FTS + 旧数据迁移** | FTS5 全文索引 + `luft import` 命令 | 搜索能力 + 历史数据不丢失 |
 | **P5: checkpoint 退役（可选）** | resume 逻辑改为从 SQLite 重建 cache_index | 单一存储，消除 checkpoint.json |
 
 ---

@@ -10,7 +10,7 @@
 
 ## 1. 职责与边界
 
-`core` 是 Maestro 的**地基**。它定义了其他所有模块依赖的共享合约（trait、事件、ID），实现了并发调度逻辑，并负责运行状态的持久化与恢复。`core` 不依赖 `runtime`/`adapters`/`planner`/`mcp`/`cli` 中的任何一个。
+`core` 是 Luft 的**地基**。它定义了其他所有模块依赖的共享合约（trait、事件、ID），实现了并发调度逻辑，并负责运行状态的持久化与恢复。`core` 不依赖 `runtime`/`adapters`/`planner`/`mcp`/`cli` 中的任何一个。
 
 ```
                   cli ──► planner ──► runtime ──► core ◄── adapters

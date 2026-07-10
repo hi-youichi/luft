@@ -1,6 +1,6 @@
-# Maestro 架构设计
+# Luft 架构设计
 
-> Maestro 是基于 Lua 的多智能体编排运行时。本文是**架构总览 + 模块索引**；每个顶层模块的详细架构见 [`docs/architecture/`](./architecture/) 下的专篇。
+> Luft 是基于 Lua 的多智能体编排运行时。本文是**架构总览 + 模块索引**；每个顶层模块的详细架构见 [`docs/architecture/`](./architecture/) 下的专篇。
 
 ## 模块索引
 
@@ -19,7 +19,7 @@
 ## 模块布局
 
 ```
-maestro
+luft
 ├── core/              ← 冻结合约 + 调度器 + 状态持久化（地基，无上游依赖）
 │   ├── contract/      ← AgentBackend trait · AgentTask · Finding · AgentEvent · Schema · CacheKey
 │   ├── scheduler/     ← 并发调度：信号量 + 配额 + 重试 + 取消 + 事件广播
@@ -154,7 +154,7 @@ producer 生成 findings → adversary 投票 → 存活 finding 进入下一轮
 ## 另见
 
 - [architecture/](./architecture/) — 各模块详细架构（技术动机、关键算法、实现细节，code-accurate）
-- [Dynamic Workflow 指南](./dynamic-workflow-guide.md) — 范式直觉、运转机制、Claude Code vs Maestro 对比
+- [Dynamic Workflow 指南](./dynamic-workflow-guide.md) — 范式直觉、运转机制、Claude Code vs Luft 对比
 - [Lua Workflow 编写指南](./workflow-authoring-guide.md) — 面向开发者的实践方法论（任务分解、架构注释、错误处理、对抗验证）
 - [Lua Workflow 技术规范](./dev/lua-workflow-spec.md) — 文件格式、沙箱模型、验证规则、执行生命周期
 - [Lua SDK 参考](./sdk-reference.md) — 10 个原语的参数与示例

@@ -14,7 +14,7 @@
 
 - **零侵入**：不修改 `agent()` / `pipeline()` / `parallel()` 的 Lua 接口和 scheduler 逻辑
 - **事件驱动**：与 PhaseRenderer、EventLogger、StorageWriter 平级，作为独立 consumer 挂在 broadcast channel 上
-- **默认开启**：每次 `maestro run` 自动写入，用 `--no-artifacts` 关闭
+- **默认开启**：每次 `luft run` 自动写入，用 `--no-artifacts` 关闭
 
 ---
 
@@ -724,7 +724,7 @@ Module: auth
 ```markdown
 # Run `0192...ef78`
 
-> Architecture review of the maestro codebase
+> Architecture review of the luft codebase
 
 ## Overview
 
@@ -781,7 +781,7 @@ synthesize architecture review (1 agent)
 
 ```json
 {
-  "project": "maestro",
+  "project": "luft",
   "subsystems": [...],
   "synthesis": {...}
 }
@@ -855,7 +855,7 @@ synthesize architecture review (1 agent)
 ## 8. 文件目录结构
 
 ```
-{runs_base_dir}/                              ← ~/.maestro/runs/ (或配置)
+{runs_base_dir}/                              ← ~/.luft/runs/ (或配置)
 ├── arch-review_1781980050/                   ← run_dir_name (slug + timestamp)
 │   ├── journal.db                            ← 现有：SQLite journal
 │   ├── events.jsonl                          ← 现有：事件日志（可选）

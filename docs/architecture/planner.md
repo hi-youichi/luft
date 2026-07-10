@@ -2,7 +2,7 @@
 
 > **状态**: 待完善 — 骨架文档，需补充详细内容。
 
-> 自然语言 → Lua 脚本（agent 写脚本 + 校验重试）。planner 是 Maestro 的"编译器"层：以用户自然语言任务为输入，经 LLM agent 生成一段 Lua 编排脚本，再交给 runtime 确定性执行。
+> 自然语言 → Lua 脚本（agent 写脚本 + 校验重试）。planner 是 Luft 的"编译器"层：以用户自然语言任务为输入，经 LLM agent 生成一段 Lua 编排脚本，再交给 runtime 确定性执行。
 
 源码：[`src/planner.rs`](../../src/planner.rs) ｜ 设计稿：[`docs/design/p0-planner-resume.md`](../../docs/design/p0-planner-resume.md)
 

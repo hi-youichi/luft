@@ -9,7 +9,7 @@
 
 ## 0. 当前状态与差距
 
-`maestro phases` 已有一个简化版本在工作，输出如下：
+`luft phases` 已有一个简化版本在工作，输出如下：
 
 ```
 === Phases for phased-hello_1782291115 ===
@@ -389,13 +389,13 @@ pub(crate) fn phases_cmd_inner(
     args: PhasesArgs,
 ) -> Result<()> {
     let base_dir = runs_base_dir();
-    let checkpoint = maestro::service::query::get_checkpoint(&run_dir, &base_dir)?
+    let checkpoint = luft::service::query::get_checkpoint(&run_dir, &base_dir)?
         .ok_or_else(|| anyhow::anyhow!("run not found or has no checkpoint: {}", run_dir))?;
 
     let events_path = base_dir.join(&run_dir).join("events.jsonl");
     let events = read_events(&events_path);   // 缺失返回 vec![]
 
-    let view = maestro::service::phases::build_phases_view(&checkpoint, &events);
+    let view = luft::service::phases::build_phases_view(&checkpoint, &events);
 
     if args.json {
         writeln!(w, "{}", serde_json::to_string_pretty(&view)?)?;
@@ -451,7 +451,7 @@ pub(crate) fn phases_cmd_inner(
 ```bash
 # 1. mock run 生成真实 events
 cargo run -- run --backend mock examples/phased_hello.lua
-RUN_DIR=$(ls -t .maestro/runs/ | head -1)
+RUN_DIR=$(ls -t .luft/runs/ | head -1)
 cargo run -- phases "$RUN_DIR"
 cargo run -- phases "$RUN_DIR" --json
 

@@ -1,4 +1,4 @@
-# Maestro Web UI 后端开发方案
+# Luft Web UI 后端开发方案
 
 > 状态：草案 v0.1 | 更新：2025-08-19
 >
@@ -32,19 +32,19 @@
 
 ```
 开发模式：
-  Browser ──▶ Vite dev (5173) ──proxy──▶ maestro serve (3000)
+  Browser ──▶ Vite dev (5173) ──proxy──▶ luft serve (3000)
                                           ├── HTTP /api/*
                                           └── WS /ws/*
 
 生产模式：
-  Browser ──▶ maestro serve (3000)
+  Browser ──▶ luft serve (3000)
                ├── 静态资源（rust-embed 嵌入 web/dist/）
                ├── HTTP /api/*
                └── WS /ws/*
 ```
 
 - 开发时：Vite dev server 代理 `/api` 和 `/ws` 到后端，前端享受 HMR
-- 生产时：`web/dist/` 嵌入二进制（`rust-embed`），`maestro serve` 同时服务静态资源和 API
+- 生产时：`web/dist/` 嵌入二进制（`rust-embed`），`luft serve` 同时服务静态资源和 API
 
 ### 1.2 服务层复用
 
@@ -114,7 +114,7 @@ src/
 ├── main.rs                      # 修改：添加 Serve 变体到 Commands enum
 ├── commands/
 │   ├── mod.rs                   # 修改：pub mod serve;
-│   └── serve.rs                 # 新增：maestro serve --port 3000
+│   └── serve.rs                 # 新增：luft serve --port 3000
 ├── server/                      # 新增：HTTP/WS 服务器
 │   ├── mod.rs                   # AppState + 路由注册 + CORS + 启动
 │   ├── error.rs                 # ApiError → HTTP 响应映射
@@ -149,7 +149,7 @@ pub struct ServeArgs {
 }
 
 pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
-    let app = maestro::server::create_app(/* ... */)?;
+    let app = luft::server::create_app(/* ... */)?;
     let addr = format!("{}:{}", args.host, args.port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     axum::serve(listener, app).await?;
@@ -358,7 +358,7 @@ async fn run_events_ws(
     let mut rx = sender.subscribe();
 
     // 3. 读取历史事件
-    let history = maestro::service::query::get_events(&run_id, &state.base_dir)?;
+    let history = luft::service::query::get_events(&run_id, &state.base_dir)?;
 
     // 4. 升级 WebSocket，开始转发
     Ok(ws.on_upgrade(move |socket| async move {
@@ -398,8 +398,8 @@ use dashmap::DashMap;
 use tokio::sync::{broadcast, RwLock};
 use tokio_util::sync::CancellationToken;
 
-use maestro::core::contract::event::EventSender;
-use maestro::core::contract::RunId;
+use luft::core::contract::event::EventSender;
+use luft::core::contract::RunId;
 
 pub struct AppState {
     /// 活跃 Run 的事件广播通道
@@ -490,7 +490,7 @@ async fn start_run(
             cancel: cancel_token,
             events: event_tx,
         };
-        let result = maestro::service::run::execute(&ctx, rt, script).await;
+        let result = luft::service::run::execute(&ctx, rt, script).await;
         state2.unregister_run(&rid2);
         // Run 结果通过 RunDone 事件传达
     });
@@ -579,7 +579,7 @@ fn cors_layer() -> CorsLayer {
 
 ### Phase 0：服务器骨架（1 天）
 
-**目标**：`maestro serve` 启动，健康检查可用。
+**目标**：`luft serve` 启动，健康检查可用。
 
 **任务：**
 - `Cargo.toml` 添加 `axum`、`tower-http`
@@ -660,7 +660,7 @@ fn cors_layer() -> CorsLayer {
 **任务：**
 - `rust-embed` 嵌入 `web/dist/`
 - axum 静态文件路由（SPA fallback → `index.html`）
-- `maestro serve` 一个命令启动完整应用
+- `luft serve` 一个命令启动完整应用
 
 **验收：**
 - `cargo build --release` 产出单二进制
@@ -728,7 +728,7 @@ cd web && npm run build       # → web/dist/
 cd .. && cargo build --release
 
 # 运行
-./target/release/maestro serve --port 3000
+./target/release/luft serve --port 3000
 ```
 
 ### 9.3 CI 配置（参考）

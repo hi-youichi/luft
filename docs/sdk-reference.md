@@ -1,6 +1,6 @@
 # Lua SDK 参考
 
-Maestro 在 Lua 沙箱中注册了 10 个 SDK 原语，供工作流脚本调用。
+Luft 在 Lua 沙箱中注册了 10 个 SDK 原语，供工作流脚本调用。
 
 ## 总览
 
@@ -144,7 +144,7 @@ log(string.format("pipeline 完成: %d/%d 成功", result.ok, result.ok + result
 
 对抗性收敛验证。Producer agents 从 items 生成 findings → Adversarial agents 尝试反驳 → 投票决定 surviving findings → 重复直到收敛。
 
-这是 Maestro 独有的功能，Claude Code Dynamic Workflows 无此原语。
+这是 Luft 独有的功能，Claude Code Dynamic Workflows 无此原语。
 
 ### 参数
 
