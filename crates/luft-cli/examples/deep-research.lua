@@ -5,11 +5,11 @@
 -- 再由一名分析师综合成报告，最后由技术编辑做事实核查与收口，产出 Markdown。
 --
 -- 运行 (默认主题 = "Claude Code Dynamic Workflows"):
---   cargo run --bin maestro -- run --workflow examples/deep-research.lua \
+--   cargo run --bin Luft -- run --workflow examples/deep-research.lua \
 --       --backend opencode --approve -o claude-code-dynamic-workflows.md
 --
 -- 自定义主题 / 广度 (作为 JSON extra-args 传入):
---   cargo run --bin maestro -- run --workflow examples/deep-research.lua \
+--   cargo run --bin Luft -- run --workflow examples/deep-research.lua \
 --       --backend opencode --approve -o out.md '{"topic":"Rust async runtimes","breadth":5}'
 --
 -- 子研究员以「仓库当前目录」为 cwd 运行，因此可读取 ./docs 下的本地资料来夯实结论。
@@ -161,7 +161,7 @@ local research = parallel(questions, function(q)
         prompt = table.concat({
             'You are a subject-matter researcher investigating ONE question for a report on "' .. topic .. '".',
             "Question: " .. q,
-            "You are running inside the Maestro code repository (current working directory).",
+            "You are running inside the Luft code repository (current working directory).",
             "Relevant background notes may exist under ./docs (e.g. docs/research, docs/archive).",
             "Read them with your tools if present, and consult",
             "https://code.claude.com/docs/en/workflows and the web if you have access.",

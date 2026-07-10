@@ -1,6 +1,6 @@
 -- schema-simple.lua — 最简 schema 演示
--- cargo run --bin maestro -- run -w examples/schema-simple.lua -b opencode
--- cargo run --bin maestro -- run -w examples/schema-simple.lua -b mock (降级)
+-- cargo run --bin Luft -- run -w examples/schema-simple.lua -b opencode
+-- cargo run --bin Luft -- run -w examples/schema-simple.lua -b mock (降级)
 --
 -- 核心: 1 个 schema + 1 次 agent() 调用，最小化演示 JSON Schema 约束
 

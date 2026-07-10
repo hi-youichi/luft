@@ -130,7 +130,7 @@ function main()
         local file_list = json.encode(group.files)
         return {
             prompt = "You are a senior Rust engineer adding unit tests to the Luft project "
-                .. "(a Rust multi-agent orchestration runtime at C:\\Users\\heycj\\dev\\maestro).\n\n"
+                .. "(a Rust multi-agent orchestration runtime at the current working directory (.)).\n\n"
                 .. "Your task: Add comprehensive #[cfg(test)] unit tests to EVERY file listed below in the '"
                 .. group.crate .. "' module group.\n\n"
                 .. "Files to add tests to:\n" .. file_list .. "\n\n"
@@ -191,7 +191,7 @@ function main()
 
     phase("verify", 1)
     local verify_result = agent({
-        prompt = "You are verifying the test coverage improvements in the Luft project at C:\\Users\\heycj\\dev\\maestro.\n\n"
+        prompt = "You are verifying the test coverage improvements in the Luft project at the current working directory (.).\n\n"
             .. "The following files just had unit tests added:\n" .. json.encode(all_tested) .. "\n\n"
             .. "Your task:\n"
             .. "1. Run `cargo test --workspace` using your shell tool.\n"

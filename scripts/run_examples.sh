@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run_examples.sh — Run all Maestro examples with automated assertions.
+# run_examples.sh — Run all Luft examples with automated assertions.
 #
 # Usage:
 #   bash scripts/run_examples.sh           # run all (mock + opencode)
@@ -11,8 +11,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-LOG_DIR="$ROOT_DIR/.maestro/example_logs"
-REPORT_DIR="$ROOT_DIR/.maestro/example_reports"
+LOG_DIR="$ROOT_DIR/.luft/example_logs"
+REPORT_DIR="$ROOT_DIR/.luft/example_reports"
 MAESTRO="cargo run --manifest-path $ROOT_DIR/Cargo.toml --"
 
 PASS=0

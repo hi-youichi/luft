@@ -87,11 +87,11 @@ function main()
     log("Running coverage scan to find all uncovered lines")
 
     local scan = safe_agent({
-        prompt = "You are in the Maestro Rust project at /Users/apple/dev/maestro.\n"
+        prompt = "You are in the Luft Rust project at the current working directory (.).\n"
             .. "Run `cargo llvm-cov --lib --json 2>&1` to get per-file line coverage data in JSON format.\n"
             .. "If `--json` is not supported, try `cargo llvm-cov --lib 2>&1` for the table summary,\n"
             .. "then `cargo llvm-cov report --lib --show-missing-lines 2>&1` or run\n"
-            .. "`cargo llvm-cov --lib --lcov --output-path /tmp/maestro-cov.info 2>&1` and read that file.\n\n"
+            .. "`cargo llvm-cov --lib --lcov --output-path /tmp/luft-cov.info 2>&1` and read that file.\n\n"
             .. "For each source file under src/ (exclude tests/, examples/, target/):\n"
             .. "  - path: relative path from workspace root, e.g. 'src/core/state.rs'\n"
             .. "  - line_coverage_pct: percentage of lines covered (0-100)\n"
@@ -168,14 +168,14 @@ function main()
             local lines_str = truncate_lines(m.uncovered_line_numbers, 30)
 
             return {
-                prompt = "You are a Rust test specialist in the Maestro project at /Users/apple/dev/maestro.\n\n"
+                prompt = "You are a Rust test specialist in the Luft project at the current working directory (.).\n\n"
                     .. "MODULE: " .. m.path .. "\n"
                     .. "Current line coverage: " .. m.line_coverage_pct .. "%\n"
                     .. "Uncovered line numbers: " .. lines_str .. "\n"
                     .. "Uncovered count: " .. m.uncovered_count .. " out of " .. m.total_lines .. " total lines\n\n"
                     .. "TASK: Add unit tests to cover ALL uncovered lines in this module.\n\n"
                     .. "STEPS:\n"
-                    .. "1. Read the full file: read /Users/apple/dev/maestro/" .. m.path .. "\n"
+                    .. "1. Read the full file: read ./" .. m.path .. "\n"
                     .. "2. Locate the existing #[cfg(test)] module (or mod tests { ... })\n"
                     .. "3. For EACH uncovered line, understand what function/expression it belongs to\n"
                     .. "4. Write one or more test functions that exercise exactly those uncovered paths:\n"
@@ -226,7 +226,7 @@ function main()
     log("Running final verification")
 
     local verify = safe_agent({
-        prompt = "Run final verification for Maestro project at /Users/apple/dev/maestro.\n\n"
+        prompt = "Run final verification for the Luft project at the current working directory (.).\n\n"
             .. "1. Run: cargo test --lib 2>&1\n"
             .. "   - Check ALL tests pass (0 failures)\n"
             .. "2. Run: cargo llvm-cov --lib --json 2>&1\n"
