@@ -27,7 +27,7 @@ local ADAPTERS_FILES = {
     { path = "src/adapters/acp_adapter.rs",      kind = "primary",     role = "AcpAdapter struct + ACP client subprocess lifecycle" },
     { path = "src/adapters/permission.rs",       kind = "policy",      role = "Non-interactive request_permission decision logic" },
     { path = "src/adapters/result_collector.rs", kind = "collector",   role = "ACP stop_reason + message -> AgentResult aggregation" },
-    { path = "src/adapters/update_mapper.rs",    kind = "translation", role = "ACP SessionUpdate -> Maestro ProgressDelta mapping" }
+    { path = "src/adapters/update_mapper.rs",    kind = "translation", role = "ACP SessionUpdate -> Luft ProgressDelta mapping" }
 }
 
 local FILE_SUMMARY = {
@@ -210,7 +210,7 @@ local SYNTH_SCHEMA = {
     }
 }
 
-local SMELL_HUNT_PROMPT_TEMPLATE = [[You are a senior Rust engineer performing a code smell hunt on a single source file from the Maestro project (Rust multi-agent orchestration runtime at C:\Users\heycj\dev\maestro).
+local SMELL_HUNT_PROMPT_TEMPLATE = [[You are a senior Rust engineer performing a code smell hunt on a single source file from the Luft project (Rust multi-agent orchestration runtime at C:\Users\heycj\dev\luft).
 
 # Target file
 Path: %s
@@ -292,8 +292,8 @@ function main()
     local cross = agent({
         name        = "cross-reference",
         description = "Find cross-file smells across all 5 per-file reports (duplications, inconsistencies, scattered concerns, missing abstractions)",
-        prompt = "You are the cross-file analysis lead for a code smell audit of the Maestro src/adapters/ module "
-            .. "(Rust multi-agent orchestration runtime at C:\\Users\\heycj\\dev\\maestro). "
+        prompt = "You are the cross-file analysis lead for a code smell audit of the Luft src/adapters/ module "
+            .. "(Rust multi-agent orchestration runtime at C:\\Users\\heycj\\dev\\luft). "
             .. "Five per-file smell reports have been collected (one per .rs file in the module). "
             .. "Your job is to find smells that only become visible when comparing files side-by-side.\n\n"
             .. "Per-file smell reports:\n" .. json.encode(per_file) .. "\n\n"
@@ -324,8 +324,8 @@ function main()
     local synth = agent({
         name        = "synthesize",
         description = "Lead reviewer aggregating per-file + cross-file smells into a prioritized, actionable final report",
-        prompt = "You are the lead reviewer synthesizing a code smell audit of the Maestro src/adapters/ module "
-            .. "(Rust multi-agent orchestration runtime at C:\\Users\\heycj\\dev\\maestro). "
+        prompt = "You are the lead reviewer synthesizing a code smell audit of the Luft src/adapters/ module "
+            .. "(Rust multi-agent orchestration runtime at C:\\Users\\heycj\\dev\\luft). "
             .. "Aggregate the per-file smell reports and the cross-reference findings into a prioritized, actionable final report.\n\n"
             .. "Per-file smell reports:\n" .. json.encode(per_file) .. "\n\n"
             .. "Cross-reference findings:\n" .. json.encode(cross.output) .. "\n\n"
@@ -366,7 +366,7 @@ function main()
 
     report({
         workflow = "adapters_smell_hunt",
-        project = "maestro v0.1.0 (Rust multi-agent orchestration runtime)",
+        project = "luft v0.1.0 (Rust multi-agent orchestration runtime)",
         scope = "src/adapters/ (5 files, 1 agent per file)",
         files_analyzed = ok_count,
         files_total = #ADAPTERS_FILES,

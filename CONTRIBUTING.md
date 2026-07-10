@@ -1,10 +1,10 @@
-# Contributing to Maestro
+# Contributing to Luft
 
 ## Development Setup
 
 ```bash
 git clone <repo-url>
-cd maestro
+cd luft
 cargo build --workspace
 cargo test --workspace
 ```
@@ -25,8 +25,8 @@ cargo test --workspace
 
 ```text
   ┌──────────────────────────────────────────────────────────┐
-  │                      maestro (facade)                     │
-  │  MaestroBuilder · Maestro · RunHandle · RunOutcome        │
+  │                      luft (facade)                       │
+  │  LuftBuilder · Luft · RunHandle · RunOutcome             │
   └───────┬──────────┬──────────┬─────────┬────────┬─────────┘
           │          │          │         │        │
      ┌────▼────┐ ┌───▼───┐ ┌───▼────┐ ┌──▼───┐ ┌──▼──────┐
@@ -37,20 +37,20 @@ cargo test --workspace
 
 | Crate | Role |
 |-------|------|
-| `maestro` | Facade: re-exports all sub-crates, provides `Maestro` builder API |
-| `maestro-core` | Frozen contracts: `AgentBackend` trait, types, scheduler, journal |
-| `maestro-runtime` | Sandboxed mlua VM with orchestration SDK primitives |
-| `maestro-storage` | SQLite persistence with UI-ready query API |
-| `maestro-planner` | Natural-language → Lua script generation |
-| `maestro-adapters` | OpenCode ACP backend implementation |
-| `maestro-service` | Presentation-free run lifecycle and query functions |
+| `luft` | Facade: re-exports all sub-crates, provides `Luft` builder API |
+| `luft-core` | Frozen contracts: `AgentBackend` trait, types, scheduler, journal |
+| `luft-runtime` | Sandboxed mlua VM with orchestration SDK primitives |
+| `luft-storage` | SQLite persistence with UI-ready query API |
+| `luft-planner` | Natural-language → Lua script generation |
+| `luft-adapters` | OpenCode ACP backend implementation |
+| `luft-service` | Presentation-free run lifecycle and query functions |
 
 ## Adding a New Agent Backend
 
-Implement the `AgentBackend` trait from `maestro-core`:
+Implement the `AgentBackend` trait from `luft-core`:
 
 ```rust
-use maestro_core::contract::backend::*;
+use luft_core::contract::backend::*;
 use async_trait::async_trait;
 
 struct MyBackend;
@@ -69,22 +69,22 @@ impl AgentBackend for MyBackend {
 Register it with the `BackendRegistry`:
 
 ```rust
-use maestro_core::BackendRegistry;
+use luft_core::BackendRegistry;
 use std::sync::Arc;
 
 let mut registry = BackendRegistry::new();
 registry.register(Arc::new(MyBackend));
 ```
 
-See `maestro-adapters/src/acp_adapter.rs` for a production reference implementation.
+See `luft-adapters/src/acp_adapter.rs` for a production reference implementation.
 
 ## Adding a Lua SDK Primitive
 
-1. **Register** the global in `maestro-runtime/src/sdk/` — call `globals.set(name, callback)`.
-2. **Document** it in `maestro-planner/src/lua_dsl_reference.md` — the DSL spec sent to the planner LLM.
-3. **Test** it in `maestro-runtime/src/sdk/` with unit tests.
+1. **Register** the global in `luft-runtime/src/sdk/` — call `globals.set(name, callback)`.
+2. **Document** it in `luft-planner/src/lua_dsl_reference.md` — the DSL spec sent to the planner LLM.
+3. **Test** it in `luft-runtime/src/sdk/` with unit tests.
 4. **Validate** — if the primitive has structural requirements (e.g., span pairing),
-   add checks to `validate_workflow()` in `maestro-runtime/src/sandbox.rs`.
+   add checks to `validate_workflow()` in `luft-runtime/src/sandbox.rs`.
 
 ## Coding Conventions
 

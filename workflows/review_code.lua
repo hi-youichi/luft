@@ -33,7 +33,7 @@ function main()
 
     phase("discovery", 1)
     local discovery = agent({
-        prompt = "You are reviewing the Maestro project — a Rust multi-agent orchestration runtime at C:\\Users\\heycj\\dev\\maestro. "
+        prompt = "You are reviewing the Luft project — a Rust multi-agent orchestration runtime at C:\\Users\\heycj\\dev\\luft. "
             .. "First, explore the repository using your Read tool to discover ALL Rust source files (*.rs), excluding target/ and any generated directories. "
             .. "For each file, provide: its relative path, line count, and a 1-sentence summary of its purpose. "
             .. "Then group the files by module category using these rules:\n"
@@ -60,7 +60,7 @@ function main()
         local files = groups[gname]
         local file_list = json.encode(files)
         return {
-            prompt = "You are a senior Rust engineer conducting a thorough code review of the Maestro project. "
+            prompt = "You are a senior Rust engineer conducting a thorough code review of the Luft project. "
                 .. "Review the files in module group '" .. gname .. "'. "
                 .. "Read EACH file in full using your Read tool, then produce a detailed review. "
                 .. "Files to review: " .. file_list .. "\n\n"
@@ -94,7 +94,7 @@ function main()
     log("Found " .. #all_critical .. " critical findings to verify")
 
     local verified = agent({
-        prompt = "You are the verification lead for a code review of the Maestro Rust project. "
+        prompt = "You are the verification lead for a code review of the Luft Rust project. "
             .. "Below are " .. #all_critical .. " critical findings reported by module reviewers. "
             .. "Your job is to cross-verify each one: read the relevant source code, confirm or refute the finding, "
             .. "and return a consolidated, verified list. Eliminate false positives and duplicates.\n\n"
@@ -108,7 +108,7 @@ function main()
 
     phase("synthesize", 1)
     local synthesis = agent({
-        prompt = "You are the lead reviewer synthesizing results from a full code review of the Maestro Rust project. "
+        prompt = "You are the lead reviewer synthesizing results from a full code review of the Luft Rust project. "
             .. "Below are module-level reviews and the verified critical findings. "
             .. "Aggregate everything into a final comprehensive report.\n\n"
             .. "Module reviews:\n" .. json.encode(group_reviews) .. "\n\n"
@@ -151,7 +151,7 @@ function main()
 
     report({
         workflow = "code_review",
-        project = "maestro v0.1.0 (Rust multi-agent orchestration runtime)",
+        project = "luft v0.1.0 (Rust multi-agent orchestration runtime)",
         modules_reviewed = #group_names,
         files_analyzed = reviewed_count,
         average_module_score = scored_modules > 0 and (total_score / scored_modules) or nil,

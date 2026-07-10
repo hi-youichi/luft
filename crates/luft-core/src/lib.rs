@@ -48,7 +48,7 @@ pub mod run_dir;
 pub mod scheduler;
 pub mod state;
 
-#[cfg(feature = "testing")]
+#[cfg(any(feature = "testing", test))]
 pub mod mock_backend;
 #[cfg(feature = "testing")]
 pub mod mock_file_backend;

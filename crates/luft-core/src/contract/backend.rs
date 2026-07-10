@@ -12,47 +12,47 @@
 //!
 //! struct MyBackend;
 //!
-/// impl MyBackend {
-///     fn new() -> Self { Self }
-/// }
-///
-/// #[async_trait]
-/// impl AgentBackend for MyBackend {
-///     fn id(&self) -> &'static str { "my-backend" }
-///
-///     fn capabilities(&self) -> AgentCapabilities {
-///         AgentCapabilities {
-///             streaming: true,
-///             ..Default::default()
-///         }
-///     }
-///
-///     async fn run(&self, task: AgentTask, ctx: RunContext)
-///         -> Result<AgentResult, BackendError>
-///     {
-///         // 1. Observe cancellation
-///         if ctx.cancel.is_cancelled() {
-///             return Err(BackendError::Cancelled);
-///         }
-///
-///         // 2. Execute the agent task (your custom logic)
-///         let output = serde_json::json!({ "text": "hello" });
-///
-///         // 3. Return structured result
-///         Ok(AgentResult {
-///             agent_id: task.agent_id,
-///             status: AgentStatus::Ok,
-///             output,
-///             findings: vec![],
-///             tokens_used: Default::default(),
-///             artifacts: vec![],
-///             logs: LogRef::default(),
-///         })
-///     }
-///
-///     fn as_any(&self) -> &dyn std::any::Any { self }
-/// }
-/// ```
+//! impl MyBackend {
+//!     fn new() -> Self { Self }
+//! }
+//!
+//! #[async_trait]
+//! impl AgentBackend for MyBackend {
+//!     fn id(&self) -> &'static str { "my-backend" }
+//!
+//!     fn capabilities(&self) -> AgentCapabilities {
+//!         AgentCapabilities {
+//!             streaming: true,
+//!             ..Default::default()
+//!         }
+//!     }
+//!
+//!     async fn run(&self, task: AgentTask, ctx: RunContext)
+//!         -> Result<AgentResult, BackendError>
+//!     {
+//!         // 1. Observe cancellation
+//!         if ctx.cancel.is_cancelled() {
+//!             return Err(BackendError::Cancelled);
+//!         }
+//!
+//!         // 2. Execute the agent task (your custom logic)
+//!         let output = serde_json::json!({ "text": "hello" });
+//!
+//!         // 3. Return structured result
+//!         Ok(AgentResult {
+//!             agent_id: task.agent_id,
+//!             status: AgentStatus::Ok,
+//!             output,
+//!             findings: vec![],
+//!             tokens_used: Default::default(),
+//!             artifacts: vec![],
+//!             logs: LogRef::default(),
+//!         })
+//!     }
+//!
+//!     fn as_any(&self) -> &dyn std::any::Any { self }
+//! }
+//! ```
 use crate::contract::event::EventSender;
 use crate::contract::finding::Finding;
 use crate::contract::ids::{AgentId, PhaseId, RunId, TokenUsage};
@@ -234,7 +234,7 @@ pub struct Artifact {
     pub inline: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct LogRef {
     pub path: PathBuf,
 }

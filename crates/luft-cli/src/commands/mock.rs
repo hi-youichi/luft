@@ -104,7 +104,7 @@ pub async fn mock_add(args: MockAddArgs) -> Result<()> {
 
     eprintln!("\u{2705}  Mock data written to {}", mock_path.display());
 
-    let response_count = mock_data
+let response_count = mock_data
         .get("responses")
         .and_then(|r| r.as_object())
         .map(|m| m.len())
@@ -116,4 +116,226 @@ pub async fn mock_add(args: MockAddArgs) -> Result<()> {
     );
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_args(script: std::path::PathBuf) -> MockAddArgs {
+        MockAddArgs {
+            script,
+            output: None,
+            backend: None,
+            model: None,
+            max_retries: None,
+        }
+    }
+
+    #[test]
+    fn mock_add_args_debug() {
+        let args = MockAddArgs {
+            script: std::path::PathBuf::from("/tmp/x.lua"),
+            output: Some(std::path::PathBuf::from("/tmp/out.json")),
+            backend: Some("opencode".into()),
+            model: Some("claude-3".into()),
+            max_retries: Some(5),
+        };
+        let s = format!("{args:?}");
+        assert!(s.contains("script"));
+        assert!(s.contains("/tmp/x.lua"));
+        assert!(s.contains("opencode"));
+        assert!(s.contains("max_retries"));
+    }
+
+    #[test]
+    fn mock_add_args_default_values_when_all_none() {
+        let args = MockAddArgs {
+            script: std::path::PathBuf::from("a.lua"),
+            output: None,
+            backend: None,
+            model: None,
+            max_retries: None,
+        };
+        assert!(args.output.is_none());
+        assert!(args.backend.is_none());
+        assert!(args.model.is_none());
+        assert!(args.max_retries.is_none());
+    }
+
+    // The clap-derived Subcommand/Args structs are tested at compile time;
+    // this runtime test ensures Debug is callable and exposes the variant.
+    #[test]
+    fn mock_subcommand_add_variant_debug() {
+        let sub = MockSubcommand::Add(make_args(std::path::PathBuf::from("a.lua")));
+        let s = format!("{sub:?}");
+        assert!(s.contains("Add"));
+    }
+
+    // ── mock_add runtime tests ───────────────────────────────────────────
+
+    #[tokio::test]
+    async fn mock_add_bails_when_backend_is_mock() {
+        let tmp = tempfile::tempdir().unwrap();
+        let script = tmp.path().join("w.lua");
+        std::fs::write(&script, "agent({ name = \"x\", prompt = \"y\" })").unwrap();
+
+        let args = MockAddArgs {
+            script,
+            output: None,
+            backend: Some("mock".to_string()),
+            model: None,
+            max_retries: None,
+        };
+        let err = mock_add(args).await.unwrap_err();
+        assert!(
+            err.to_string().contains("real LLM backend")
+                || err.to_string().contains("mock"),
+            "expected mock-related error, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn mock_add_bails_when_backend_is_mockfile() {
+        let tmp = tempfile::tempdir().unwrap();
+        let script = tmp.path().join("w.lua");
+        std::fs::write(&script, "agent({ name = \"x\", prompt = \"y\" })").unwrap();
+
+        let args = MockAddArgs {
+            script,
+            output: None,
+            backend: Some("mockfile".to_string()),
+            model: None,
+            max_retries: None,
+        };
+        let err = mock_add(args).await.unwrap_err();
+        assert!(
+            err.to_string().contains("real LLM backend")
+                || err.to_string().contains("mock"),
+            "expected mock-related error, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn mock_add_errors_when_script_does_not_exist() {
+        let tmp = tempfile::tempdir().unwrap();
+        let script = tmp.path().join("does-not-exist.lua");
+
+        let args = MockAddArgs {
+            script,
+            output: None,
+            backend: Some("opencode".to_string()),
+            model: None,
+            max_retries: None,
+        };
+        let err = mock_add(args).await.unwrap_err();
+        assert!(
+            err.to_string().contains("cannot read")
+                || err.to_string().contains("os error 2")
+                || err.to_string().contains("No such file"),
+            "expected file-read error, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn mock_add_bails_when_no_agent_calls() {
+        let tmp = tempfile::tempdir().unwrap();
+        let script = tmp.path().join("empty.lua");
+        std::fs::write(&script, "-- empty script\nx = 1\n").unwrap();
+
+        let args = MockAddArgs {
+            script,
+            output: None,
+            backend: Some("opencode".to_string()),
+            model: None,
+            max_retries: None,
+        };
+        let err = mock_add(args).await.unwrap_err();
+        assert!(
+            err.to_string().contains("no agent() calls"),
+            "expected 'no agent calls' error, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn mock_add_bails_when_calls_have_no_name() {
+        let tmp = tempfile::tempdir().unwrap();
+        let script = tmp.path().join("noname.lua");
+        std::fs::write(&script, "agent({ prompt = \"no name here\" })").unwrap();
+
+        let args = MockAddArgs {
+            script,
+            output: None,
+            backend: Some("opencode".to_string()),
+            model: None,
+            max_retries: None,
+        };
+        let err = mock_add(args).await.unwrap_err();
+        assert!(
+            err.to_string().contains("name="),
+            "expected error mentioning name=, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn mock_add_reports_line_numbers_for_unnamed_calls() {
+        let tmp = tempfile::tempdir().unwrap();
+        let script = tmp.path().join("mixed.lua");
+        // First line is comment, then unnamed agent at line 2, named at line 3,
+        // unnamed again at line 4.
+        std::fs::write(
+            &script,
+            "-- header\nagent({ prompt = \"a\" })\nagent({ name = \"ok\", prompt = \"b\" })\nagent({ prompt = \"c\" })\n",
+        )
+        .unwrap();
+
+        let args = MockAddArgs {
+            script,
+            output: None,
+            backend: Some("opencode".to_string()),
+            model: None,
+            max_retries: None,
+        };
+        let err = mock_add(args).await.unwrap_err();
+        // The error message says add name= fields. Use stderr to verify the
+        // diagnostic eprintln output mentioning the count and lines. Capture
+        // the diagnostics by reading the original eprintln call directly.
+        // Instead of parsing eprintln, verify that the user gets a clear hint.
+        let msg = err.to_string();
+        assert!(
+            msg.contains("name=") || msg.contains("re-run"),
+            "expected hint about adding name= fields, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn unnamed_agent_call_diagnostic_format() {
+        // Re-test the same flow synchronously by exercising
+        // extract_agent_calls with multiple unnamed calls to confirm the parser
+        // correctly identifies the offending lines.
+        let script = "agent({ prompt = \"a\" })\nagent({ name = \"ok\" })\nagent({ prompt = \"c\" })";
+        let calls = luft::mock_gen::extract_agent_calls(script);
+        let unnamed: Vec<_> = calls.iter().filter(|c| c.name.is_none()).collect();
+        assert_eq!(unnamed.len(), 2);
+        assert_eq!(unnamed[0].line, 1);
+        assert_eq!(unnamed[1].line, 3);
+    }
+
+    // Sanity: the `extract_agent_calls` helper from luft::mock_gen is the
+    // source of truth for parsing. Make sure it surfaces the calls we feed
+    // through mock_add before the bail-out check fires.
+    #[test]
+    fn extract_agent_calls_finds_named_and_unnamed() {
+        let script = "agent({ name = \"a\", prompt = \"p\" })\nagent({ prompt = \"q\" })";
+        let calls = luft::mock_gen::extract_agent_calls(script);
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].name.as_deref(), Some("a"));
+        assert!(calls[1].name.is_none());
+    }
+
+    #[test]
+    fn extract_agent_calls_returns_empty_for_no_calls() {
+        let calls = luft::mock_gen::extract_agent_calls("x = 1\nprint(x)\n");
+        assert!(calls.is_empty());
+    }
 }

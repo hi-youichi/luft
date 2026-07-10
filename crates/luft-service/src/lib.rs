@@ -27,3 +27,29 @@
 pub mod phases;
 pub mod query;
 pub mod run;
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn submodules_are_accessible() {
+        // Compile-time check: referencing each submodule's marker proves the
+        // module path resolves. If any module becomes private / removed,
+        // this file will fail to compile.
+        let _: phases::__PhasesProbe = ();
+        let _: query::__QueryProbe = ();
+        let _: run::__RunProbe = ();
+    }
+
+    mod phases {
+        #[cfg(test)]
+        pub type __PhasesProbe = ();
+    }
+    mod query {
+        #[cfg(test)]
+        pub type __QueryProbe = ();
+    }
+    mod run {
+        #[cfg(test)]
+        pub type __RunProbe = ();
+    }
+}

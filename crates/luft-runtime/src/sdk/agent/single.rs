@@ -97,3 +97,112 @@ pub(super) fn register(lua: &Lua, cx: &SdkContext) -> mlua::Result<()> {
     globals.set("agent", agent_fn)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sdk::test_support::make_sdk_context;
+    use mlua::Lua;
+
+    #[tokio::test]
+    async fn register_sets_agent_global_as_callable() {
+        let lua = Lua::new();
+        let cx = make_sdk_context();
+        register(&lua, &cx).expect("register must succeed");
+
+        let globals = lua.globals();
+        let agent: mlua::Function = globals
+            .get("agent")
+            .expect("agent global must be registered as a function");
+        // Take a reference so we can confirm it's a function without invoking it.
+        let _ = agent;
+    }
+
+    #[tokio::test]
+    async fn register_does_not_set_parallel_or_pmap_globals() {
+        let lua = Lua::new();
+        let cx = make_sdk_context();
+        register(&lua, &cx).unwrap();
+        let globals = lua.globals();
+        // Only the single-agent global should exist after this registrar runs.
+        assert!(globals.get::<mlua::Function>("agent").is_ok());
+        // parallel/pmap belong to the sibling registrars (tested in sdk/agent.rs).
+        assert!(
+            globals.get::<mlua::Function>("parallel").is_err(),
+            "parallel must NOT be set by single::register"
+        );
+        assert!(
+            globals.get::<mlua::Function>("pmap").is_err(),
+            "pmap must NOT be set by single::register"
+        );
+    }
+
+    #[tokio::test]
+    async fn register_can_be_called_multiple_times_without_panic() {
+        let lua = Lua::new();
+        let cx = make_sdk_context();
+        register(&lua, &cx).unwrap();
+        register(&lua, &cx).unwrap();
+        register(&lua, &cx).unwrap();
+        // Final state: agent still resolves to a function (Lua globals.set
+        // overwrites the previous binding rather than chaining).
+        assert!(lua.globals().get::<mlua::Function>("agent").is_ok());
+    }
+
+    #[tokio::test]
+    async fn agent_without_prompt_returns_runtime_error() {
+        // Without a registered backend, `agent({})` would attempt to dispatch to
+        // the scheduler and fail at the backend layer. The first failure mode
+        // we can exercise without a backend is the missing-prompt error from
+        // build_task, which propagates as a Lua RuntimeError.
+        let lua = Lua::new();
+        let cx = make_sdk_context();
+        register(&lua, &cx).unwrap();
+
+        let script = r#"local ok, err = pcall(agent, {}) return { ok = ok, err = tostring(err) }"#;
+        let result: mlua::Table = lua.load(script).eval().unwrap();
+        assert_eq!(
+            result.get::<bool>("ok").unwrap(),
+            false,
+            "agent(table) without prompt must fail"
+        );
+        let err = result.get::<String>("err").unwrap();
+        assert!(
+            err.contains("prompt"),
+            "error message should mention 'prompt'; got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn register_preserves_existing_globals_by_overwriting() {
+        let lua = Lua::new();
+        let cx = make_sdk_context();
+
+        // Pre-set `agent` to a sentinel noop function.
+        lua.globals()
+            .set(
+                "agent",
+                lua.create_function(|_, ()| Ok(42i64)).unwrap(),
+            )
+            .unwrap();
+
+        register(&lua, &cx).unwrap();
+
+        // After registration, `agent` resolves to the new closure (the noop
+        // is overwritten, NOT chained). We can't easily exercise the new
+        // closure without a backend, so we just confirm the type still
+        // resolves.
+        let _: mlua::Function = lua.globals().get("agent").unwrap();
+    }
+
+    // -----------------------------------------------------------------------
+    // Compile-time / surface check
+    // -----------------------------------------------------------------------
+    #[test]
+    fn single_registrar_is_in_super_module() {
+        // The registrar function lives at `super::register` from inside its
+        // own tests mod. Touch the symbol so a private-visibility regression
+        // is caught here instead of by the first integration user.
+        let _f: fn(&Lua, &SdkContext) -> mlua::Result<()> = register;
+    }
+}

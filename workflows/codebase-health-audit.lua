@@ -1,5 +1,5 @@
 ----------------------------------------------------
--- Goal:  Audit Maestro codebase health and produce prioritized improvement plan
+-- Goal:  Audit Luft codebase health and produce prioritized improvement plan
 -- Arch:
 --   +----------+
 --   | discover |=====> (for each subsystem)
@@ -116,7 +116,7 @@ local TRIAGE_SCHEMA = {
 function main()
   phase("discover", 1)
   local d = agent({
-    prompt = "You are analyzing the Maestro project, a Rust multi-agent workflow orchestration runtime.\n\n"
+    prompt = "You are analyzing the Luft project, a Rust multi-agent workflow orchestration runtime.\n\n"
       .. "Enumerate ALL subsystems and key modules in this project. For each, provide:\n"
       .. "- name: short identifier\n"
       .. "- path: file path or directory\n"
@@ -238,7 +238,7 @@ function main()
 
   phase("triage", 1)
   local t = agent({
-    prompt = "You are the triage lead for the Maestro project codebase health audit.\n\n"
+    prompt = "You are the triage lead for the Luft project codebase health audit.\n\n"
       .. "Below are health assessments for each subsystem. Synthesize them into a prioritized improvement plan.\n\n"
       .. json.encode(assessments) .. "\n\n"
       .. "Provide:\n"

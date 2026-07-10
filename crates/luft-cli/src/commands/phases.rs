@@ -198,10 +198,8 @@ mod tests {
     use luft::core::state::{get_run_store, CheckpointStatus};
     use luft::planner::{MetaPhase, PlanMeta};
     use std::path::PathBuf;
-    use std::sync::Mutex;
+    use super::super::GLOBAL_CWD_LOCK;
     use tempfile::TempDir;
-
-    static CWD_LOCK: Mutex<()> = Mutex::new(());
 
     struct TestEnv {
         _lock: std::sync::MutexGuard<'static, ()>,
@@ -211,7 +209,7 @@ mod tests {
 
     impl TestEnv {
         fn new() -> Self {
-            let _lock = CWD_LOCK
+            let _lock = GLOBAL_CWD_LOCK
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             let dir = TempDir::new().unwrap();
@@ -254,6 +252,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn run_not_found() {
         let _env = TestEnv::new();
         std::fs::create_dir_all(runs_base_dir()).unwrap();
@@ -264,6 +263,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn meta_full_tree_render() {
         let _env = TestEnv::new();
         let meta = PlanMeta {
@@ -287,6 +287,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn json_output_structure() {
         let _env = TestEnv::new();
         let meta = PlanMeta {
@@ -302,6 +303,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn no_meta_fallback_events() {
         let _env = TestEnv::new();
         let base_dir = runs_base_dir();
@@ -333,6 +335,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn empty_run_no_phases_message() {
         let _env = TestEnv::new();
         let base_dir = runs_base_dir();
@@ -349,6 +352,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn events_missing_elapsed_question_mark() {
         let _env = TestEnv::new();
         let meta = PlanMeta {
@@ -363,6 +367,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn pending_phase_shows_no_ok_failed() {
         let _env = TestEnv::new();
         let meta = PlanMeta {

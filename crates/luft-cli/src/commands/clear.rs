@@ -47,7 +47,9 @@ mod tests {
 
     impl TestEnv {
         fn new() -> Self {
-            let _lock = GLOBAL_CWD_LOCK.lock().unwrap();
+            let _lock = GLOBAL_CWD_LOCK
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             let dir = TempDir::new().unwrap();
             let orig_cwd = std::env::current_dir().unwrap();
             std::env::set_current_dir(dir.path()).unwrap();

@@ -21,6 +21,7 @@ dist-ssr/
 .luft/runs/
 .luft/*.db
 .luft/*.db-*
+.maestro/
 
 # ── Loom agent workspace ──────────────────────────────
 .loom

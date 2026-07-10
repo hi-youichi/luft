@@ -1,29 +1,29 @@
-# Maestro
+# Luft
 
 Lua-based multi-agent orchestration runtime. Use Lua scripts with `agent()`/`parallel()`/`pipeline()`/`converge()` primitives to deterministically orchestrate multiple LLM agents.
 
 ## CLI
 
 ```bash
-cargo run --bin maestro -- run --workflow examples/hello.lua --backend mock
-cargo run --bin maestro -- run "audit repo for security issues" -o report.md
+cargo run --bin luft -- run --workflow examples/hello.lua --backend mock
+cargo run --bin luft -- run "audit repo for security issues" -o report.md
 ```
 
 ## Library
 
 ```toml
-maestro = { path = "../maestro", features = ["testing"] }
+luft = { path = "../luft", features = ["testing"] }
 tokio = { version = "1", features = ["full"] }
 ```
 
 ```rust
-use maestro::core::mock_backend::{MockBackend, MockBehavior};
-use maestro::Maestro;
+use luft::core::mock_backend::{MockBackend, MockBehavior};
+use luft::Luft;
 use std::time::Duration;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let m = Maestro::builder()
+    let m = Luft::builder()
         .backend(MockBackend::new("mock", vec![MockBehavior::Success {
             output: serde_json::json!({"message": "hello"}),
             tokens: Default::default(),
