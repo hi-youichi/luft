@@ -17,7 +17,7 @@
 
 ### 1.2 文件结构
 
-一个合法的 Maestro Lua Workflow 文件由三部分组成：
+一个合法的 Luft Lua Workflow 文件由三部分组成：
 
 ```
 [meta 声明]           — 必填，纯 Lua table，描述 phase 结构

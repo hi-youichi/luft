@@ -37,7 +37,7 @@
 | `status` | `status.rs::status_run_cmd` | run 状态 + token + phase |
 | `logs` | `logs.rs::logs_run_cmd` | 事件流日志 |
 | `clear` | `clear.rs::clear_runs_cmd` | 清理 N 天前的已完成 run |
-| `workflows` | `workflows.rs::list_workflows` | 列出 `~/.maestro/workflows/*.lua` |
+| `workflows` | `workflows.rs::list_workflows` | 列出 `~/.luft/workflows/*.lua` |
 | `save` | `save.rs::save_workflow` | 保存工作流（占位实现） |
 | `backend` | `backend.rs::{list,info,check,config,set}` | 后端管理（5 个子命令） |
 | `lua validate` | `lua_validate.rs::validate_lua` | Lua 脚本语法校验 |
@@ -74,7 +74,7 @@ run_workflow(args)
 
 - **presentation / library 分层**：所有不涉及 I/O 的 run 逻辑在 `service`，`commands` 只管"怎么显示"。这让未来的 Web UI / TUI 可以复用 `service` 而不重写编排逻辑。
 - **每个子命令一个文件**：避免单文件膨胀，新命令只需 `mod + handler + dispatch arm`。
-- **`runs_base_dir()` 统一路径**：所有命令通过 `commands::runs_base_dir()` 获取 `./.maestro/runs`，不硬编码。
+- **`runs_base_dir()` 统一路径**：所有命令通过 `commands::runs_base_dir()` 获取 `./.luft/runs`，不硬编码。
 - **测试用 `GLOBAL_CWD_LOCK`**：部分命令测试需要切换工作目录，用模块级 `Mutex` 防止并行测试的 CWD 竞争。
 
 ---

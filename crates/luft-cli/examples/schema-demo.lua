@@ -1,6 +1,6 @@
 -- schema-demo.lua — Schema-constrained structured output 演示
--- cargo run --bin maestro -- run -w examples/schema-demo.lua -b opencode --approve
--- cargo run --bin maestro -- run -w examples/schema-demo.lua -b mock (仅验证接线, schema 需 opencode)
+-- cargo run --bin Luft -- run -w examples/schema-demo.lua -b opencode --approve
+-- cargo run --bin Luft -- run -w examples/schema-demo.lua -b mock (仅验证接线, schema 需 opencode)
 --
 -- 演示 agent() / parallel() 中使用 schema 参数约束 LLM 输出结构，
 -- 以及结构化数据的定义、传递和组合。
@@ -74,10 +74,10 @@ function main()
   -- 1. 用 PERSON_SCHEMA 约束输出 → extract.output.name / .role / .languages / .yoe
   local extract = safe_agent({
     name = "contributor_extractor",
-    description = "提取 Maestro 项目的虚构贡献者信息",
+    description = "提取 Luft 项目的虚构贡献者信息",
     role = "analyst",
     prompt = table.concat({
-      "You are analyzing the Maestro project contributors.",
+      "You are analyzing the Luft project contributors.",
       "List 3 fictional contributors with their name, role, programming languages, and years of experience.",
       "Be specific and realistic (Rust, Lua, TypeScript).",
       "Return ONLY the structured output via the structured_output tool.",

@@ -7,7 +7,7 @@ local items = { "delete", "edit_source", "edit_config" }
 local results = parallel(items, function(item)
   if item == "delete" then
     return {
-      prompt = [[You are working on the Maestro project at /Users/apple/dev/maestro.
+      prompt = [[You are working on the Luft project at the current working directory (.).
 Delete ALL WebSocket and TUI-related files:
 
 1. rm -rf src/ws/
@@ -24,7 +24,7 @@ Return JSON { files_deleted: [string] }]],
     }
   elseif item == "edit_source" then
     return {
-      prompt = [[You are working on the Maestro project at /Users/apple/dev/maestro.
+      prompt = [[You are working on the Luft project at the current working directory (.).
 Edit source files to remove all WebSocket and TUI references.
 
 Modify these files (read each first, then edit):
@@ -69,7 +69,7 @@ Return JSON { modified_files: [string], summary: string }]],
     }
   else
     return {
-      prompt = [[You are working on the Maestro project at /Users/apple/dev/maestro.
+      prompt = [[You are working on the Luft project at the current working directory (.).
 Edit Cargo.toml and documentation files.
 
 1. Cargo.toml: Remove these three dependency lines:
@@ -116,7 +116,7 @@ phase("verify", 1)
 log("Running cargo check to verify compilation", "info")
 
 local verify = agent({
-  prompt = [[Run `cargo check 2>&1` in /Users/apple/dev/maestro.
+  prompt = [[Run `cargo check 2>&1` in the current working directory (.).
 
 Return JSON { ok: bool, output: string }.]],
   schema = {

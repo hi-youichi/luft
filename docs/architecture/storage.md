@@ -37,7 +37,7 @@
 | busy_timeout | 5s | 写锁竞争时等待 |
 | 外键 | ON | 级联删除（run 删除时清理子表） |
 | 连接池 | max=8 | 并发查询 |
-| DB 路径 | `.maestro/maestro.db` | 相对当前工作目录 |
+| DB 路径 | `.luft/luft.db` | 相对当前工作目录 |
 
 迁移通过 `sqlx::migrate!("./migrations")` 在编译时嵌入，运行时自动执行。
 

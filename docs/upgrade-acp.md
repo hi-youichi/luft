@@ -2,7 +2,7 @@
 
 ## 背景
 
-opencode v1.17.3 发送了 `usage_update` 类型的 `session/update` 通知，用于报告上下文窗口使用量和累计费用。Maestro 当前依赖的 `agent-client-protocol` **0.11.1**（schema **0.12.0**）不支持该变体，导致反序列化报错：
+opencode v1.17.3 发送了 `usage_update` 类型的 `session/update` 通知，用于报告上下文窗口使用量和累计费用。Luft 当前依赖的 `agent-client-protocol` **0.11.1**（schema **0.12.0**）不支持该变体，导致反序列化报错：
 
 ```
 WARN Handler errored: unknown variant `usage_update`, expected one of
@@ -11,7 +11,7 @@ WARN Handler errored: unknown variant `usage_update`, expected one of
   `current_mode_update`, `config_option_update`, `session_info_update`
 ```
 
-该错误由 opencode 端日志输出，不影响 Maestro 运行，但 token 统计不完整。
+该错误由 opencode 端日志输出，不影响 Luft 运行，但 token 统计不完整。
 
 ## 当前版本
 
@@ -153,10 +153,10 @@ cargo test 2>&1
 
 ```bash
 cargo run -- run -w examples/hello.lua -b opencode \
-    --log .maestro/example_logs/hello-acp.jsonl --log-format jsonl
+    --log .luft/example_logs/hello-acp.jsonl --log-format jsonl
 
 # 检查日志中是否有 UsageUpdate 事件
-grep "usage_update" .maestro/example_logs/hello-acp.jsonl
+grep "usage_update" .luft/example_logs/hello-acp.jsonl
 ```
 
 ### 第 6 步：更新断言脚本

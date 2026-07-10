@@ -5,6 +5,8 @@ edition = "2021"
 description = "Luft — multi-agent orchestration runtime"
 license = "MIT"
 repository = "https://github.com/hi-youichi/luft"
+keywords = ["luft", "agent", "orchestration", "lua", "workflow"]
+categories = ["asynchronous"]
 
 [features]
 testing = ["luft-core/testing"]

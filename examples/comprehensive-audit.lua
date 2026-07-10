@@ -6,7 +6,7 @@
 --   列目录 / 列文件 / 找 unsafe 行 / 判严重度 / 打分 / 投 yes-no 票 / 写总结。
 --
 -- 运行:
---   cargo run --bin maestro -- run --workflow examples/comprehensive-audit.lua \
+--   cargo run --bin luft -- run --workflow examples/comprehensive-audit.lua \
 --       --backend opencode --approve -o audit-report.md
 --   (mock: 将 --backend opencode 换成 --backend mock)
 --

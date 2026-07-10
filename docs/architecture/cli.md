@@ -38,7 +38,7 @@
 | `list [-l N]` | 列出历史 run + 状态 | ✅ |
 | `status <id>` | run 状态 + token + phase + findings | ✅ |
 | `logs <id> [-l N]` | 事件流日志 | ✅ |
-| `workflows` | 列出 `~/.maestro/workflows/*.lua` | ✅ |
+| `workflows` | 列出 `~/.luft/workflows/*.lua` | ✅ |
 | `save <name> <out>` | 保存工作流（当前为占位实现） | ⚠️ |
 
 `backend` 工厂在 `main.rs` 内联模块里：`mock` → `MockBackend`（10ms 成功），`opencode` / `loom-acp` → `AcpAdapter`（ACP 协议子进程）。未指定 `--backend` 时，优先级链为 CLI 参数 > config 文件 `backend.default` > 自动探测；自动探测扫描 `opencode` 和 `loom-acp` 二进制，单个可用直接使用，多个可用时交互式编号选择并持久化到 config，无可用后端回退 `mock`。详见 [backend-command.md](../design/backend-command.md)。
@@ -85,13 +85,13 @@
 
 ## 5. 只读命令（直接读 RunStore）
 
-`list`/`status`/`logs` 不启动调度，直接经 `get_run_store` 读 `./.maestro/runs/<id>/`：
+`list`/`status`/`logs` 不启动调度，直接经 `get_run_store` 读 `./.luft/runs/<id>/`：
 
 - `StatusOutput`：从 `RunCheckpoint` 投影出 run_id/task/status/phase/agent 计数/token/时间戳。
 - `list_runs_cmd`：按 `updated_at` 倒序。
 - `logs_cmd`：读 `events.jsonl`，每条事件序列化为一行。
 
-运行数据根目录：`./.maestro/runs`（相对当前工作目录）。
+运行数据根目录：`./.luft/runs`（相对当前工作目录）。
 
 ---
 

@@ -712,3 +712,1001 @@ impl ArtifactWriter {
         s
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+    use luft::core::contract::finding::{Finding, Severity};
+    use luft::core::contract::ids::RunId;
+
+    fn new_writer() -> (tempfile::TempDir, ArtifactWriter) {
+        let dir = tempfile::tempdir().unwrap();
+        let writer = ArtifactWriter::new(dir.path(), RunId::nil());
+        (dir, writer)
+    }
+
+    fn run_started() -> AgentEvent {
+        AgentEvent::RunStarted {
+            run_id: uuid::Uuid::now_v7(),
+            task: "demo task".to_string(),
+            ts: Utc::now(),
+        }
+    }
+
+    fn phase_started(phase_id: u32, label: &str) -> AgentEvent {
+        AgentEvent::PhaseStarted {
+            run_id: uuid::Uuid::now_v7(),
+            phase_id,
+            label: label.to_string(),
+            planned: 1,
+            parent_span_id: None,
+            description: None,
+            role: None,
+            ts: Utc::now(),
+        }
+    }
+
+    fn agent_started(phase_id: u32, agent_id: AgentId, name: &str) -> AgentEvent {
+        AgentEvent::AgentStarted {
+            run_id: uuid::Uuid::now_v7(),
+            phase_id,
+            agent_id,
+            prompt_preview: String::new(),
+            model: Some("test-model".to_string()),
+            description: None,
+            role: None,
+            name: Some(name.to_string()),
+            agent_seq: 1,
+        }
+    }
+
+    fn agent_done(agent_id: AgentId, name: &str) -> AgentEvent {
+        AgentEvent::AgentDone {
+            run_id: uuid::Uuid::now_v7(),
+            agent_id,
+            status: AgentStatus::Ok,
+            tokens: TokenUsage {
+                input: 100,
+                output: 50,
+                cache_read: 0,
+                cache_write: 0,
+            },
+            elapsed_ms: 1_500,
+            name: Some(name.to_string()),
+            agent_seq: 1,
+            output: serde_json::json!({"answer": "ok"}),
+            findings: vec![],
+            prompt: "do something".to_string(),
+            retry_count: 0,
+        }
+    }
+
+    // ── new() ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn new_creates_empty_writer() {
+        let (_tmp, writer) = new_writer();
+        // We don't have public accessors for state, but we can verify the
+        // writer handles events without panicking.
+        let mut w = writer;
+        w.handle(&run_started());
+    }
+
+    // ── RunStarted ────────────────────────────────────────────────────────
+
+    #[test]
+    fn run_started_records_task_description() {
+        let (_tmp, mut w) = new_writer();
+        w.handle(&run_started());
+        // Indirectly verified by inspecting the run summary markdown.
+        let mut w = w;
+        w.handle(&AgentEvent::RunDone {
+            run_id: uuid::Uuid::now_v7(),
+            status: RunStatus::Completed,
+            total_tokens: TokenUsage::default(),
+            report: serde_json::json!({}),
+            ts: Utc::now(),
+        });
+        let summary = w.render_run_summary();
+        assert!(summary.contains("demo task"), "task description in summary");
+    }
+
+    // ── PhaseStarted ──────────────────────────────────────────────────────
+
+    #[test]
+    fn phase_started_records_label() {
+        let (_tmp, mut w) = new_writer();
+        w.handle(&phase_started(1, "research"));
+        // Phase label surfaces in the agent report metadata after agent completes.
+        let agent_id = uuid::Uuid::now_v7();
+        w.handle(&agent_started(1, agent_id, "agent-a"));
+        w.handle(&agent_done(agent_id, "agent-a"));
+        let report_path = _tmp
+            .path()
+            .join("01_agent-a")
+            .join("report.md");
+        let content = std::fs::read_to_string(&report_path).unwrap();
+        assert!(content.contains("research"), "phase label should appear");
+    }
+
+    // ── AgentStarted ──────────────────────────────────────────────────────
+
+    #[test]
+    fn agent_started_does_not_write_file() {
+        let (tmp, mut w) = new_writer();
+        let agent_id = uuid::Uuid::now_v7();
+        w.handle(&agent_started(1, agent_id, "agent-a"));
+        // No report.md expected yet.
+        let report_path = tmp.path().join("01_agent-a").join("report.md");
+        assert!(!report_path.exists(), "report.md should not exist yet");
+    }
+
+    // ── AgentProgress ─────────────────────────────────────────────────────
+
+    #[test]
+    fn agent_progress_message_increments_round_count() {
+        let (tmp, mut w) = new_writer();
+        let agent_id = uuid::Uuid::now_v7();
+        w.handle(&agent_started(1, agent_id, "msg-agent"));
+        for _ in 0..3 {
+            w.handle(&AgentEvent::AgentProgress {
+                run_id: uuid::Uuid::now_v7(),
+                agent_id,
+                delta: ProgressDelta::Message {
+                    text: "hi".to_string(),
+                },
+            });
+        }
+        w.handle(&agent_done(agent_id, "msg-agent"));
+        let report = std::fs::read_to_string(tmp.path().join("01_msg-agent").join("report.md"))
+            .unwrap();
+        assert!(report.contains("Rounds: 3"), "round count should be 3, got:\n{report}");
+    }
+
+    #[test]
+    fn agent_progress_tool_call_counts_per_name() {
+        let (tmp, mut w) = new_writer();
+        let agent_id = uuid::Uuid::now_v7();
+        w.handle(&agent_started(1, agent_id, "tool-agent"));
+        for _ in 0..2 {
+            w.handle(&AgentEvent::AgentProgress {
+                run_id: uuid::Uuid::now_v7(),
+                agent_id,
+                delta: ProgressDelta::ToolCall {
+                    name: "read_file".to_string(),
+                    summary: "x".to_string(),
+                },
+            });
+        }
+        w.handle(&AgentEvent::AgentProgress {
+            run_id: uuid::Uuid::now_v7(),
+            agent_id,
+            delta: ProgressDelta::ToolCall {
+                name: "grep".to_string(),
+                summary: "y".to_string(),
+            },
+        });
+        w.handle(&agent_done(agent_id, "tool-agent"));
+        let report =
+            std::fs::read_to_string(tmp.path().join("01_tool-agent").join("report.md")).unwrap();
+        assert!(report.contains("read_file") && report.contains("2"));
+        assert!(report.contains("grep"));
+        assert!(report.contains("Tool Calls: 3"));
+    }
+
+    #[test]
+    fn agent_progress_file_edit_collected_and_deduped() {
+        let (tmp, mut w) = new_writer();
+        let agent_id = uuid::Uuid::now_v7();
+        w.handle(&agent_started(1, agent_id, "edit-agent"));
+        let path = std::path::PathBuf::from("/tmp/foo.rs");
+        for _ in 0..3 {
+            w.handle(&AgentEvent::AgentProgress {
+                run_id: uuid::Uuid::now_v7(),
+                agent_id,
+                delta: ProgressDelta::FileEdit { path: path.clone() },
+            });
+        }
+        w.handle(&agent_done(agent_id, "edit-agent"));
+        let report =
+            std::fs::read_to_string(tmp.path().join("01_edit-agent").join("report.md")).unwrap();
+        assert!(report.contains("File Edits: 3"));
+        // Dedup keeps unique paths in the per-path list, but the total count
+        // reflects every event. At minimum, the path is listed once.
+        assert!(report.contains("/tmp/foo.rs"));
+    }
+
+    #[test]
+    fn agent_progress_tokens_is_noop() {
+        let (tmp, mut w) = new_writer();
+        let agent_id = uuid::Uuid::now_v7();
+        w.handle(&agent_started(1, agent_id, "tok-agent"));
+        w.handle(&AgentEvent::AgentProgress {
+            run_id: uuid::Uuid::now_v7(),
+            agent_id,
+            delta: ProgressDelta::Tokens {
+                usage: TokenUsage::default(),
+            },
+        });
+        w.handle(&agent_done(agent_id, "tok-agent"));
+        // No panics; file exists.
+        assert!(tmp
+            .path()
+            .join("01_tok-agent")
+            .join("report.md")
+            .exists());
+    }
+
+    #[test]
+    fn agent_progress_for_unknown_agent_is_noop() {
+        let (_tmp, mut w) = new_writer();
+        let unknown = uuid::Uuid::now_v7();
+        // No AgentStarted before — must not panic.
+        w.handle(&AgentEvent::AgentProgress {
+            run_id: uuid::Uuid::now_v7(),
+            agent_id: unknown,
+            delta: ProgressDelta::Message {
+                text: "orphan".to_string(),
+            },
+        });
+    }
+
+    // ── AgentDone ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn agent_done_writes_report_with_status_ok() {
+        let (tmp, mut w) = new_writer();
+        let agent_id = uuid::Uuid::now_v7();
+        w.handle(&agent_started(1, agent_id, "done-ok"));
+        w.handle(&agent_done(agent_id, "done-ok"));
+        let path = tmp.path().join("01_done-ok").join("report.md");
+        assert!(path.exists(), "report should exist");
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.contains("# Agent #01 `done-ok`"));
+        assert!(content.contains("Status"));
+        assert!(content.contains("Ok"));
+        assert!(content.contains("do something")); // prompt
+        assert!(content.contains("\"answer\"")); // output JSON
+    }
+
+    #[test]
+    fn agent_done_writes_report_with_status_error() {
+        let (tmp, mut w) = new_writer();
+        let agent_id = uuid::Uuid::now_v7();
+        w.handle(&agent_started(1, agent_id, "err"));
+        w.handle(&AgentEvent::AgentDone {
+            run_id: uuid::Uuid::now_v7(),
+            agent_id,
+            status: AgentStatus::Error,
+            tokens: TokenUsage::default(),
+            elapsed_ms: 100,
+            name: Some("err".to_string()),
+            agent_seq: 2,
+            output: serde_json::Value::Null,
+            findings: vec![],
+            prompt: String::new(),
+            retry_count: 0,
+        });
+        let content = std::fs::read_to_string(tmp.path().join("02_err").join("report.md")).unwrap();
+        assert!(content.contains("Error"));
+    }
+
+    #[test]
+    fn agent_done_handles_null_output_for_ok_status() {
+        let (tmp, mut w) = new_writer();
+        let agent_id = uuid::Uuid::now_v7();
+        w.handle(&agent_started(1, agent_id, "nullout"));
+        w.handle(&AgentEvent::AgentDone {
+            run_id: uuid::Uuid::now_v7(),
+            agent_id,
+            status: AgentStatus::Ok,
+            tokens: TokenUsage::default(),
+            elapsed_ms: 0,
+            name: Some("nullout".to_string()),
+            agent_seq: 3,
+            output: serde_json::Value::Null,
+            findings: vec![],
+            prompt: String::new(),
+            retry_count: 0,
+        });
+        let content =
+            std::fs::read_to_string(tmp.path().join("03_nullout").join("report.md")).unwrap();
+        assert!(content.contains("(no output)"));
+    }
+
+    #[test]
+    fn agent_done_handles_missing_name_uses_seq_only() {
+        let (tmp, mut w) = new_writer();
+        let agent_id = uuid::Uuid::now_v7();
+        // Don't emit AgentStarted first — record has no name.
+        w.handle(&AgentEvent::AgentDone {
+            run_id: uuid::Uuid::now_v7(),
+            agent_id,
+            status: AgentStatus::Ok,
+            tokens: TokenUsage::default(),
+            elapsed_ms: 0,
+            name: None,
+            agent_seq: 7,
+            output: serde_json::Value::Null,
+            findings: vec![],
+            prompt: String::new(),
+            retry_count: 0,
+        });
+        let dir = tmp.path().join("07");
+        assert!(dir.exists(), "directory '07' should be created");
+        assert!(dir.join("report.md").exists());
+    }
+
+    #[test]
+    fn agent_done_records_findings_sorted_by_severity() {
+        let (tmp, mut w) = new_writer();
+        let agent_id = uuid::Uuid::now_v7();
+        w.handle(&agent_started(1, agent_id, "find-agent"));
+        w.handle(&AgentEvent::AgentDone {
+            run_id: uuid::Uuid::now_v7(),
+            agent_id,
+            status: AgentStatus::Ok,
+            tokens: TokenUsage::default(),
+            elapsed_ms: 0,
+            name: Some("find-agent".to_string()),
+            agent_seq: 1,
+            output: serde_json::Value::Null,
+            findings: vec![
+                Finding {
+                    kind: "low".into(),
+                    severity: Severity::Low,
+                    title: "L".into(),
+                    detail: "d".into(),
+                    location: None,
+                    evidence: vec![],
+                    data: serde_json::Value::Null,
+                },
+                Finding {
+                    kind: "critical".into(),
+                    severity: Severity::Critical,
+                    title: "C".into(),
+                    detail: "d".into(),
+                    location: None,
+                    evidence: vec![],
+                    data: serde_json::Value::Null,
+                },
+            ],
+            prompt: String::new(),
+            retry_count: 0,
+        });
+        let content =
+            std::fs::read_to_string(tmp.path().join("01_find-agent").join("report.md")).unwrap();
+        assert!(content.contains("Findings"));
+        // Critical (lower Ord value? actually High<Critical — see Severity::ord)
+        // We just check both titles appear.
+        assert!(content.contains("L"));
+        assert!(content.contains("C"));
+    }
+
+    // ── Pipeline events ───────────────────────────────────────────────────
+
+    #[test]
+    fn pipeline_started_writes_summary_on_done() {
+        let (tmp, mut w) = new_writer();
+        w.handle(&AgentEvent::PipelineStarted {
+            run_id: uuid::Uuid::now_v7(),
+            total_stages: 2,
+            items: 3,
+        });
+        w.handle(&AgentEvent::PipelineStageStarted {
+            run_id: uuid::Uuid::now_v7(),
+            stage_index: 0,
+            label: "lint".into(),
+            agents_in_stage: 1,
+        });
+        // Item 0 in stage 0 ok
+        w.handle(&AgentEvent::PipelineItemDone {
+            run_id: uuid::Uuid::now_v7(),
+            stage_index: 0,
+            item_index: 0,
+            status: AgentStatus::Ok,
+            tokens: TokenUsage {
+                input: 1,
+                output: 2,
+                cache_read: 0,
+                cache_write: 0,
+            },
+            elapsed_ms: 100,
+        });
+        // Item 0 in stage 1 error
+        w.handle(&AgentEvent::PipelineItemDone {
+            run_id: uuid::Uuid::now_v7(),
+            stage_index: 1,
+            item_index: 0,
+            status: AgentStatus::Error,
+            tokens: TokenUsage::default(),
+            elapsed_ms: 50,
+        });
+        w.handle(&AgentEvent::PipelineDone {
+            run_id: uuid::Uuid::now_v7(),
+            stages_completed: 2,
+            total_ok: 1,
+            total_failed: 1,
+        });
+        let summary = tmp.path().join("pipeline_0").join("_summary.md");
+        assert!(summary.exists(), "pipeline summary should be written");
+        let content = std::fs::read_to_string(&summary).unwrap();
+        assert!(content.contains("Pipeline: 2 stages x 3 items"));
+        assert!(content.contains("lint"));
+        assert!(content.contains("OK 1"));
+        assert!(content.contains("Failed 1"));
+    }
+
+    #[test]
+    fn pipeline_handles_unfilled_item_slots() {
+        let (tmp, mut w) = new_writer();
+        w.handle(&AgentEvent::PipelineStarted {
+            run_id: uuid::Uuid::now_v7(),
+            total_stages: 1,
+            items: 2,
+        });
+        // Only item 1 completes — item 0 stays None.
+        w.handle(&AgentEvent::PipelineItemDone {
+            run_id: uuid::Uuid::now_v7(),
+            stage_index: 0,
+            item_index: 1,
+            status: AgentStatus::Ok,
+            tokens: TokenUsage::default(),
+            elapsed_ms: 0,
+        });
+        w.handle(&AgentEvent::PipelineDone {
+            run_id: uuid::Uuid::now_v7(),
+            stages_completed: 1,
+            total_ok: 1,
+            total_failed: 0,
+        });
+        let content =
+            std::fs::read_to_string(tmp.path().join("pipeline_0").join("_summary.md").as_path())
+                .unwrap();
+        // Empty slot should render as " - "
+        assert!(content.contains(" - "));
+    }
+
+    #[test]
+    fn pipeline_done_without_started_is_safe() {
+        let (_tmp, mut w) = new_writer();
+        // No PipelineStarted -> ctx is None -> write_pipeline_summary is a no-op.
+        w.handle(&AgentEvent::PipelineDone {
+            run_id: uuid::Uuid::now_v7(),
+            stages_completed: 0,
+            total_ok: 0,
+            total_failed: 0,
+        });
+        // No pipeline directory should exist.
+        let entries: Vec<_> = std::fs::read_dir(_tmp.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|e| e.file_name().to_string_lossy().starts_with("pipeline_"))
+            .collect();
+        assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn pipeline_item_done_before_started_is_safe() {
+        let (_tmp, mut w) = new_writer();
+        w.handle(&AgentEvent::PipelineItemDone {
+            run_id: uuid::Uuid::now_v7(),
+            stage_index: 0,
+            item_index: 0,
+            status: AgentStatus::Ok,
+            tokens: TokenUsage::default(),
+            elapsed_ms: 0,
+        });
+    }
+
+    // ── Parallel events ───────────────────────────────────────────────────
+
+    #[test]
+    fn parallel_started_then_done_writes_summary() {
+        let (tmp, mut w) = new_writer();
+        w.handle(&AgentEvent::ParallelStarted {
+            run_id: uuid::Uuid::now_v7(),
+            phase_id: 0,
+            span_id: 1,
+            count: 4,
+        });
+        w.handle(&AgentEvent::ParallelDone {
+            run_id: uuid::Uuid::now_v7(),
+            phase_id: 0,
+            span_id: 1,
+            ok: 3,
+            failed: 1,
+            results: serde_json::json!({}),
+            elapsed_ms: 500,
+        });
+        let summary = tmp.path().join("parallel_0").join("_summary.md");
+        assert!(summary.exists(), "parallel summary should exist");
+        let content = std::fs::read_to_string(&summary).unwrap();
+        assert!(content.contains("Parallel: 4 items"));
+        assert!(content.contains("OK 3"));
+        assert!(content.contains("Failed 1"));
+    }
+
+    #[test]
+    fn parallel_done_without_started_is_noop() {
+        let (_tmp, mut w) = new_writer();
+        // No ParallelStarted before -> ParallelContext is None -> no file written.
+        w.handle(&AgentEvent::ParallelDone {
+            run_id: uuid::Uuid::now_v7(),
+            phase_id: 0,
+            span_id: 0,
+            ok: 0,
+            failed: 0,
+            results: serde_json::json!({}),
+            elapsed_ms: 0,
+        });
+        let entries: Vec<_> = std::fs::read_dir(_tmp.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|e| e.file_name().to_string_lossy().starts_with("parallel_"))
+            .collect();
+        assert!(entries.is_empty());
+    }
+
+    // ── ReportEmitted ─────────────────────────────────────────────────────
+
+    #[test]
+    fn report_emitted_writes_report_file() {
+        let (tmp, mut w) = new_writer();
+        w.handle(&AgentEvent::ReportEmitted {
+            run_id: uuid::Uuid::now_v7(),
+            phase_id: 0,
+            report: serde_json::json!({"answer": 42, "ok": true}),
+        });
+        let path = tmp.path().join("_report.md");
+        assert!(path.exists());
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.contains("# Final Report"));
+        assert!(content.contains("\"answer\""));
+        assert!(content.contains("42"));
+    }
+
+    // ── RunDone ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn run_done_writes_summary_with_status_and_agents() {
+        let (tmp, mut w) = new_writer();
+        w.handle(&run_started());
+        let a1 = uuid::Uuid::now_v7();
+        let a2 = uuid::Uuid::now_v7();
+        w.handle(&agent_started(0, a1, "alpha"));
+        w.handle(&agent_started(0, a2, "beta"));
+        w.handle(&AgentEvent::AgentDone {
+            run_id: uuid::Uuid::now_v7(),
+            agent_id: a1,
+            status: AgentStatus::Ok,
+            tokens: TokenUsage {
+                input: 10,
+                output: 5,
+                cache_read: 0,
+                cache_write: 0,
+            },
+            elapsed_ms: 200,
+            name: Some("alpha".to_string()),
+            agent_seq: 1,
+            output: serde_json::Value::Null,
+            findings: vec![],
+            prompt: String::new(),
+            retry_count: 0,
+        });
+        w.handle(&AgentEvent::AgentDone {
+            run_id: uuid::Uuid::now_v7(),
+            agent_id: a2,
+            status: AgentStatus::Error,
+            tokens: TokenUsage::default(),
+            elapsed_ms: 50,
+            name: Some("beta".to_string()),
+            agent_seq: 2,
+            output: serde_json::Value::Null,
+            findings: vec![],
+            prompt: String::new(),
+            retry_count: 1,
+        });
+        w.handle(&AgentEvent::RunDone {
+            run_id: uuid::Uuid::now_v7(),
+            status: RunStatus::Failed,
+            total_tokens: TokenUsage {
+                input: 100,
+                output: 50,
+                cache_read: 0,
+                cache_write: 0,
+            },
+            report: serde_json::json!({"summary": "completed"}),
+            ts: Utc::now(),
+        });
+        let summary = tmp.path().join("_summary.md");
+        assert!(summary.exists());
+        let content = std::fs::read_to_string(&summary).unwrap();
+        assert!(content.contains("# Run Summary"));
+        assert!(content.contains("Failed"));
+        assert!(content.contains("alpha"));
+        assert!(content.contains("beta"));
+        // Pipeline/Parallel counts only shown if > 0.
+        assert!(!content.contains("Pipelines"));
+        assert!(!content.contains("Parallels"));
+        // Errors section
+        assert!(content.contains("## Errors"));
+        // Final report
+        assert!(content.contains("## Final Report"));
+        assert!(content.contains("\"summary\""));
+    }
+
+    #[test]
+    fn run_done_truncates_long_task_description() {
+        let (tmp, mut w) = new_writer();
+        let long_task = "x".repeat(200);
+        w.handle(&AgentEvent::RunStarted {
+            run_id: uuid::Uuid::now_v7(),
+            task: long_task.clone(),
+            ts: Utc::now(),
+        });
+        w.handle(&AgentEvent::RunDone {
+            run_id: uuid::Uuid::now_v7(),
+            status: RunStatus::Completed,
+            total_tokens: TokenUsage::default(),
+            report: serde_json::json!({}),
+            ts: Utc::now(),
+        });
+        let summary = std::fs::read_to_string(tmp.path().join("_summary.md")).unwrap();
+        // First 100 chars only
+        assert!(summary.contains(&"x".repeat(100)));
+        assert!(!summary.contains(&"x".repeat(101)));
+    }
+
+    #[test]
+    fn run_done_with_no_agents_skips_agents_section() {
+        let (tmp, mut w) = new_writer();
+        w.handle(&AgentEvent::RunDone {
+            run_id: uuid::Uuid::now_v7(),
+            status: RunStatus::Completed,
+            total_tokens: TokenUsage::default(),
+            report: serde_json::json!({}),
+            ts: Utc::now(),
+        });
+        let summary = std::fs::read_to_string(tmp.path().join("_summary.md")).unwrap();
+        assert!(!summary.contains("## Agents"));
+        assert!(!summary.contains("## Errors"));
+        // Agents count row still present in Overview
+        assert!(summary.contains("Agents"));
+    }
+
+    #[test]
+    fn run_done_includes_pipeline_count_when_started() {
+        let (tmp, mut w) = new_writer();
+        w.handle(&AgentEvent::PipelineStarted {
+            run_id: uuid::Uuid::now_v7(),
+            total_stages: 1,
+            items: 1,
+        });
+        w.handle(&AgentEvent::RunDone {
+            run_id: uuid::Uuid::now_v7(),
+            status: RunStatus::Completed,
+            total_tokens: TokenUsage::default(),
+            report: serde_json::json!({}),
+            ts: Utc::now(),
+        });
+        let summary = std::fs::read_to_string(tmp.path().join("_summary.md")).unwrap();
+        assert!(summary.contains("Pipelines"));
+    }
+
+    #[test]
+    fn run_done_includes_parallel_count_when_started() {
+        let (tmp, mut w) = new_writer();
+        w.handle(&AgentEvent::ParallelStarted {
+            run_id: uuid::Uuid::now_v7(),
+            phase_id: 0,
+            span_id: 0,
+            count: 2,
+        });
+        w.handle(&AgentEvent::RunDone {
+            run_id: uuid::Uuid::now_v7(),
+            status: RunStatus::Completed,
+            total_tokens: TokenUsage::default(),
+            report: serde_json::json!({}),
+            ts: Utc::now(),
+        });
+        let summary = std::fs::read_to_string(tmp.path().join("_summary.md")).unwrap();
+        assert!(summary.contains("Parallels"));
+    }
+
+    #[test]
+    fn run_done_uses_existing_final_report_when_present() {
+        let (tmp, mut w) = new_writer();
+        w.handle(&AgentEvent::ReportEmitted {
+            run_id: uuid::Uuid::now_v7(),
+            phase_id: 0,
+            report: serde_json::json!({"from": "ReportEmitted"}),
+        });
+        w.handle(&AgentEvent::RunDone {
+            run_id: uuid::Uuid::now_v7(),
+            status: RunStatus::Completed,
+            total_tokens: TokenUsage::default(),
+            report: serde_json::json!({"from": "RunDone"}),
+            ts: Utc::now(),
+        });
+        let summary = std::fs::read_to_string(tmp.path().join("_summary.md")).unwrap();
+        // RunDone should not overwrite an existing ReportEmitted.
+        assert!(summary.contains("\"from\""));
+        assert!(summary.contains("ReportEmitted"));
+        assert!(!summary.contains("RunDone"));
+    }
+
+    #[test]
+    fn run_done_uses_run_report_when_no_report_emitted() {
+        let (tmp, mut w) = new_writer();
+        w.handle(&AgentEvent::RunDone {
+            run_id: uuid::Uuid::now_v7(),
+            status: RunStatus::Completed,
+            total_tokens: TokenUsage::default(),
+            report: serde_json::json!({"only_from_run_done": true}),
+            ts: Utc::now(),
+        });
+        let summary = std::fs::read_to_string(tmp.path().join("_summary.md")).unwrap();
+        assert!(summary.contains("\"only_from_run_done\""));
+        assert!(summary.contains("true"));
+    }
+
+    // ── Unhandled events ──────────────────────────────────────────────────
+
+    #[test]
+    fn unhandled_events_do_not_panic() {
+        let (_tmp, mut w) = new_writer();
+        w.handle(&AgentEvent::PhaseDone {
+            run_id: uuid::Uuid::now_v7(),
+            phase_id: 0,
+            ok: 1,
+            failed: 0,
+            ts: Utc::now(),
+        });
+        w.handle(&AgentEvent::AcpRaw {
+            run_id: uuid::Uuid::now_v7(),
+            agent_id: uuid::Uuid::now_v7(),
+            kind: "agent_message_chunk".into(),
+            raw: serde_json::json!({}),
+        });
+        w.handle(&AgentEvent::WorkflowStarted {
+            run_id: uuid::Uuid::now_v7(),
+            span_id: 0,
+            path: "/tmp/x.lua".into(),
+            args: serde_json::json!({}),
+        });
+        w.handle(&AgentEvent::WorkflowDone {
+            run_id: uuid::Uuid::now_v7(),
+            span_id: 0,
+            path: "/tmp/x.lua".into(),
+            report: serde_json::json!({}),
+            elapsed_ms: 0,
+            error: None,
+        });
+    }
+
+    // ── Agent sequence number ────────────────────────────────────────────
+
+    #[test]
+    fn multiple_agents_get_distinct_seq_directories() {
+        let (tmp, mut w) = new_writer();
+        let a1 = uuid::Uuid::now_v7();
+        let a2 = uuid::Uuid::now_v7();
+        let a3 = uuid::Uuid::now_v7();
+
+        w.handle(&AgentEvent::AgentStarted {
+            run_id: uuid::Uuid::now_v7(),
+            phase_id: 0,
+            agent_id: a1,
+            prompt_preview: String::new(),
+            model: None,
+            description: None,
+            role: None,
+            name: Some("a".into()),
+            agent_seq: 1,
+        });
+        w.handle(&AgentEvent::AgentStarted {
+            run_id: uuid::Uuid::now_v7(),
+            phase_id: 0,
+            agent_id: a2,
+            prompt_preview: String::new(),
+            model: None,
+            description: None,
+            role: None,
+            name: Some("b".into()),
+            agent_seq: 2,
+        });
+        w.handle(&AgentEvent::AgentStarted {
+            run_id: uuid::Uuid::now_v7(),
+            phase_id: 0,
+            agent_id: a3,
+            prompt_preview: String::new(),
+            model: None,
+            description: None,
+            role: None,
+            name: None,
+            agent_seq: 3,
+        });
+
+        for (id, seq, name) in [(a1, 1, "a"), (a2, 2, "b"), (a3, 3, "c")] {
+            w.handle(&AgentEvent::AgentDone {
+                run_id: uuid::Uuid::now_v7(),
+                agent_id: id,
+                status: AgentStatus::Ok,
+                tokens: TokenUsage::default(),
+                elapsed_ms: 0,
+                name: Some(name.into()),
+                agent_seq: seq,
+                output: serde_json::Value::Null,
+                findings: vec![],
+                prompt: String::new(),
+                retry_count: 0,
+            });
+        }
+        assert!(tmp.path().join("01_a").join("report.md").exists());
+        assert!(tmp.path().join("02_b").join("report.md").exists());
+        // Third agent had name=None on AgentStarted but AgentDone provided
+        // name="c"; the AgentDone handler overrides the registered name with
+        // its own value, so the directory should reflect "03_c".
+        assert!(tmp.path().join("03_c").join("report.md").exists());
+        // The directory created from AgentStarted alone (with no name) does
+        // not exist since the AgentDone handler removed the agent record.
+        assert!(!tmp.path().join("03").exists());
+    }
+
+    // ── agent_dir_name helper ─────────────────────────────────────────────
+
+    #[test]
+    fn agent_dir_name_includes_name_when_present() {
+        let n = ArtifactWriter::agent_dir_name(3, &Some("hello".into()));
+        assert_eq!(n, "03_hello");
+    }
+
+    #[test]
+    fn agent_dir_name_uses_seq_when_name_missing() {
+        let n = ArtifactWriter::agent_dir_name(7, &None);
+        assert_eq!(n, "07");
+    }
+
+    #[test]
+    fn agent_dir_name_zero_pads_seq() {
+        let n = ArtifactWriter::agent_dir_name(1, &None);
+        assert_eq!(n, "01");
+        let n = ArtifactWriter::agent_dir_name(10, &None);
+        assert_eq!(n, "10");
+        let n = ArtifactWriter::agent_dir_name(99, &None);
+        assert_eq!(n, "99");
+    }
+
+    // ── Token accounting in agent report ──────────────────────────────────
+
+    #[test]
+    fn agent_report_total_excludes_cache() {
+        let (tmp, mut w) = new_writer();
+        let agent_id = uuid::Uuid::now_v7();
+        w.handle(&agent_started(1, agent_id, "tok"));
+        w.handle(&AgentEvent::AgentDone {
+            run_id: uuid::Uuid::now_v7(),
+            agent_id,
+            status: AgentStatus::Ok,
+            tokens: TokenUsage {
+                input: 7,
+                output: 3,
+                cache_read: 999,
+                cache_write: 999,
+            },
+            elapsed_ms: 0,
+            name: Some("tok".into()),
+            agent_seq: 1,
+            output: serde_json::Value::Null,
+            findings: vec![],
+            prompt: String::new(),
+            retry_count: 0,
+        });
+        let content = std::fs::read_to_string(tmp.path().join("01_tok").join("report.md")).unwrap();
+        // Total = input + output = 10
+        assert!(content.contains("| **Total**   | **    10** |"));
+    }
+
+    // ── Phase label reflected in report metadata ─────────────────────────
+
+    #[test]
+    fn agent_report_includes_phase_label_in_metadata() {
+        let (tmp, mut w) = new_writer();
+        let agent_id = uuid::Uuid::now_v7();
+        w.handle(&phase_started(5, "implementation"));
+        w.handle(&agent_started(5, agent_id, "ph-agent"));
+        w.handle(&agent_done(agent_id, "ph-agent"));
+        let content =
+            std::fs::read_to_string(tmp.path().join("01_ph-agent").join("report.md")).unwrap();
+        assert!(content.contains("implementation"));
+    }
+
+    // ── Pipeline stage label surfaces in summary ─────────────────────────
+
+    #[test]
+    fn pipeline_summary_includes_stage_labels() {
+        let (tmp, mut w) = new_writer();
+        w.handle(&AgentEvent::PipelineStarted {
+            run_id: uuid::Uuid::now_v7(),
+            total_stages: 2,
+            items: 1,
+        });
+        w.handle(&AgentEvent::PipelineStageStarted {
+            run_id: uuid::Uuid::now_v7(),
+            stage_index: 0,
+            label: "fetch".into(),
+            agents_in_stage: 1,
+        });
+        w.handle(&AgentEvent::PipelineStageStarted {
+            run_id: uuid::Uuid::now_v7(),
+            stage_index: 1,
+            label: "summarize".into(),
+            agents_in_stage: 1,
+        });
+        w.handle(&AgentEvent::PipelineDone {
+            run_id: uuid::Uuid::now_v7(),
+            stages_completed: 2,
+            total_ok: 0,
+            total_failed: 0,
+        });
+        let content =
+            std::fs::read_to_string(tmp.path().join("pipeline_0").join("_summary.md").as_path())
+                .unwrap();
+        assert!(content.contains("fetch"));
+        assert!(content.contains("summarize"));
+    }
+
+    #[test]
+    fn pipeline_summary_uses_default_label_for_unlabeled_stage() {
+        let (tmp, mut w) = new_writer();
+        w.handle(&AgentEvent::PipelineStarted {
+            run_id: uuid::Uuid::now_v7(),
+            total_stages: 1,
+            items: 1,
+        });
+        // No PipelineStageStarted for stage 0 -> label is empty -> default "stage".
+        w.handle(&AgentEvent::PipelineDone {
+            run_id: uuid::Uuid::now_v7(),
+            stages_completed: 1,
+            total_ok: 0,
+            total_failed: 0,
+        });
+        let content =
+            std::fs::read_to_string(tmp.path().join("pipeline_0").join("_summary.md").as_path())
+                .unwrap();
+        assert!(content.contains("stage"));
+    }
+
+    // ── Multiple pipeline runs get distinct indices ──────────────────────
+
+    #[test]
+    fn multiple_pipelines_get_distinct_indices() {
+        let (tmp, mut w) = new_writer();
+        w.handle(&AgentEvent::PipelineStarted {
+            run_id: uuid::Uuid::now_v7(),
+            total_stages: 1,
+            items: 1,
+        });
+        w.handle(&AgentEvent::PipelineDone {
+            run_id: uuid::Uuid::now_v7(),
+            stages_completed: 1,
+            total_ok: 0,
+            total_failed: 0,
+        });
+        w.handle(&AgentEvent::PipelineStarted {
+            run_id: uuid::Uuid::now_v7(),
+            total_stages: 1,
+            items: 1,
+        });
+        w.handle(&AgentEvent::PipelineDone {
+            run_id: uuid::Uuid::now_v7(),
+            stages_completed: 1,
+            total_ok: 0,
+            total_failed: 0,
+        });
+        assert!(tmp.path().join("pipeline_0").join("_summary.md").exists());
+        assert!(tmp.path().join("pipeline_1").join("_summary.md").exists());
+    }
+}

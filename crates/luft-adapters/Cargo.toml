@@ -5,6 +5,8 @@ edition = "2021"
 description = "ACP backend adapter for Luft"
 license = "MIT"
 repository = "https://github.com/hi-youichi/luft"
+keywords = ["luft", "agent", "orchestration", "acp"]
+categories = ["api-bindings", "asynchronous"]
 
 [features]
 unstable_end_turn_token_usage = ["agent-client-protocol/unstable_end_turn_token_usage"]

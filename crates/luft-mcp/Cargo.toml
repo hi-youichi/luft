@@ -4,6 +4,8 @@ version = { workspace = true }
 edition = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
+keywords = ["luft", "agent", "orchestration", "mcp", "mcp-protocol"]
+categories = ["api-bindings", "asynchronous"]
 description = "MCP server crate — exposes workflow authoring resources and execution tools to external AI clients"
 
 [dependencies]

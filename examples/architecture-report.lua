@@ -5,11 +5,11 @@
 -- 最后合成一份中文架构概览 Markdown 报告。
 --
 -- 运行:
---   cargo run --bin maestro -- run --workflow examples/architecture-report.lua \
+--   cargo run --bin luft -- run --workflow examples/architecture-report.lua \
 --       --backend opencode --approve -o architecture-report.md
 
 meta = {
-  reasoning = "Discover and analyze all Rust modules in Maestro codebase, then synthesize a comprehensive Chinese architecture overview report",
+  reasoning = "Discover and analyze all Rust modules in Luft codebase, then synthesize a comprehensive Chinese architecture overview report",
   phases = {
     { label = "discovery", dynamic = false },
     { label = "analysis", dynamic = true },
@@ -47,7 +47,7 @@ log("开始探索模块结构...")
 
 local discovery = safe_agent({
     prompt = table.concat({
-        "You are exploring the Maestro multi-agent orchestration runtime codebase",
+        "You are exploring the Luft multi-agent orchestration runtime codebase",
         "(current working directory). Your task is to enumerate ALL Rust modules.",
         "",
         "Steps:",
@@ -114,7 +114,7 @@ phase("analysis", #modules)
 local analyses = parallel(modules, function(m)
     return {
         prompt = table.concat({
-            "You are a Rust code analyst. Analyze the Maestro module '" .. m.name .. "'.",
+            "You are a Rust code analyst. Analyze the Luft module '" .. m.name .. "'.",
             "Module location: src/" .. m.path,
             "Sub-modules: " .. json.encode(m.submodules or {}),
             "",
@@ -125,7 +125,7 @@ local analyses = parallel(modules, function(m)
             '  "summary": "overall module purpose and responsibility",',
             '  "key_types": ["list of key structs, traits, enums defined"],',
             '  "responsibilities": ["list of key responsibilities"],',
-            '  "dependencies": ["other Maestro modules or external crates it depends on"],',
+            '  "dependencies": ["other Luft modules or external crates it depends on"],',
             '  "design_notes": "notable design decisions or patterns used",',
             '  "files": [{"file": "path", "summary": "what this file does, its key types, and its role"}]',
             "}",
@@ -133,7 +133,7 @@ local analyses = parallel(modules, function(m)
             "For each file, cover:",
             "  1) Primary responsibility",
             "  2) Key types/structs/traits/enums it defines",
-            "  3) Dependencies on other Maestro modules",
+            "  3) Dependencies on other Luft modules",
             "  4) How it fits in the overall orchestration system",
             "",
             "Be specific — mention actual struct/enum/trait/function names.",
@@ -153,15 +153,15 @@ local analysis_json = json.encode(analyses)
 local report_result = safe_agent({
     prompt = table.concat({
         "You are a senior software architect. Synthesize the following module analyses",
-        "into a comprehensive architecture overview report IN CHINESE for the Maestro project",
+        "into a comprehensive architecture overview report IN CHINESE for the Luft project",
         "(a multi-agent orchestration runtime written in Rust).",
         "",
         "Report structure (use Markdown):",
         "",
-        "# Maestro 架构概览报告",
+        "# Luft 架构概览报告",
         "",
         "## 1. 项目概述",
-        "- What is Maestro? Core purpose and problem it solves.",
+        "- What is Luft? Core purpose and problem it solves.",
         "- Technology stack summary.",
         "",
         "## 2. 整体架构",
@@ -210,7 +210,7 @@ local report_result = safe_agent({
 
 local overview_md = out_text(report_result)
 if #overview_md == 0 then
-    overview_md = "# Maestro 架构概览报告\n\n（报告生成失败，请检查 agent 日志。）"
+    overview_md = "# Luft 架构概览报告\n\n（报告生成失败，请检查 agent 日志。）"
 end
 
 ----------------------------------------------------------------------
@@ -227,7 +227,7 @@ total_tokens = total_tokens + (discovery.tokens or 0) + (report_result.tokens or
 log(string.format("分析完成: %d/%d 模块分析成功, 约 %d tokens", ok_count, #modules, total_tokens))
 
 report({
-    title = "Maestro 架构概览报告",
+    title = "Luft 架构概览报告",
     modules_analyzed = #modules,
     module_names = (function()
         local names = {}

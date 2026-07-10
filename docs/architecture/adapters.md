@@ -1,6 +1,6 @@
 # adapters 模块架构
 
-> **OpenCode ACP 后端（P0-A）。** 把 `opencode acp` 子进程驱动为一个 `AgentBackend`：作为 ACP **客户端**完成一次性会话，将流式更新映射成 Maestro 进度事件，最后收集结构化结果。
+> **OpenCode ACP 后端（P0-A）。** 把 `opencode acp` 子进程驱动为一个 `AgentBackend`：作为 ACP **客户端**完成一次性会话，将流式更新映射成 Luft 进度事件，最后收集结构化结果。
 
 源码：[`src/adapters/`](../../src/adapters/) ｜ 公开 API：[`src/adapters/mod.rs`](../../src/adapters/mod.rs)
 
@@ -8,7 +8,7 @@
 
 ## 1. 职责与边界
 
-`adapters` 是 `core` 的 `AgentBackend` trait 的**真实实现**（与之相对的是 core 里的 `MockBackend` 测试实现）。它把 Maestro 的 `AgentTask` 翻译成一次完整的 [ACP](https://agentclientprotocol.com)（Agent Client Protocol）会话，再把会话结果翻译回 `AgentResult`。
+`adapters` 是 `core` 的 `AgentBackend` trait 的**真实实现**（与之相对的是 core 里的 `MockBackend` 测试实现）。它把 Luft 的 `AgentTask` 翻译成一次完整的 [ACP](https://agentclientprotocol.com)（Agent Client Protocol）会话，再把会话结果翻译回 `AgentResult`。
 
 ```
    Scheduler ──run(task, ctx)──► AcpAdapter ──spawn──► `opencode acp` 子进程
@@ -31,7 +31,7 @@
 | 文件 | 职责 |
 |------|------|
 | [`acp_adapter.rs`](../../src/adapters/acp_adapter.rs) | `AcpConfig` + `AcpAdapter`；一次性会话生命周期 `run_acp_session` |
-| [`update_mapper.rs`](../../src/adapters/update_mapper.rs) | ACP `SessionUpdate` → Maestro `ProgressDelta`；累积 message 文本与 token |
+| [`update_mapper.rs`](../../src/adapters/update_mapper.rs) | ACP `SessionUpdate` → Luft `ProgressDelta`；累积 message 文本与 token |
 | [`permission.rs`](../../src/adapters/permission.rs) | 非交互 `request_permission` 自动决策（纯逻辑 + 单测） |
 | [`result_collector.rs`](../../src/adapters/result_collector.rs) | stop_reason + message → `AgentResult`（findings 文本回退解析） |
 
@@ -141,7 +141,7 @@ output = findings 非空 ? findings 的 JSON : { "text": message }
 ## 7. 当前状态与局限（v0.1）
 
 - 仅实现 `opencode` 一种后端；多后端/能力路由是 v0.2。
-- `mcp_injection=false`：agent 当前**不连**到 Maestro 的 MCP 数据面（见 [mcp.md](./mcp.md)），findings 只能从文本回退解析。
+- `mcp_injection=false`：agent 当前**不连**到 Luft 的 MCP 数据面（见 [mcp.md](./mcp.md)），findings 只能从文本回退解析。
 - `extract_inputs` 的 `mcp_tool` 恒为 `None`——MCP 工具维度的权限尚未接线。
 - token 用量依赖 opencode 在 update 里上报 `usage`；若后端不报则为 0。
 

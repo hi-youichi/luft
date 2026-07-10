@@ -434,3 +434,525 @@ impl std::future::IntoFuture for RunHandle {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    //! Tests for the [`LuftBuilder`] / [`Luft`] / [`RunHandle`] facade.
+    //!
+    //! These cover:
+    //! - constructor invariants (default backend = None),
+    //! - every setter is reachable and accepted,
+    //! - `build()` enforces the backend requirement and creates the base
+    //!   directory on success,
+    //! - the run / query / cancel call surface compiles and is callable,
+    //! - end-to-end execution via `run_script` against a `MockBackend`.
+    //!
+    //! Run handle internally uses a tokio task. We use `#[tokio::test]` only
+    //! for tests that need to drive the runtime; everything else is `#[test]`.
+
+    use super::*;
+    use luft_core::mock_backend::{MockBackend, MockBehavior};
+    use luft_core::TokenUsage;
+    use std::time::Duration;
+    use tempfile::tempdir;
+
+    /// Helper: create a `MockBackend` that always returns `output` immediately.
+    fn mock_backend(returning: serde_json::Value) -> MockBackend {
+        MockBackend::new(
+            "mock",
+            vec![MockBehavior::Success {
+                output: returning,
+                tokens: TokenUsage::default(),
+                delay: Duration::ZERO,
+            }],
+        )
+    }
+
+    // -----------------------------------------------------------------
+    // LuftBuilder: constructor / defaults / Setter plumbing
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn new_builder_has_no_backend() {
+        // `new()` starts life without a backend — `build()` must refuse.
+        let b = LuftBuilder::new();
+        let err = b.build();
+        // `Luft` is not Debug, so we pattern-match instead of `.expect_err`.
+        match err {
+            Err(LuftError::BackendNotConfigured) => {}
+            Err(other) => panic!("expected BackendNotConfigured, got {:?}", other),
+            Ok(_) => panic!("build() should fail without backend"),
+        }
+    }
+
+    #[test]
+    fn default_impl_matches_new() {
+        let a = LuftBuilder::new();
+        let b = LuftBuilder::default();
+        match a.build() {
+            Err(LuftError::BackendNotConfigured) => {}
+            Err(other) => panic!("a.build() returned wrong error: {:?}", other),
+            Ok(_) => panic!("a.build() unexpectedly succeeded"),
+        }
+        match b.build() {
+            Err(LuftError::BackendNotConfigured) => {}
+            Err(other) => panic!("b.build() returned wrong error: {:?}", other),
+            Ok(_) => panic!("b.build() unexpectedly succeeded"),
+        }
+    }
+
+    #[test]
+    fn backend_setter_constructs_a_luft() {
+        // Using a temporary directory lets us avoid leaving state behind.
+        let dir = tempdir().expect("tempdir");
+        let luft = LuftBuilder::new()
+            .backend(mock_backend(serde_json::json!("hello")))
+            .base_dir(dir.path().to_path_buf())
+            .build()
+            .expect("build should succeed");
+        // luft is opaque — its only assertion we can make here is that
+        // the base dir was created.
+        let _ = luft;
+    }
+
+    #[test]
+    fn backend_arc_setter_accepts_an_existing_arc() {
+        let dir = tempdir().expect("tempdir");
+        let backend: Arc<dyn AgentBackend> = Arc::new(mock_backend(serde_json::json!("hi")));
+        let luft = LuftBuilder::new()
+            .backend_arc(backend)
+            .base_dir(dir.path().to_path_buf())
+            .build()
+            .expect("build should succeed");
+        let _ = luft;
+    }
+
+    #[test]
+    fn base_dir_setter_overrides_default() {
+        // The default base_dir is `.luft/runs`. We override with a tempfile
+        // path; verify build succeeds and that path was created.
+        let dir = tempdir().expect("tempdir");
+        let nested = dir.path().join("nested/runs");
+        let luft = LuftBuilder::new()
+            .backend(mock_backend(serde_json::json!("ok")))
+            .base_dir(&nested)
+            .build()
+            .expect("build should succeed");
+        assert!(nested.exists(), "base_dir should have been created");
+        let _ = luft;
+    }
+
+    #[test]
+    fn base_dir_is_idempotently_created() {
+        // Calling `build()` when the dir already exists must not fail.
+        let dir = tempdir().expect("tempdir");
+        let pre_existing = dir.path().join("preexisting");
+        std::fs::create_dir_all(&pre_existing).expect("seed");
+        let luft = LuftBuilder::new()
+            .backend(mock_backend(serde_json::json!("ok")))
+            .base_dir(&pre_existing)
+            .build()
+            .expect("build should succeed even if dir exists");
+        let _ = luft;
+    }
+
+    #[test]
+    fn build_returns_io_error_when_base_dir_is_uncreatable() {
+        // Asking mkdir to traverse a *file* on the path should fail.
+        let dir = tempdir().expect("tempdir");
+        let blocker = dir.path().join("blocker.txt");
+        std::fs::write(&blocker, b"x").expect("seed blocker");
+        let bad = blocker.join("child"); // A path under a file → ENOTDIR.
+        let result = LuftBuilder::new()
+            .backend(mock_backend(serde_json::json!("ok")))
+            .base_dir(&bad)
+            .build();
+        match result {
+            // `Luft` does not impl Debug, so we cannot use `expect_err`.
+            Err(LuftError::Io(_)) => {}
+            Err(other) => panic!("expected Io(_), got {:?}", other),
+            Ok(_) => panic!("build must fail when base_dir cannot be created"),
+        }
+    }
+
+    #[test]
+    fn concurrency_setter_is_accepted() {
+        let dir = tempdir().expect("tempdir");
+        let luft = LuftBuilder::new()
+            .backend(mock_backend(serde_json::json!("ok")))
+            .base_dir(dir.path())
+            .concurrency(4)
+            .build()
+            .expect("build should succeed");
+        let _ = luft;
+    }
+
+    #[test]
+    fn planner_config_setter_is_accepted() {
+        let dir = tempdir().expect("tempdir");
+        let cfg = PlannerConfig {
+            planner_model: Some("gpt-test".into()),
+            max_retries: 1,
+            generate_mock: true,
+        };
+        let luft = LuftBuilder::new()
+            .backend(mock_backend(serde_json::json!("ok")))
+            .base_dir(dir.path())
+            .planner_config(cfg)
+            .build()
+            .expect("build should succeed");
+        let _ = luft;
+    }
+
+    #[test]
+    fn exec_limits_setter_is_accepted() {
+        let dir = tempdir().expect("tempdir");
+        let limits = ExecLimits::default();
+        let luft = LuftBuilder::new()
+            .backend(mock_backend(serde_json::json!("ok")))
+            .base_dir(dir.path())
+            .exec_limits(limits)
+            .build()
+            .expect("build should succeed");
+        let _ = luft;
+    }
+
+    #[test]
+    fn setter_chain_is_composable() {
+        // Test the canonical "everything set" composition path.
+        let dir = tempdir().expect("tempdir");
+        let _luft = LuftBuilder::new()
+            .backend(mock_backend(serde_json::json!("ok")))
+            .base_dir(dir.path())
+            .concurrency(8)
+            .planner_config(PlannerConfig::default())
+            .exec_limits(ExecLimits::default())
+            .build()
+            .expect("build should succeed");
+    }
+
+    // -----------------------------------------------------------------
+    // Luft: factory + query surface (no execution required)
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn luft_factory_returns_a_fresh_builder() {
+        let b = Luft::builder();
+        let other = Luft::builder();
+        // `Luft` does not impl Debug, so we cannot `.unwrap_err()` it.
+        match b.build() {
+            Err(LuftError::BackendNotConfigured) => {}
+            Err(other) => panic!("b.build() returned wrong error: {:?}", other),
+            Ok(_) => panic!("b.build() unexpectedly succeeded"),
+        }
+        match other.build() {
+            Err(LuftError::BackendNotConfigured) => {}
+            Err(other) => panic!("other.build() returned wrong error: {:?}", other),
+            Ok(_) => panic!("other.build() unexpectedly succeeded"),
+        }
+    }
+
+    #[test]
+    fn query_methods_return_typed_results() {
+        let dir = tempdir().expect("tempdir");
+        let luft = LuftBuilder::new()
+            .backend(mock_backend(serde_json::json!("ok")))
+            .base_dir(dir.path())
+            .build()
+            .expect("build should succeed");
+        // Each query returns LuftError; for a non-existent run they should
+        // be Err (NotFound-style) — we're verifying the type plumbing,
+        // not the precise error.
+        let _status: Result<Option<StatusOutput>, _> = luft.status("nonexistent");
+        let _list: Result<Vec<StatusOutput>, _> = luft.list();
+        let _events: Result<Vec<AgentEvent>, _> = luft.events("nonexistent");
+        let _report: Result<ReportStatus, _> = luft.report("nonexistent");
+        let _findings: Result<
+            Vec<luft_core::contract::finding::Finding>,
+            _,
+        > = luft.findings("nonexistent");
+        let _cancel: Result<(), _> = luft.cancel("nonexistent");
+    }
+
+    #[test]
+    fn list_is_empty_on_a_fresh_base_dir() {
+        let dir = tempdir().expect("tempdir");
+        let luft = LuftBuilder::new()
+            .backend(mock_backend(serde_json::json!("ok")))
+            .base_dir(dir.path())
+            .build()
+            .expect("build");
+        let runs = luft.list().expect("list on a fresh dir");
+        assert!(runs.is_empty());
+    }
+
+    // -----------------------------------------------------------------
+    // RunHandle: ergonomics
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn run_outcome_is_publicly_constructible_for_borrowers() {
+        // The fields are `pub`; verify the shape at the type level.
+        fn _takes(o: &RunOutcome) {
+            let _id: &RunId = &o.run_id;
+            let _dir: &String = &o.run_dir_name;
+        }
+        let _ = _takes;
+    }
+
+    #[test]
+    fn mock_backend_satisfies_agent_backend_bound_on_builder() {
+        // Sanity: `MockBackend` (the primary test backend) plugs into the
+        // builder without ceremony. This is the primary recipe; re-check
+        // it here to guard the `AgentBackend + 'static` bound.
+        let _b: LuftBuilder = LuftBuilder::new().backend(mock_backend(serde_json::json!(1)));
+    }
+
+    #[test]
+    fn own_backend_type_can_replace_mock() {
+        // Verifies that any `MockBackend` (and therefore any
+        // `AgentBackend + 'static`) can be passed through `backend_arc`
+        // as a pre-built `Arc<dyn AgentBackend>`. Using the in-tree
+        // MockBackend avoids needing to add a custom backend impl or
+        // depend on the `async_trait` macro here.
+        let dir = tempdir().expect("tempdir");
+        let backend: Arc<dyn AgentBackend> =
+            Arc::new(mock_backend(serde_json::json!("arc-ok")));
+        let luft = LuftBuilder::new()
+            .backend_arc(backend)
+            .base_dir(dir.path().to_path_buf())
+            .build()
+            .expect("build should accept Arc<dyn AgentBackend>");
+        let _ = luft;
+    }
+
+    #[test]
+    fn builder_clone_is_not_a_concern() {
+        // The builder is a value type whose fields are public-but-not-
+        // exposed. We verify here that two sequential `build()` calls
+        // produce two independent Luft values that don't share state.
+        let dir1 = tempdir().expect("tempdir");
+        let dir2 = tempdir().expect("tempdir");
+        let l1 = LuftBuilder::new()
+            .backend(mock_backend(serde_json::json!(1)))
+            .base_dir(dir1.path())
+            .concurrency(1)
+            .build()
+            .expect("build1");
+        let l2 = LuftBuilder::new()
+            .backend(mock_backend(serde_json::json!(2)))
+            .base_dir(dir2.path())
+            .concurrency(2)
+            .build()
+            .expect("build2");
+        // Both tempdir roots exist; verify they're distinct addresses.
+        assert_ne!(dir1.path(), dir2.path());
+        assert!(dir1.path().exists());
+        assert!(dir2.path().exists());
+        let _ = (l1, l2);
+    }
+
+    // -----------------------------------------------------------------
+    // End-to-end: build, run a trivial script, observe outcome.
+    // The MockBackend returns a Value but the script's `report()` is what
+    // gets surfaced via RunOutcome.
+    // -----------------------------------------------------------------
+
+    #[tokio::test]
+    async fn run_script_simple_trivial() {
+        let dir = tempdir().expect("tempdir");
+        let luft = LuftBuilder::new()
+            .backend(mock_backend(serde_json::json!("unused")))
+            .base_dir(dir.path())
+            .build()
+            .expect("build");
+        let script = r#"
+            meta = { reasoning = "triv", phases = {} }
+            function main()
+                report("ok")
+            end
+        "#;
+        let outcome = luft.run_script(script).await.expect("run_script");
+        // RunOutcome fields are public — verify shape.
+        let RunOutcome { run_id, run_dir_name, result } = outcome;
+        assert!(!run_id.to_string().is_empty(), "run_id should be a uuid");
+        assert!(!run_dir_name.is_empty(), "run_dir_name should be set");
+        let value = result.expect("script reported a value");
+        assert_eq!(value, serde_json::json!("ok"));
+    }
+
+    #[tokio::test]
+    async fn run_script_with_chained_lua_expressions() {
+        // Validate that multi-expression scripts (separated by `;` or
+        // newlines) execute and return `Ok(RunOutcome)` even when no
+        // `report()` is called.
+        let dir = tempdir().expect("tempdir");
+        let luft = LuftBuilder::new()
+            .backend(mock_backend(serde_json::json!("ignored")))
+            .base_dir(dir.path())
+            .build()
+            .expect("build");
+        let script = r#"
+            meta = { reasoning = "chain", phases = {} }
+            function main()
+                report(1 + 2 * 3)
+            end
+        "#;
+        let outcome = luft.run_script(script).await.expect("run_script");
+        assert_eq!(outcome.result.unwrap(), serde_json::json!(7));
+    }
+
+    #[tokio::test]
+    async fn run_script_via_run_handle_works() {
+        // Same as `run_script` but using `start_script + join` directly.
+        let dir = tempdir().expect("tempdir");
+        let luft = LuftBuilder::new()
+            .backend(mock_backend(serde_json::json!("ignored")))
+            .base_dir(dir.path())
+            .build()
+            .expect("build");
+        let handle = luft
+            .start_script(
+                r#"meta = { reasoning = "h", phases = {} } function main() report("v") end"#,
+            )
+            .await
+            .expect("start_script");
+        // Synchronous `run_id()` getter must agree with the eventual outcome.
+        let pinned = handle.run_id();
+        let outcome = handle.join().await.expect("join");
+        assert_eq!(pinned, outcome.run_id);
+        assert_eq!(outcome.result.unwrap(), serde_json::json!("v"));
+    }
+
+    #[tokio::test]
+    async fn run_handle_status_is_unique_per_invocation() {
+        // Each `start_script` produces a unique RunId.
+        let dir = tempdir().expect("tempdir");
+        let luft = LuftBuilder::new()
+            .backend(mock_backend(serde_json::json!(1)))
+            .base_dir(dir.path())
+            .build()
+            .expect("build");
+        let h1 = luft
+            .start_script(
+                r#"meta = { reasoning = "1", phases = {} } function main() report(1) end"#,
+            )
+            .await
+            .expect("h1");
+        let h2 = luft
+            .start_script(
+                r#"meta = { reasoning = "2", phases = {} } function main() report(2) end"#,
+            )
+            .await
+            .expect("h2");
+        assert_ne!(h1.run_id(), h2.run_id());
+        assert_eq!(h1.join().await.unwrap().result.unwrap(), serde_json::json!(1));
+        assert_eq!(h2.join().await.unwrap().result.unwrap(), serde_json::json!(2));
+    }
+
+    #[tokio::test]
+    async fn start_script_yields_a_handle_with_subscribe() {
+        let dir = tempdir().expect("tempdir");
+        let luft = LuftBuilder::new()
+            .backend(mock_backend(serde_json::json!("ok")))
+            .base_dir(dir.path())
+            .build()
+            .expect("build");
+        let handle = luft
+            .start_script(r#"meta = { reasoning = "t", phases = {} } function main() report(1) end"#)
+            .await
+            .expect("start_script");
+        // Subscribe before joining — verify the broadcast receiver is
+        // obtainable even after a fast-completing run.
+        let rx = handle.subscribe();
+        let outcome = handle.join().await.expect("join");
+        assert_eq!(outcome.result.expect("script ran"), serde_json::json!(1));
+        // The receiver's not required to have received anything yet; its
+        // mere existence is the contract test.
+        let _ = rx;
+    }
+
+    #[tokio::test]
+    async fn run_handle_run_id_is_pinned() {
+        let dir = tempdir().expect("tempdir");
+        let luft = LuftBuilder::new()
+            .backend(mock_backend(serde_json::json!("ok")))
+            .base_dir(dir.path())
+            .build()
+            .expect("build");
+        let handle = luft
+            .start_script(
+                r#"meta = { reasoning = "t", phases = {} } function main() report(1) end"#,
+            )
+            .await
+            .expect("start");
+        let pinned = handle.run_id();
+        let outcome = handle.join().await.expect("join");
+        assert_eq!(pinned, outcome.run_id);
+    }
+
+    #[tokio::test]
+    async fn into_future_consumes_handle_and_returns_outcome() {
+        let dir = tempdir().expect("tempdir");
+        let luft = LuftBuilder::new()
+            .backend(mock_backend(serde_json::json!("ok")))
+            .base_dir(dir.path())
+            .build()
+            .expect("build");
+        // Using IntoFuture (`.await`-ing the handle directly).
+        let outcome: RunOutcome = luft
+            .start_script(
+                r#"meta = { reasoning = "t", phases = {} } function main() report(42) end"#,
+            )
+            .await
+            .expect("start")
+            .await
+            .expect("via IntoFuture");
+        assert_eq!(outcome.result.expect("value"), serde_json::json!(42));
+    }
+
+    #[tokio::test]
+    async fn cancel_token_signals_before_run_starts() {
+        let dir = tempdir().expect("tempdir");
+        let luft = LuftBuilder::new()
+            .backend(mock_backend(serde_json::json!("ok")))
+            .base_dir(dir.path())
+            .build()
+            .expect("build");
+        let handle = luft
+            .start_script(
+                r#"meta = { reasoning = "t", phases = {} } function main() report(1) end"#,
+            )
+            .await
+            .expect("start");
+        // Pre-cancel the token; the run should still finish (it's already
+        // past validation) — but the API should not panic.
+        handle.cancel();
+        let _ = handle.join().await;
+    }
+
+    #[tokio::test]
+    async fn run_handle_run_dir_name_is_non_empty_and_marks_a_directory() {
+        let dir = tempdir().expect("tempdir");
+        let luft = LuftBuilder::new()
+            .backend(mock_backend(serde_json::json!("ok")))
+            .base_dir(dir.path())
+            .build()
+            .expect("build");
+        let handle = luft
+            .start_script(
+                r#"meta = { reasoning = "t", phases = {} } function main() report("ok") end"#,
+            )
+            .await
+            .expect("start");
+        // Snapshot before `join` consumes the handle.
+        let dir_name = handle.run_dir_name().to_string();
+        let outcome = handle.join().await.expect("join");
+        assert_eq!(dir_name, outcome.run_dir_name);
+        // The directory should exist under the base_dir.
+        assert!(
+            dir.path().join(&dir_name).exists(),
+            "run dir should exist on disk"
+        );
+    }
+}

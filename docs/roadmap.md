@@ -1,6 +1,6 @@
 > **状态**: 待完善 — 本文由文档整理工作流自动生成。
 
-# Maestro 路线图
+# Luft 路线图
 
 > P1/P2 具体排期见 [roadmap-p1-p2.md](./roadmap-p1-p2.md)。
 

@@ -7,26 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-10
+
 ### Added
 
-- Crate-level documentation for all 7 crates with quick-start examples,
+- **Workspace renamed from `maestro` to `luft`** across all crates,
+  configuration, and documentation. Repository URL and all internal
+  path dependencies updated.
+- **`luft-mcp` crate** — Model Context Protocol (MCP) server exposing
+  Luft workflow authoring resources and execution tools to external AI
+  clients.
+- `luft-cli` crate with `luft` and `fake_acp` binaries and full
+  subcommand surface (`artifact`, `backend`, `clear`, `list`, `logs`,
+  `mock`, `phases`, `save`, `status`).
+- Crate-level documentation for all 9 crates with quick-start examples,
   architecture diagrams, and API reference links.
 - `AgentBackend` trait implementation guide with a complete code example.
-- `MaestroBuilder` and `Maestro` public API documentation with `# Errors` sections.
-- `RunHandle` and `RunOutcome` documentation with `IntoFuture` usage example.
+- `LuftBuilder` and `Luft` public API documentation with `# Errors`
+  sections.
+- `RunHandle` and `RunOutcome` documentation with `IntoFuture` usage
+  example.
 - `#[must_use]` attributes on all builder and constructor methods.
 - `CONTRIBUTING.md` with development setup and PR checklist.
+- `keywords` and `categories` metadata for all 9 crates, so they appear
+  properly in crates.io search.
+
+### Changed
+
+- Crate path dependencies now carry both `path` and `version` fields
+  for crates.io publishing (preparation for `cargo publish`).
 
 ## [0.2.0] - 2025-07-XX
 
 ### Added
 
-- SQLite persistence layer (`maestro-storage`) replacing JSONL event logs.
-- NL → Lua planner (`maestro-planner`) with retry and self-correction.
+- SQLite persistence layer (`luft-storage`) replacing JSONL event logs.
+- NL → Lua planner (`luft-planner`) with retry and self-correction.
 - `converge()` primitive for multi-round agent consensus.
 - `pipeline()` primitive for non-barrier streaming stages.
 - `phase_begin()` / `phase_end()` structural spans for observability.
-- Run resume from checkpoint with `Maestro::start_resume()`.
+- Run resume from checkpoint with `Luft::start_resume()`.
 - `RunHandle` implementing `IntoFuture` for ergonomic `.await`.
 - Structured findings collection (`Finding`, `Severity`, `Location`).
 - Token usage tracking (`TokenUsage`) with display helpers.
@@ -37,11 +57,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **BREAKING**: `AgentBackend::run()` signature now takes `RunContext` (was
   bare `CancellationToken` + `EventSender`).
-- **BREAKING**: `MaestroError` is now `#[non_exhaustive]`.
+- **BREAKING**: `LuftError` is now `#[non_exhaustive]`.
 - **BREAKING**: `BackendError` is now `#[non_exhaustive]`.
-- `MaestroBuilder` is now the sole constructor for `Maestro` (direct
-  `Maestro::new()` removed).
-- Run directory layout standardized: `.maestro/runs/<run-id>/`.
+- `LuftBuilder` is now the sole constructor for `Luft` (direct
+  `Luft::new()` removed).
+- Run directory layout standardized: `.luft/runs/<run-id>/`.
 
 ### Fixed
 
@@ -53,11 +73,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Initial release with `maestro`, `maestro-core`, `maestro-runtime`,
-  `maestro-adapters`, and `maestro-service` crates.
-- `Maestro` facade with `run_script()`, `run_workflow()`, `run_nl()`.
+- Initial release with `luft`, `luft-core`, `luft-runtime`,
+  `luft-adapters`, and `luft-service` crates.
+- `Luft` facade with `run_script()`, `run_workflow()`, `run_nl()`.
 - Sandboxed mlua VM with `agent()`, `parallel()`, `report()`, `log()`.
 - OpenCode ACP backend adapter.
 - Scheduler with concurrency control and retry policy.
 - Journal-based checkpoint store for run resume.
-- CLI binary (`maestro-cli`) with `run`, `list`, `status`, `resume` commands.
+- CLI binary (`luft-cli`) with `run`, `list`, `status`, `resume` commands.

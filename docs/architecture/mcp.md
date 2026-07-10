@@ -1,6 +1,6 @@
 # mcp 模块架构
 
-> **Maestro MCP 数据面服务器（M4）。** 一个 stdio JSON-RPC 的 MCP server，供 agent 把结构化 findings / artifacts / logs / status 主动上报回 Maestro。
+> **Luft MCP 数据面服务器（M4）。** 一个 stdio JSON-RPC 的 MCP server，供 agent 把结构化 findings / artifacts / logs / status 主动上报回 Luft。
 
 源码：[`src/mcp.rs`](../../src/mcp.rs)
 
@@ -8,10 +8,10 @@
 
 ## 1. 职责与边界
 
-MCP（Model Context Protocol）数据面是 Maestro 的**结构化上报通道**——与"控制面"（[adapters](./adapters.md) 的 prompt→result）相对。它让 agent 不必把 findings 塞进自由文本里再解析，而是调用工具直接上报到一个线程安全的存储。
+MCP（Model Context Protocol）数据面是 Luft 的**结构化上报通道**——与"控制面"（[adapters](./adapters.md) 的 prompt→result）相对。它让 agent 不必把 findings 塞进自由文本里再解析，而是调用工具直接上报到一个线程安全的存储。
 
 ```
-   agent ──MCP tools/call──► Maestro MCP server (stdio JSON-RPC)
+   agent ──MCP tools/call──► Luft MCP server (stdio JSON-RPC)
               report_finding                    │
               report_artifacts                  ▼
               report_log                    McpStore
@@ -58,7 +58,7 @@ MCP（Model Context Protocol）数据面是 Maestro 的**结构化上报通道**
 run_mcp_server: stdin 逐行 →
    JSON 解析失败 → -32700 Parse error
    handle_request(method 分发):
-       initialize              → 返回 protocolVersion "2024-11-05" + serverInfo{maestro,0.1.0}
+       initialize              → 返回 protocolVersion "2024-11-05" + serverInfo{luft,0.1.0}
        tools/list              → get_tool_definitions()
        tools/call              → handle_tool_call(name, arguments)
        ping                    → {}
@@ -82,14 +82,14 @@ run_mcp_server: stdin 逐行 →
 
 ## 6. 当前状态与局限（v0.1）⚠️
 
-这是当前 Maestro 里**最"已建未联"**的模块，文档需如实标注：
+这是当前 Luft 里**最"已建未联"**的模块，文档需如实标注：
 
 - **尚未接入 agent 运行路径**。[adapters](./adapters.md) 的 `AcpAdapter` 声明 `mcp_injection=false`，且 runtime 的 `build_task` 把 `mcp_endpoint` 设为 `None`——即**当前没有 agent 真正连到这个 MCP server**。findings 目前仍走 [result_collector](./adapters.md#53-result_collector-组装-agentresult) 的文本回退解析。
 - **`agent_id` 未关联**：`handle_tool_call` 里所有上报的 `agent_id` 都填 `uuid::nil()`——还没有把上报归属到具体 agent 的机制。
 - **`request_next_task` 是桩**：恒返回"队列为空 / isError"，converge 任务队列尚未接线。
 - `run_mcp_server` 提供了 stdio 入口，但把它编织进每个 agent 会话（注入端点 + 启动 server）是 P1 工作。
 
-> 简言之：协议与存储**规范完整、可独立运行与测试**，但"agent → MCP → Maestro"的端到端注入是后续里程碑。把它与现状区分清楚，是阅读本模块时最重要的一点。
+> 简言之：协议与存储**规范完整、可独立运行与测试**，但"agent → MCP → Luft"的端到端注入是后续里程碑。把它与现状区分清楚，是阅读本模块时最重要的一点。
 
 ---
 

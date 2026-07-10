@@ -149,7 +149,7 @@ phase("discover subsystems", 1)
 local focus = args.focus or "overall architecture"
 
 local discover = agent({
-  prompt = "You are reviewing the code architecture of a Rust workspace (Maestro multi-agent workflow runtime).\n\n"
+  prompt = "You are reviewing the code architecture of a Rust workspace (Luft multi-agent orchestration runtime).\n\n"
     .. "Task: Explore the codebase structure and enumerate all major subsystems/modules.\n\n"
     .. "Steps:\n"
     .. "1. Read the workspace root Cargo.toml to identify all crates\n"
@@ -189,7 +189,7 @@ local pipe_results = pipeline{
       return {
         prompt = "Analyze the architecture of the \"" .. subsys.name .. "\" subsystem at "
           .. subsys.path .. ".\n\n"
-          .. "This is a Rust codebase (Maestro multi-agent workflow runtime). "
+          .. "This is a Rust codebase (Luft multi-agent orchestration runtime). "
           .. "Read the actual source files and document:\n"
           .. "1. Core responsibilities — what this subsystem does\n"
           .. "2. Public API — key types, traits, functions exposed to other modules\n"
@@ -258,7 +258,7 @@ phase("cross-cutting analysis", 1)
 
 local cross = agent({
   prompt = "You are performing a cross-cutting architecture analysis of a Rust workspace "
-    .. "(Maestro multi-agent workflow runtime).\n\n"
+    .. "(Luft multi-agent orchestration runtime).\n\n"
     .. "Per-subsystem assessments:\n" .. json.encode(assessments) .. "\n\n"
     .. "Analyze the following cross-cutting concerns by reading the ACTUAL source code:\n"
     .. "1. Dependency graph — trace inter-module dependencies, identify cycles or "
@@ -370,7 +370,7 @@ local synthesis_input = {
 
 local final = agent({
   prompt = "You are the lead architect producing the final architecture review report "
-    .. "for Maestro (Rust multi-agent workflow runtime).\n\n"
+    .. "for Luft (Rust multi-agent orchestration runtime).\n\n"
     .. "Review data:\n" .. json.encode(synthesis_input) .. "\n\n"
     .. "Produce a comprehensive architecture review:\n"
     .. "1. Executive summary — overall assessment of architecture health (2-3 paragraphs)\n"
