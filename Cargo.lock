@@ -1552,7 +1552,7 @@ dependencies = [
 
 [[package]]
 name = "maestro"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1574,7 +1574,7 @@ dependencies = [
 
 [[package]]
 name = "maestro-adapters"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "agent-client-protocol",
  "anyhow",
@@ -1591,7 +1591,7 @@ dependencies = [
 
 [[package]]
 name = "maestro-cli"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "agent-client-protocol",
  "anyhow",
@@ -1606,6 +1606,7 @@ dependencies = [
  "indicatif",
  "jsonschema",
  "maestro",
+ "maestro-mcp",
  "mlua",
  "serde",
  "serde_json",
@@ -1621,7 +1622,7 @@ dependencies = [
 
 [[package]]
 name = "maestro-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1642,8 +1643,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "maestro-mcp"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "maestro",
+ "maestro-core",
+ "maestro-planner",
+ "maestro-runtime",
+ "maestro-service",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "maestro-planner"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "maestro-core",
@@ -1660,7 +1680,7 @@ dependencies = [
 
 [[package]]
 name = "maestro-runtime"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1681,7 +1701,7 @@ dependencies = [
 
 [[package]]
 name = "maestro-service"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1700,7 +1720,7 @@ dependencies = [
 
 [[package]]
 name = "maestro-storage"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "chrono",
