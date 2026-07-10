@@ -4,6 +4,8 @@ version = { workspace = true }
 edition = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
+keywords = ["luft", "agent", "orchestration", "cli", "lua", "workflow"]
+categories = ["command-line-utilities", "asynchronous"]
 description = "Luft CLI — multi-agent orchestration runtime"
 
 [[bin]]
