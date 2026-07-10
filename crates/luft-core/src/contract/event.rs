@@ -47,6 +47,8 @@ pub enum AgentEvent {
         name: Option<String>,
         #[serde(default)]
         agent_seq: u32,
+        #[serde(default)]
+        ts: DateTime<Utc>,
     },
     AgentProgress {
         run_id: RunId,
@@ -77,6 +79,8 @@ pub enum AgentEvent {
         name: Option<String>,
         #[serde(default)]
         agent_seq: u32,
+        #[serde(default)]
+        ts: DateTime<Utc>,
         #[serde(default)]
         output: serde_json::Value,
         #[serde(default)]
