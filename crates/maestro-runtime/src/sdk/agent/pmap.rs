@@ -365,7 +365,7 @@ mod tests {
 
     #[test]
     fn empty_items() {
-        let (lua, cx, _rt) = make_cx(vec![]);
+        let (lua, _cx, _rt) = make_cx(vec![]);
         let results: mlua::Table = lua
             .load(r#"pmap({}, function(item) return item end)"#)
             .eval()
@@ -377,7 +377,7 @@ mod tests {
 
     #[test]
     fn pure_transform_no_agent() {
-        let (lua, cx, _rt) = make_cx(vec![]);
+        let (lua, _cx, _rt) = make_cx(vec![]);
         let script = r#"
             return pmap(
                 { "a", "b", "c" },
@@ -396,7 +396,7 @@ mod tests {
 
     #[test]
     fn single_agent_per_item() {
-        let (lua, cx, _rt) = make_cx(vec![
+        let (lua, _cx, _rt) = make_cx(vec![
             MockBehavior::Success {
                 output: serde_json::json!({ "result": "alpha" }),
                 tokens: TokenUsage {
@@ -445,7 +445,7 @@ mod tests {
 
     #[test]
     fn multi_agent_per_item() {
-        let (lua, cx, _rt) = make_cx(vec![
+        let (lua, _cx, _rt) = make_cx(vec![
             // doc1: develop
             MockBehavior::Success {
                 output: serde_json::json!({ "code": "impl_v1" }),
@@ -506,7 +506,7 @@ mod tests {
         // Both items get the same behavior (success or fail), so order
         // doesn't matter. We test that one success + one fail produces
         // exactly 1 ok and 1 failed result.
-        let (lua, cx, _rt) = make_cx(vec![
+        let (lua, _cx, _rt) = make_cx(vec![
             // First consumed behavior: success
             MockBehavior::Success {
                 output: serde_json::json!({}),
@@ -559,7 +559,7 @@ mod tests {
 
     #[test]
     fn all_items_fail() {
-        let (lua, cx, _rt) = make_cx(vec![
+        let (lua, _cx, _rt) = make_cx(vec![
             MockBehavior::Fail {
                 kind: FailKind::Protocol,
                 delay: Duration::ZERO,
@@ -598,7 +598,7 @@ mod tests {
 
     #[test]
     fn map_fn_error_propagates() {
-        let (lua, cx, _rt) = make_cx(vec![]);
+        let (lua, _cx, _rt) = make_cx(vec![]);
         let err = lua
             .load(r#"pmap({1, 2}, function() error("boom") end)"#)
             .eval::<mlua::Value>()
@@ -616,7 +616,7 @@ mod tests {
 
     #[test]
     fn yield_resume_transparent() {
-        let (lua, cx, _rt) = make_cx(vec![
+        let (lua, _cx, _rt) = make_cx(vec![
             MockBehavior::Success {
                 output: serde_json::json!({ "step": 1 }),
                 tokens: TokenUsage {
@@ -693,7 +693,7 @@ mod tests {
         };
         // 2 docs × 2 agents = 4 behaviors, but interleaved order may vary.
         // Provide enough behaviors for any ordering.
-        let (lua, cx, _rt) = make_cx(vec![mk_dev(), mk_rev(), mk_dev(), mk_rev()]);
+        let (lua, _cx, _rt) = make_cx(vec![mk_dev(), mk_rev(), mk_dev(), mk_rev()]);
         let script = r#"
             return pmap(
                 { "doc1", "doc2" },
@@ -733,7 +733,7 @@ mod tests {
     #[test]
     fn early_return_on_failure() {
         // Extra behaviors to handle non-deterministic completion order.
-        let (lua, cx, _rt) = make_cx(vec![
+        let (lua, _cx, _rt) = make_cx(vec![
             MockBehavior::Success {
                 output: serde_json::json!({}),
                 tokens: TokenUsage::default(),

@@ -121,7 +121,7 @@ pub fn build_phases_view(checkpoint: &RunCheckpoint, events: &[AgentEvent]) -> P
             let meta: maestro_planner::PlanMeta = serde_json::from_value(meta_json.clone())
                 .unwrap_or_else(|e| {
                     tracing::warn!(error = %e, "failed to deserialize workflow_meta; falling back to events");
-                    return maestro_planner::PlanMeta::default();
+                    maestro_planner::PlanMeta::default()
                 });
             build_from_meta(&meta, checkpoint, events)
         }

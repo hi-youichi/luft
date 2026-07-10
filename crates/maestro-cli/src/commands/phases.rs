@@ -139,13 +139,13 @@ fn render_phases(w: &mut impl Write, view: &PhasesView) -> std::io::Result<()> {
                         let preview: String = m.chars().take(60).collect();
                         format!("│ {}", preview)
                     });
-                if msg_str.is_some() {
+                if let Some(msg) = &msg_str {
                     writeln!(
                         w,
                         "  {} {:<8}  {:<10}  {:>8}  {}",
                         prefix, agent.short_id, agent.status, tokens_str, tool_str
                     )?;
-                    writeln!(w, "     {}", msg_str.unwrap())?;
+                    writeln!(w, "     {}", msg)?;
                 } else {
                     writeln!(
                         w,

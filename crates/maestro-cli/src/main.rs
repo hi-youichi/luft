@@ -85,6 +85,9 @@ enum Commands {
     /// MCP server subcommand for structured output injection (internal).
     #[command(hide = true)]
     McpStructuredOutput(commands::mcp_server::McpStructuredOutputArgs),
+    /// Start the Maestro MCP server (stdio JSON-RPC).
+    #[command(subcommand)]
+    Mcp(commands::mcp_server::McpSubcommand),
     /// Lua script utilities.
     #[command(subcommand)]
     Lua(commands::lua_validate::LuaSubcommand),
@@ -248,6 +251,11 @@ async fn dispatch(
             commands::phases::phases_cmd(run_dir, commands::phases::PhasesArgs { json })?;
         }
         Commands::McpStructuredOutput(args) => commands::mcp_server::run(args)?,
+        Commands::Mcp(cmd) => match cmd {
+            commands::mcp_server::McpSubcommand::Serve(args) => {
+                commands::mcp_server::serve(args).await?
+            }
+        },
         Commands::Lua(cmd) => match cmd {
             commands::lua_validate::LuaSubcommand::Validate(args) => {
                 commands::lua_validate::validate_lua(args)?

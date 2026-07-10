@@ -7,12 +7,13 @@ members = [
     "crates/maestro-planner",
     "crates/maestro-service",
     "crates/maestro",
+    "crates/maestro-mcp",
     "crates/maestro-cli",
 ]
 resolver = "2"
 
 [workspace.package]
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/hi-youichi/maestro"

@@ -3,12 +3,53 @@
 //! Speaks minimal MCP (JSON-RPC over stdio) with a single `structured_output`
 //! tool whose `inputSchema` is the workflow-provided JSON Schema.
 //! opencode spawns this as a subprocess via `NewSessionRequest.mcp_servers`.
+//!
+//! Also hosts the full MCP server (`maestro mcp serve`) which exposes workflow
+//! authoring resources and execution tools via the [`maestro_mcp`] crate.
 
 use anyhow::Result;
 use serde::Deserialize;
 use serde_json::Value;
 use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
+
+// ── `maestro mcp serve` — full MCP server ───────────────────────────────
+
+/// Subcommand group: `maestro mcp <action>`.
+#[derive(Debug, clap::Subcommand)]
+pub enum McpSubcommand {
+    /// Start the MCP server on stdio (JSON-RPC over stdin/stdout).
+    Serve(McpServeArgs),
+}
+
+/// Arguments for `maestro mcp serve`.
+#[derive(Debug, clap::Args)]
+pub struct McpServeArgs {
+    /// Backend id to use for workflow execution (default: auto-detect).
+    #[arg(long, help = "Backend id (mock, opencode, loom-acp) or auto-detect")]
+    pub backend: Option<String>,
+}
+
+/// Entry point for `maestro mcp serve`.
+///
+/// Constructs a Maestro instance with the requested (or auto-detected) backend,
+/// wraps it in an [`maestro_mcp::McpServer`], and runs the stdio loop.
+pub async fn serve(args: McpServeArgs) -> Result<()> {
+    let backend_id = args
+        .backend
+        .as_deref()
+        .unwrap_or_else(|| crate::backend::detect_backend());
+
+    let backend = crate::backend::create_backend(backend_id, false, None)?;
+
+    let maestro = maestro::Maestro::builder().backend_arc(backend).build()?;
+
+    let server = maestro_mcp::McpServer::new(maestro);
+    server.serve_stdio().await?;
+    Ok(())
+}
+
+// ── `maestro mcp-structured-output` — internal schema validator ─────────
 
 #[derive(Debug, clap::Args)]
 pub struct McpStructuredOutputArgs {

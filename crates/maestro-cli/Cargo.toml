@@ -19,7 +19,8 @@ testing = ["maestro/testing"]
 unstable_end_turn_token_usage = ["maestro/unstable_end_turn_token_usage"]
 
 [dependencies]
-maestro = { path = "../maestro", version = "0.2.0", features = ["testing"] }
+maestro = { path = "../maestro", version = "0.3.0", features = ["testing"] }
+maestro-mcp = { path = "../maestro-mcp", version = "0.3.0" }
 clap = { version = "4", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
 anyhow = "1"

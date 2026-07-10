@@ -25,7 +25,7 @@ use crate::error::MaestroError;
 /// # use maestro::Maestro;
 /// # use maestro_core::mock_backend::MockBackend;
 /// let maestro = Maestro::builder()
-///     .backend(MockBackend::default())
+///     .backend(MockBackend::new("mock", vec![]))
 ///     .base_dir("./runs")
 ///     .concurrency(8)
 ///     .build()
@@ -67,6 +67,16 @@ impl MaestroBuilder {
     #[must_use]
     pub fn backend<B: AgentBackend + 'static>(mut self, b: B) -> Self {
         self.backend = Some(Arc::new(b));
+        self
+    }
+
+    /// Like [`backend`](Self::backend) but accepts an already-`Arc`ed backend.
+    ///
+    /// Useful when the backend is constructed by a factory that returns
+    /// `Arc<dyn AgentBackend>` (e.g. the CLI backend factory).
+    #[must_use]
+    pub fn backend_arc(mut self, b: Arc<dyn AgentBackend>) -> Self {
+        self.backend = Some(b);
         self
     }
 
@@ -319,7 +329,7 @@ impl Maestro {
 /// # use maestro::Maestro;
 /// # use maestro_core::mock_backend::MockBackend;
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-/// let maestro = Maestro::builder().backend(MockBackend::default()).build()?;
+/// let maestro = Maestro::builder().backend(MockBackend::new("mock", vec![])).build()?;
 /// let handle = maestro.start_script("report('ok')").await?;
 /// let outcome = handle.await?;
 /// # Ok(())

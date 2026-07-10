@@ -53,7 +53,6 @@
 ///     fn as_any(&self) -> &dyn std::any::Any { self }
 /// }
 /// ```
-
 use crate::contract::event::EventSender;
 use crate::contract::finding::Finding;
 use crate::contract::ids::{AgentId, PhaseId, RunId, TokenUsage};

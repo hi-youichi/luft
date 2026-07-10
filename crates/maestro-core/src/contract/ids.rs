@@ -324,7 +324,7 @@ mod tests {
             cache_read: 5,
             cache_write: 3,
         };
-        let cloned = t.clone();
+        let cloned = t;
         assert_eq!(cloned, t);
     }
 

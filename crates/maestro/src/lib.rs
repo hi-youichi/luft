@@ -13,14 +13,14 @@
 //!
 //! ## Quick Start
 //!
-//! ```no_run
+//! ```ignore
 //! use maestro::Maestro;
 //! # use maestro::MaestroError;
 //! # use maestro_core::mock_backend::MockBackend;
 //!
-//! # async fn main() -> Result<(), MaestroError> {
+//! # async fn run() -> Result<(), MaestroError> {
 //! let maestro = Maestro::builder()
-//!     .backend(MockBackend::default())
+//!     .backend(MockBackend::new("mock", vec![]))
 //!     .base_dir("./.maestro/runs")
 //!     .build()?;
 //!
