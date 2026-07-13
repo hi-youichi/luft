@@ -13,9 +13,9 @@
 //! resumes the coroutine with a pre-built result table.
 
 use super::journal::{record, slot_from_cache, slot_from_result};
-use luft_core::contract::event::{AgentEvent, LogLevel};
 use crate::sdk::task::{build_result_table, build_task};
 use crate::sdk::{PendingTask, SdkContext};
+use luft_core::contract::event::{AgentEvent, LogLevel};
 use mlua::{Lua, Table};
 use std::sync::atomic::Ordering;
 
@@ -180,10 +180,7 @@ mod tests {
 
         // Pre-set `agent` to a sentinel noop function.
         lua.globals()
-            .set(
-                "agent",
-                lua.create_function(|_, ()| Ok(42i64)).unwrap(),
-            )
+            .set("agent", lua.create_function(|_, ()| Ok(42i64)).unwrap())
             .unwrap();
 
         register(&lua, &cx).unwrap();

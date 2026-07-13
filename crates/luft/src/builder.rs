@@ -5,11 +5,11 @@ use luft_planner::PlannerConfig;
 use luft_runtime::{ExecLimits, ScriptError};
 use luft_service::query::{ReportStatus, StatusOutput};
 use luft_service::run::{
-    assign_dir_name, prepare, resolve_fresh, resolve_resume, ScriptSource, RunSpec,
+    assign_dir_name, prepare, resolve_fresh, resolve_resume, RunSpec, ScriptSource,
 };
 use std::future::Future;
-use std::pin::Pin;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
@@ -154,10 +154,7 @@ impl Luft {
         LuftBuilder::new()
     }
 
-    async fn start_with_source(
-        &self,
-        source: ScriptSource<'_>,
-    ) -> Result<RunHandle, LuftError> {
+    async fn start_with_source(&self, source: ScriptSource<'_>) -> Result<RunHandle, LuftError> {
         let mut spec = resolve_fresh(source, self.backend.clone(), self.planner_config.clone())
             .await
             .map_err(LuftError::Other)?;
@@ -166,8 +163,7 @@ impl Luft {
     }
 
     async fn start_with_resume(&self, run_dir: &str) -> Result<RunHandle, LuftError> {
-        let spec = resolve_resume(run_dir, &self.base_dir)
-            .map_err(LuftError::Other)?;
+        let spec = resolve_resume(run_dir, &self.base_dir).map_err(LuftError::Other)?;
         self.spawn_run(spec)
     }
 
@@ -281,38 +277,35 @@ impl Luft {
     ///
     /// Returns `None` if the run directory does not exist.
     pub fn status(&self, run_dir: &str) -> Result<Option<StatusOutput>, LuftError> {
-        luft_service::query::get_status(run_dir, &self.base_dir)
-            .map_err(LuftError::Other)
+        luft_service::query::get_status(run_dir, &self.base_dir).map_err(LuftError::Other)
     }
 
     /// List all runs under the base directory, sorted by most-recent update.
     pub fn list(&self) -> Result<Vec<StatusOutput>, LuftError> {
-        luft_service::query::list_runs(&self.base_dir)
-            .map_err(LuftError::Other)
+        luft_service::query::list_runs(&self.base_dir).map_err(LuftError::Other)
     }
 
     /// Get the raw chronological event log for a run.
     pub fn events(&self, run_dir: &str) -> Result<Vec<AgentEvent>, LuftError> {
-        luft_service::query::get_events(run_dir, &self.base_dir)
-            .map_err(LuftError::Other)
+        luft_service::query::get_events(run_dir, &self.base_dir).map_err(LuftError::Other)
     }
 
     /// Get the final report value emitted by `report()` in the Lua script.
     pub fn report(&self, run_dir: &str) -> Result<ReportStatus, LuftError> {
-        luft_service::query::get_report(run_dir, &self.base_dir)
-            .map_err(LuftError::Other)
+        luft_service::query::get_report(run_dir, &self.base_dir).map_err(LuftError::Other)
     }
 
     /// Get structured findings (from agent MCP injection) collected during the run.
-    pub fn findings(&self, run_dir: &str) -> Result<Vec<luft_core::contract::finding::Finding>, LuftError> {
-        luft_service::query::get_findings(run_dir, &self.base_dir)
-            .map_err(LuftError::Other)
+    pub fn findings(
+        &self,
+        run_dir: &str,
+    ) -> Result<Vec<luft_core::contract::finding::Finding>, LuftError> {
+        luft_service::query::get_findings(run_dir, &self.base_dir).map_err(LuftError::Other)
     }
 
     /// Cancel an active run by signalling its cancellation token.
     pub fn cancel(&self, run_dir: &str) -> Result<(), LuftError> {
-        luft_service::query::cancel_run(run_dir, &self.base_dir)
-            .map_err(LuftError::Other)?;
+        luft_service::query::cancel_run(run_dir, &self.base_dir).map_err(LuftError::Other)?;
         Ok(())
     }
 }
@@ -376,7 +369,9 @@ impl RunHandle {
     /// - [`LuftError::Other`] if the execution task panicked.
     /// - Script errors from the Lua runtime are embedded in `RunOutcome::result`.
     pub async fn join(self) -> Result<RunOutcome, LuftError> {
-        let result = self.join.await
+        let result = self
+            .join
+            .await
             .map_err(|e| LuftError::Other(anyhow::anyhow!("execution task panicked: {}", e)))??;
         Ok(RunOutcome {
             run_id: self.run_id,
@@ -408,7 +403,10 @@ pub struct JoinFuture {
 
 impl Future for JoinFuture {
     type Output = JoinFutureOutput;
-    fn poll(mut self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
+    fn poll(
+        mut self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
         self.inner.as_mut().poll(cx)
     }
 }
@@ -423,8 +421,9 @@ impl std::future::IntoFuture for RunHandle {
         let join = self.join;
         JoinFuture {
             inner: Box::pin(async move {
-                let result = join.await
-                    .map_err(|e| LuftError::Other(anyhow::anyhow!("execution task panicked: {}", e)))??;
+                let result = join.await.map_err(|e| {
+                    LuftError::Other(anyhow::anyhow!("execution task panicked: {}", e))
+                })??;
                 Ok(RunOutcome {
                     run_id,
                     run_dir_name,
@@ -667,10 +666,8 @@ mod tests {
         let _list: Result<Vec<StatusOutput>, _> = luft.list();
         let _events: Result<Vec<AgentEvent>, _> = luft.events("nonexistent");
         let _report: Result<ReportStatus, _> = luft.report("nonexistent");
-        let _findings: Result<
-            Vec<luft_core::contract::finding::Finding>,
-            _,
-        > = luft.findings("nonexistent");
+        let _findings: Result<Vec<luft_core::contract::finding::Finding>, _> =
+            luft.findings("nonexistent");
         let _cancel: Result<(), _> = luft.cancel("nonexistent");
     }
 
@@ -716,8 +713,7 @@ mod tests {
         // MockBackend avoids needing to add a custom backend impl or
         // depend on the `async_trait` macro here.
         let dir = tempdir().expect("tempdir");
-        let backend: Arc<dyn AgentBackend> =
-            Arc::new(mock_backend(serde_json::json!("arc-ok")));
+        let backend: Arc<dyn AgentBackend> = Arc::new(mock_backend(serde_json::json!("arc-ok")));
         let luft = LuftBuilder::new()
             .backend_arc(backend)
             .base_dir(dir.path().to_path_buf())
@@ -774,7 +770,11 @@ mod tests {
         "#;
         let outcome = luft.run_script(script).await.expect("run_script");
         // RunOutcome fields are public — verify shape.
-        let RunOutcome { run_id, run_dir_name, result } = outcome;
+        let RunOutcome {
+            run_id,
+            run_dir_name,
+            result,
+        } = outcome;
         assert!(!run_id.to_string().is_empty(), "run_id should be a uuid");
         assert!(!run_dir_name.is_empty(), "run_dir_name should be set");
         let value = result.expect("script reported a value");
@@ -846,8 +846,14 @@ mod tests {
             .await
             .expect("h2");
         assert_ne!(h1.run_id(), h2.run_id());
-        assert_eq!(h1.join().await.unwrap().result.unwrap(), serde_json::json!(1));
-        assert_eq!(h2.join().await.unwrap().result.unwrap(), serde_json::json!(2));
+        assert_eq!(
+            h1.join().await.unwrap().result.unwrap(),
+            serde_json::json!(1)
+        );
+        assert_eq!(
+            h2.join().await.unwrap().result.unwrap(),
+            serde_json::json!(2)
+        );
     }
 
     #[tokio::test]
@@ -859,7 +865,9 @@ mod tests {
             .build()
             .expect("build");
         let handle = luft
-            .start_script(r#"meta = { reasoning = "t", phases = {} } function main() report(1) end"#)
+            .start_script(
+                r#"meta = { reasoning = "t", phases = {} } function main() report(1) end"#,
+            )
             .await
             .expect("start_script");
         // Subscribe before joining — verify the broadcast receiver is

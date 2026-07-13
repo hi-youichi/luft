@@ -1108,9 +1108,17 @@ mod tests {
         };
         let rt = empty_script_runtime(&run_ctx).await;
 
-        run_headless(run_ctx, rt, "function main() end".to_string(), None, None, None, false)
-            .await
-            .unwrap();
+        run_headless(
+            run_ctx,
+            rt,
+            "function main() end".to_string(),
+            None,
+            None,
+            None,
+            false,
+        )
+        .await
+        .unwrap();
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -1146,9 +1154,17 @@ mod tests {
         };
         let rt = empty_script_runtime(&run_ctx).await;
 
-        run_headless(run_ctx, rt, "function main() end".to_string(), None, Some(logger), None, false)
-            .await
-            .unwrap();
+        run_headless(
+            run_ctx,
+            rt,
+            "function main() end".to_string(),
+            None,
+            Some(logger),
+            None,
+            false,
+        )
+        .await
+        .unwrap();
 
         let content = std::fs::read_to_string(&log_path).unwrap();
         assert!(!content.is_empty(), "logger should have written events");

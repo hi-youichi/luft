@@ -3,9 +3,9 @@
 //! All functions read from the global SQLite DB and return structs that map
 //! directly to UI components (run list, conversation view, run tree).
 
-use luft_core::contract::ids::{AgentId, RunId};
 use crate::error::StorageResult;
 use crate::DbPool;
+use luft_core::contract::ids::{AgentId, RunId};
 use sqlx::Row;
 
 /// Run summary for list views.
@@ -386,12 +386,12 @@ pub async fn search_turns(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use luft_core::contract::backend::AgentStatus;
-    use luft_core::contract::event::{AgentEvent, ProgressDelta, RunStatus};
-    use luft_core::contract::ids::TokenUsage;
     use crate::db::open_db;
     use crate::EventWriter;
     use chrono::Utc;
+    use luft_core::contract::backend::AgentStatus;
+    use luft_core::contract::event::{AgentEvent, ProgressDelta, RunStatus};
+    use luft_core::contract::ids::TokenUsage;
     use std::path::PathBuf;
     use tempfile::tempdir;
 
@@ -477,7 +477,7 @@ mod tests {
                 cache_write: 0,
             },
             report: serde_json::json!({}),
-        ts: chrono::Utc::now(),
+            ts: chrono::Utc::now(),
         })
         .await
         .unwrap();

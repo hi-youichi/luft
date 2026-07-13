@@ -178,8 +178,7 @@ pub fn mock_check(args: MockCheckArgs) -> Result<()> {
     let has_default = mock_file.get("default").is_some();
 
     let lua_names = luft::mock_gen::extract_agent_names(&script);
-    let (matched, missing, extra, coverage_pct) =
-        compute_coverage(&lua_names, &mock_responses);
+    let (matched, missing, extra, coverage_pct) = compute_coverage(&lua_names, &mock_responses);
 
     print_coverage_report(
         args.script.as_path(),

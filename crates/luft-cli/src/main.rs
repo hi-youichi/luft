@@ -79,7 +79,10 @@ enum Commands {
     Phases {
         #[arg(help = "Run directory name to inspect")]
         run_dir: String,
-        #[arg(long, help = "Render phases view as JSON instead of a plain-text table")]
+        #[arg(
+            long,
+            help = "Render phases view as JSON instead of a plain-text table"
+        )]
         json: bool,
     },
     /// MCP server subcommand for structured output injection (internal).

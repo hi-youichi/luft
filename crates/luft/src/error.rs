@@ -1,7 +1,7 @@
 use luft_core::contract::backend::BackendError;
+use luft_core::scheduler::SchedulerError;
 use luft_runtime::ScriptError;
 use luft_storage::StorageError;
-use luft_core::scheduler::SchedulerError;
 
 /// Unified error type for all Luft operations.
 ///
@@ -199,8 +199,7 @@ mod tests {
         fn falls_through() -> Result<(), LuftError> {
             // Convert with `.map_err` to verify the From conversion works
             // inside an error-handling chain.
-            let r: Result<(), LuftError> =
-                Err(anyhow::anyhow!("boom")).map_err(LuftError::from);
+            let r: Result<(), LuftError> = Err(anyhow::anyhow!("boom")).map_err(LuftError::from);
             r
         }
         let err = falls_through();

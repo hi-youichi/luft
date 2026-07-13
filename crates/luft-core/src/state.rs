@@ -340,16 +340,10 @@ impl RunStore {
                     ..
                 } => {
                     checkpoint.status = match status {
-                        crate::contract::event::RunStatus::Completed => {
-                            CheckpointStatus::Completed
-                        }
+                        crate::contract::event::RunStatus::Completed => CheckpointStatus::Completed,
                         crate::contract::event::RunStatus::Failed => CheckpointStatus::Failed,
-                        crate::contract::event::RunStatus::Cancelled => {
-                            CheckpointStatus::Cancelled
-                        }
-                        crate::contract::event::RunStatus::Partial => {
-                            CheckpointStatus::Running
-                        }
+                        crate::contract::event::RunStatus::Cancelled => CheckpointStatus::Cancelled,
+                        crate::contract::event::RunStatus::Partial => CheckpointStatus::Running,
                     };
                     // Only overwrite if a real total was supplied; otherwise keep
                     // the figure accumulated from AgentDone events.
@@ -592,7 +586,7 @@ mod tests {
                 e,
                 AgentEvent::Log { msg, .. } if msg == "resume smoke test"
             )),
-"event written after open_run must appear in events.jsonl"
+            "event written after open_run must appear in events.jsonl"
         );
     }
 
@@ -642,10 +636,9 @@ mod tests {
 
     fn read_raw_checkpoint(run_dir: &Path) -> serde_json::Value {
         let path = run_dir.join("checkpoint.json");
-        let content = std::fs::read_to_string(&path)
-            .unwrap_or_else(|e| panic!("read checkpoint.json: {e}"));
-        serde_json::from_str(&content)
-            .unwrap_or_else(|e| panic!("parse checkpoint.json: {e}"))
+        let content =
+            std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read checkpoint.json: {e}"));
+        serde_json::from_str(&content).unwrap_or_else(|e| panic!("parse checkpoint.json: {e}"))
     }
 
     // ----- upsert_agent_result (F1 delegation) ---------------------------
@@ -691,10 +684,7 @@ mod tests {
             .and_then(|v| v.as_object())
             .expect("agent_results object");
         assert_eq!(ar.len(), 1, "exactly one agent cached on disk");
-        let entry = ar
-            .values()
-            .next()
-            .expect("non-empty agent_results on disk");
+        let entry = ar.values().next().expect("non-empty agent_results on disk");
         assert_eq!(entry.get("tokens").and_then(|v| v.as_u64()), Some(100));
         assert_eq!(entry.get("status").and_then(|v| v.as_str()), Some("ok"));
         assert_eq!(
@@ -759,7 +749,10 @@ mod tests {
 
         // Disk must also reflect the second upsert, not the first.
         let raw = read_raw_checkpoint(dir.path());
-        let ar = raw.get("agent_results").and_then(|v| v.as_object()).unwrap();
+        let ar = raw
+            .get("agent_results")
+            .and_then(|v| v.as_object())
+            .unwrap();
         assert_eq!(ar.len(), 1);
         let entry = ar.values().next().unwrap();
         assert_eq!(entry.get("tokens").and_then(|v| v.as_u64()), Some(99));
@@ -852,7 +845,10 @@ mod tests {
 
         // On-disk: same status, observable across processes.
         let raw = read_raw_checkpoint(dir.path());
-        assert_eq!(raw.get("status").and_then(|v| v.as_str()), Some("cancelled"));
+        assert_eq!(
+            raw.get("status").and_then(|v| v.as_str()),
+            Some("cancelled")
+        );
 
         // Reopen: the persisted status survives close+reopen.
         drop(store);
@@ -890,7 +886,10 @@ mod tests {
         );
 
         let raw = read_raw_checkpoint(dir.path());
-        assert_eq!(raw.get("status").and_then(|v| v.as_str()), Some("cancelled"));
+        assert_eq!(
+            raw.get("status").and_then(|v| v.as_str()),
+            Some("cancelled")
+        );
     }
 
     #[test]
@@ -980,8 +979,7 @@ mod tests {
             let entry = ar
                 .values()
                 .find(|v| {
-                    v.get("agent_id").and_then(|id| id.as_str())
-                        == Some(&agent_id.to_string())
+                    v.get("agent_id").and_then(|id| id.as_str()) == Some(&agent_id.to_string())
                 })
                 .unwrap_or_else(|| panic!("entry for {agent_id} missing"));
             let persisted = entry
@@ -1009,11 +1007,19 @@ mod tests {
         store.init_run(run_id, "timed-out guard").unwrap();
 
         let agent_id = uuid::Uuid::now_v7();
-        let evt = build_agent_done(run_id, agent_id, AgentStatus::TimedOut, sample_token_usage());
+        let evt = build_agent_done(
+            run_id,
+            agent_id,
+            AgentStatus::TimedOut,
+            sample_token_usage(),
+        );
         store.append_event(&evt).unwrap();
 
         let raw = read_raw_checkpoint(dir.path());
-        let ar = raw.get("agent_results").and_then(|v| v.as_object()).unwrap();
+        let ar = raw
+            .get("agent_results")
+            .and_then(|v| v.as_object())
+            .unwrap();
         let entry = ar.values().next().expect("entry exists");
         let persisted = entry.get("status").and_then(|v| v.as_str()).unwrap();
 

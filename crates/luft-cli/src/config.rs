@@ -195,7 +195,10 @@ mod tests {
     #[test]
     fn config_path_ends_with_config_toml() {
         let path = config_path();
-        assert_eq!(path.file_name().and_then(|n| n.to_str()), Some("config.toml"));
+        assert_eq!(
+            path.file_name().and_then(|n| n.to_str()),
+            Some("config.toml")
+        );
         assert_eq!(path.parent(), Some(config_dir().as_path()));
     }
 

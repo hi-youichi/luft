@@ -49,7 +49,9 @@ pub use protocol::{
     error_codes, initialize_result, resource_templates_list_result, resources_list_result,
     tools_list_result, JsonRpcError, JsonRpcMessage, JsonRpcResponse, RpcError,
 };
-pub use resources::{build_read_response, list_examples, read_resource, ResourceContent, WorkflowUri};
+pub use resources::{
+    build_read_response, list_examples, read_resource, ResourceContent, WorkflowUri,
+};
 pub use server::McpServer;
 pub use tools::{handle_call, new_run_registry, RunInfo, RunRegistry};
 
@@ -197,7 +199,12 @@ mod tests {
                 .build()
                 .unwrap();
             rt.block_on(async {
-                r2.lock().await.insert("k".into(), RunInfo { run_dir_name: "v".into() });
+                r2.lock().await.insert(
+                    "k".into(),
+                    RunInfo {
+                        run_dir_name: "v".into(),
+                    },
+                );
             });
         });
         h1.join().unwrap();
@@ -214,8 +221,8 @@ mod tests {
     async fn handle_call_unknown_tool_via_reexport() {
         // Calling handle_call directly via the re-export with a bogus tool name
         // must produce an isError response.
-        use std::time::Duration;
         use luft_core::{MockBackend, MockBehavior, TokenUsage};
+        use std::time::Duration;
 
         let backend = MockBackend::new(
             "mock",
@@ -242,8 +249,8 @@ mod tests {
     #[tokio::test]
     async fn mcp_server_constructible_via_reexport() {
         // Compile-time + construction-time check that McpServer is reachable.
-        use std::time::Duration;
         use luft_core::{MockBackend, MockBehavior, TokenUsage};
+        use std::time::Duration;
 
         let backend = MockBackend::new(
             "mock",
@@ -261,7 +268,10 @@ mod tests {
 
         let server = McpServer::new(luft).search_dirs(vec![PathBuf::from("/tmp")]);
         // Exercise a known method to confirm wiring is intact.
-        let r = server.dispatch_method("ping", &serde_json::json!({})).await.unwrap();
+        let r = server
+            .dispatch_method("ping", &serde_json::json!({}))
+            .await
+            .unwrap();
         assert!(r.is_object());
     }
 

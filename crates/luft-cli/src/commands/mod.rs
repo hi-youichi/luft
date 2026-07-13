@@ -101,7 +101,9 @@ mod tests {
     #[test]
     #[serial_test::serial]
     fn runs_base_dir_is_independent_of_cwd() {
-        let _lock = GLOBAL_CWD_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _lock = GLOBAL_CWD_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let scratch1 = tempfile::tempdir().unwrap();
         let scratch2 = tempfile::tempdir().unwrap();
         let original = std::env::current_dir().unwrap();
@@ -161,15 +163,21 @@ mod tests {
     #[serial_test::serial]
     fn global_cwd_lock_acquires_and_releases() {
         {
-            let _guard = GLOBAL_CWD_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let _guard = GLOBAL_CWD_LOCK
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
         }
-        let _guard = GLOBAL_CWD_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _guard = GLOBAL_CWD_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
     }
 
     #[test]
     #[serial_test::serial]
     fn global_cwd_lock_blocks_concurrent_acquire_via_try_lock() {
-        let _outer = GLOBAL_CWD_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _outer = GLOBAL_CWD_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let result = GLOBAL_CWD_LOCK.try_lock();
         assert!(
             result.is_err(),
@@ -180,7 +188,9 @@ mod tests {
     #[test]
     #[serial_test::serial]
     fn global_cwd_lock_releases_for_next_caller() {
-        let g1 = GLOBAL_CWD_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let g1 = GLOBAL_CWD_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         drop(g1);
         assert!(GLOBAL_CWD_LOCK.try_lock().is_ok());
     }
@@ -191,7 +201,9 @@ mod tests {
         // The static must hand out a guard with `'static` lifetime so it can
         // be embedded in long-lived structs (the `TestEnv` pattern in
         // `list.rs`, `status.rs`, `logs.rs`, `clear.rs`).
-        let guard: std::sync::MutexGuard<'static, ()> = GLOBAL_CWD_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let guard: std::sync::MutexGuard<'static, ()> = GLOBAL_CWD_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         // Use the guard; if the lock returned a shorter lifetime the
         // annotation on `guard` would fail to compile.
         let _used = &*guard;
@@ -203,7 +215,9 @@ mod tests {
         // We hold the main-thread guard for the whole test so other tests in
         // the same binary running in parallel cannot briefly steal the lock
         // (the lock is `pub(crate) static` — global to the test binary).
-        let _main_guard = GLOBAL_CWD_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _main_guard = GLOBAL_CWD_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
 
         let (tx_acquired, rx_acquired) = mpsc::channel::<()>();
         let (tx_release_ack, rx_release_ack) = mpsc::channel::<()>();
@@ -212,7 +226,9 @@ mod tests {
             // Block on the contended lock until the main guard is dropped.
             // This proves the lock CAN be acquired by another thread when the
             // main thread holds it.
-            let _guard = GLOBAL_CWD_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let _guard = GLOBAL_CWD_LOCK
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             tx_acquired.send(()).unwrap();
             rx_release_ack.recv().unwrap();
             drop(_guard);

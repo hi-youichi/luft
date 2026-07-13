@@ -5,9 +5,9 @@
 //! progress view. `--json` switches to a JSON dump for tooling.
 
 use super::runs_base_dir;
-use luft::core::contract::event::AgentEvent;
-use luft::service::phases::{PhasesView, PhaseStatus};
 use anyhow::Result;
+use luft::core::contract::event::AgentEvent;
+use luft::service::phases::{PhaseStatus, PhasesView};
 use std::io::Write;
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -96,7 +96,9 @@ fn render_phases(w: &mut impl Write, view: &PhasesView) -> std::io::Result<()> {
                 writeln!(
                     w,
                     "Phase {}/{}  {:<label_w$}  pending",
-                    phase_num, total, phase.label,
+                    phase_num,
+                    total,
+                    phase.label,
                     label_w = label_w,
                 )?;
             }
@@ -108,8 +110,13 @@ fn render_phases(w: &mut impl Write, view: &PhasesView) -> std::io::Result<()> {
                 writeln!(
                     w,
                     "Phase {}/{}  {:<label_w$}  ok={} failed={}  {:>10}  {}",
-                    phase_num, total, phase.label, phase.ok, phase.failed,
-                    phase.status.bracket(), elapsed_str,
+                    phase_num,
+                    total,
+                    phase.label,
+                    phase.ok,
+                    phase.failed,
+                    phase.status.bracket(),
+                    elapsed_str,
                     label_w = label_w,
                 )?;
             }
@@ -123,16 +130,22 @@ fn render_phases(w: &mut impl Write, view: &PhasesView) -> std::io::Result<()> {
         // Agent lines
         let agent_count = phase.agents.len();
         for (j, agent) in phase.agents.iter().enumerate() {
-            let prefix = if j + 1 == agent_count { "└─" } else { "├─" };
+            let prefix = if j + 1 == agent_count {
+                "└─"
+            } else {
+                "├─"
+            };
             let tokens_str = match agent.tokens {
                 Some(t) => format!("{} tok", t),
                 None => "— tok".to_string(),
             };
             if agent.status == "running" {
-                let tool_str = agent.tool_count
+                let tool_str = agent
+                    .tool_count
                     .map(|c| format!("tools={}", c))
                     .unwrap_or_default();
-                let msg_str = agent.last_message
+                let msg_str = agent
+                    .last_message
                     .as_ref()
                     .filter(|m| !m.is_empty())
                     .map(|m| {
@@ -194,11 +207,11 @@ fn format_elapsed(secs: f64) -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::super::GLOBAL_CWD_LOCK;
     use super::*;
     use luft::core::state::{get_run_store, CheckpointStatus};
     use luft::planner::{MetaPhase, PlanMeta};
     use std::path::PathBuf;
-    use super::super::GLOBAL_CWD_LOCK;
     use tempfile::TempDir;
 
     struct TestEnv {
@@ -236,7 +249,9 @@ mod tests {
         let dir_name = run_uuid.to_string();
         let store = get_run_store(&dir_name, &base_dir).unwrap();
         let id = uuid::Uuid::now_v7();
-        store.init_run_with_meta(id, "test task", serde_json::to_value(&meta).unwrap()).unwrap();
+        store
+            .init_run_with_meta(id, "test task", serde_json::to_value(&meta).unwrap())
+            .unwrap();
         let mut cp = store.get_checkpoint().unwrap();
         cp.current_phase = current_phase;
         cp.status = CheckpointStatus::Running;
@@ -268,8 +283,18 @@ mod tests {
         let _env = TestEnv::new();
         let meta = PlanMeta {
             phases: vec![
-                MetaPhase { label: "gather".into(), detail: "collect sources".into(), agents: 2, ..Default::default() },
-                MetaPhase { label: "report".into(), detail: "summarize".into(), agents: 1, depends_on: vec![1] },
+                MetaPhase {
+                    label: "gather".into(),
+                    detail: "collect sources".into(),
+                    agents: 2,
+                    ..Default::default()
+                },
+                MetaPhase {
+                    label: "report".into(),
+                    detail: "summarize".into(),
+                    agents: 1,
+                    depends_on: vec![1],
+                },
             ],
             reasoning: "two-stage".into(),
         };
@@ -291,7 +316,12 @@ mod tests {
     fn json_output_structure() {
         let _env = TestEnv::new();
         let meta = PlanMeta {
-            phases: vec![MetaPhase { label: "only".into(), detail: "the only one".into(), agents: 1, ..Default::default() }],
+            phases: vec![MetaPhase {
+                label: "only".into(),
+                detail: "the only one".into(),
+                agents: 1,
+                ..Default::default()
+            }],
             reasoning: "single".into(),
         };
         let run_dir = seed_run_with_meta(meta, 0);
@@ -356,7 +386,12 @@ mod tests {
     fn events_missing_elapsed_question_mark() {
         let _env = TestEnv::new();
         let meta = PlanMeta {
-            phases: vec![MetaPhase { label: "p".into(), detail: "d".into(), agents: 1, ..Default::default() }],
+            phases: vec![MetaPhase {
+                label: "p".into(),
+                detail: "d".into(),
+                agents: 1,
+                ..Default::default()
+            }],
             reasoning: String::new(),
         };
         let run_dir = seed_run_with_meta(meta, 1);
@@ -372,8 +407,18 @@ mod tests {
         let _env = TestEnv::new();
         let meta = PlanMeta {
             phases: vec![
-                MetaPhase { label: "a".into(), detail: "1".into(), agents: 1, ..Default::default() },
-                MetaPhase { label: "b".into(), detail: "2".into(), agents: 1, ..Default::default() },
+                MetaPhase {
+                    label: "a".into(),
+                    detail: "1".into(),
+                    agents: 1,
+                    ..Default::default()
+                },
+                MetaPhase {
+                    label: "b".into(),
+                    detail: "2".into(),
+                    agents: 1,
+                    ..Default::default()
+                },
             ],
             reasoning: String::new(),
         };

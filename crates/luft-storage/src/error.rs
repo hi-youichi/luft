@@ -34,8 +34,14 @@ mod tests {
         let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "missing");
         let err: StorageError = io_err.into();
         let dbg = format!("{:?}", err);
-        assert!(dbg.contains("Io"), "Debug should contain variant name: {dbg}");
-        assert!(dbg.contains("missing"), "Debug should contain inner message: {dbg}");
+        assert!(
+            dbg.contains("Io"),
+            "Debug should contain variant name: {dbg}"
+        );
+        assert!(
+            dbg.contains("missing"),
+            "Debug should contain inner message: {dbg}"
+        );
     }
 
     #[test]
@@ -71,8 +77,7 @@ mod tests {
 
     #[test]
     fn from_serde_json_error() {
-        let serde_err: serde_json::Error =
-            serde_json::from_str::<i32>("not a number").unwrap_err();
+        let serde_err: serde_json::Error = serde_json::from_str::<i32>("not a number").unwrap_err();
         let err: StorageError = serde_err.into();
         matches!(err, StorageError::Serde(_));
         let display = err.to_string();

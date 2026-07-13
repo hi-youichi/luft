@@ -133,7 +133,10 @@ mod tests {
         std::env::set_var("PATH", empty.path().to_str().unwrap());
 
         let config_path = crate::config::config_path();
-        let saved_config = config_path.exists().then(|| std::fs::read(&config_path).ok()).flatten();
+        let saved_config = config_path
+            .exists()
+            .then(|| std::fs::read(&config_path).ok())
+            .flatten();
         let _ = std::fs::remove_file(&config_path);
 
         let err = generate_script(args("do stuff", None, None))

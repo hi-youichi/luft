@@ -302,10 +302,22 @@ mod tests {
 
     #[test]
     fn run_status_serializes_as_snake_case() {
-        assert_eq!(serde_json::to_string(&RunStatus::Completed).unwrap(), "\"completed\"");
-        assert_eq!(serde_json::to_string(&RunStatus::Failed).unwrap(), "\"failed\"");
-        assert_eq!(serde_json::to_string(&RunStatus::Cancelled).unwrap(), "\"cancelled\"");
-        assert_eq!(serde_json::to_string(&RunStatus::Partial).unwrap(), "\"partial\"");
+        assert_eq!(
+            serde_json::to_string(&RunStatus::Completed).unwrap(),
+            "\"completed\""
+        );
+        assert_eq!(
+            serde_json::to_string(&RunStatus::Failed).unwrap(),
+            "\"failed\""
+        );
+        assert_eq!(
+            serde_json::to_string(&RunStatus::Cancelled).unwrap(),
+            "\"cancelled\""
+        );
+        assert_eq!(
+            serde_json::to_string(&RunStatus::Partial).unwrap(),
+            "\"partial\""
+        );
     }
 
     #[test]
@@ -347,11 +359,20 @@ mod tests {
 
     #[test]
     fn log_level_serializes_as_lowercase() {
-        assert_eq!(serde_json::to_string(&LogLevel::Trace).unwrap(), "\"trace\"");
-        assert_eq!(serde_json::to_string(&LogLevel::Debug).unwrap(), "\"debug\"");
+        assert_eq!(
+            serde_json::to_string(&LogLevel::Trace).unwrap(),
+            "\"trace\""
+        );
+        assert_eq!(
+            serde_json::to_string(&LogLevel::Debug).unwrap(),
+            "\"debug\""
+        );
         assert_eq!(serde_json::to_string(&LogLevel::Info).unwrap(), "\"info\"");
         assert_eq!(serde_json::to_string(&LogLevel::Warn).unwrap(), "\"warn\"");
-        assert_eq!(serde_json::to_string(&LogLevel::Error).unwrap(), "\"error\"");
+        assert_eq!(
+            serde_json::to_string(&LogLevel::Error).unwrap(),
+            "\"error\""
+        );
     }
 
     #[test]
@@ -453,7 +474,10 @@ mod tests {
         assert!(!p.dynamic);
         assert!(p.description.is_none());
         let back = serde_json::to_value(&p).unwrap();
-        assert_eq!(back, json!({"label": "review", "dynamic": false, "description": null}));
+        assert_eq!(
+            back,
+            json!({"label": "review", "dynamic": false, "description": null})
+        );
     }
 
     #[test]
@@ -589,9 +613,7 @@ mod tests {
         let ev = AgentEvent::AgentProgress {
             run_id: run_id(),
             agent_id: agent_id(),
-            delta: ProgressDelta::Message {
-                text: "ok".into(),
-            },
+            delta: ProgressDelta::Message { text: "ok".into() },
         };
         let s = serde_json::to_string(&ev).unwrap();
         assert!(s.contains("\"type\":\"agent_progress\""));
@@ -825,7 +847,9 @@ mod tests {
         assert!(s.contains("\"type\":\"report_emitted\""));
         let back: AgentEvent = serde_json::from_str(&s).unwrap();
         match back {
-            AgentEvent::ReportEmitted { phase_id, report, .. } => {
+            AgentEvent::ReportEmitted {
+                phase_id, report, ..
+            } => {
                 assert_eq!(phase_id, 2);
                 assert_eq!(report, json!({"x": 1}));
             }
@@ -933,7 +957,9 @@ mod tests {
         assert!(s.contains("\"type\":\"converge_started\""));
         let back: AgentEvent = serde_json::from_str(&s).unwrap();
         match back {
-            AgentEvent::ConvergeStarted { items, max_rounds, .. } => {
+            AgentEvent::ConvergeStarted {
+                items, max_rounds, ..
+            } => {
                 assert_eq!(items, 12);
                 assert_eq!(max_rounds, 3);
             }
@@ -1098,9 +1124,7 @@ mod tests {
         let back: AgentEvent = serde_json::from_str(&s).unwrap();
         match back {
             AgentEvent::PhaseSpanDone {
-                status,
-                elapsed_ms,
-                ..
+                status, elapsed_ms, ..
             } => {
                 assert_eq!(status, "ok");
                 assert_eq!(elapsed_ms, 500);

@@ -822,10 +822,7 @@ mod tests {
         let agent_id = uuid::Uuid::now_v7();
         w.handle(&agent_started(1, agent_id, "agent-a"));
         w.handle(&agent_done(agent_id, "agent-a"));
-        let report_path = _tmp
-            .path()
-            .join("01_agent-a")
-            .join("report.md");
+        let report_path = _tmp.path().join("01_agent-a").join("report.md");
         let content = std::fs::read_to_string(&report_path).unwrap();
         assert!(content.contains("research"), "phase label should appear");
     }
@@ -859,9 +856,12 @@ mod tests {
             });
         }
         w.handle(&agent_done(agent_id, "msg-agent"));
-        let report = std::fs::read_to_string(tmp.path().join("01_msg-agent").join("report.md"))
-            .unwrap();
-        assert!(report.contains("Rounds: 3"), "round count should be 3, got:\n{report}");
+        let report =
+            std::fs::read_to_string(tmp.path().join("01_msg-agent").join("report.md")).unwrap();
+        assert!(
+            report.contains("Rounds: 3"),
+            "round count should be 3, got:\n{report}"
+        );
     }
 
     #[test]
@@ -931,11 +931,7 @@ mod tests {
         });
         w.handle(&agent_done(agent_id, "tok-agent"));
         // No panics; file exists.
-        assert!(tmp
-            .path()
-            .join("01_tok-agent")
-            .join("report.md")
-            .exists());
+        assert!(tmp.path().join("01_tok-agent").join("report.md").exists());
     }
 
     #[test]

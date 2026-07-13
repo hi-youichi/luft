@@ -5,8 +5,8 @@
 //! is pure and unit-tested; [`extract_inputs`] adapts an ACP request into the
 //! pure inputs.
 
-use luft_core::contract::backend::ToolPolicy;
 use agent_client_protocol::schema::RequestPermissionRequest;
+use luft_core::contract::backend::ToolPolicy;
 
 /// Outcome of an automatic permission decision.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -104,7 +104,7 @@ pub async fn mock_add(args: MockAddArgs) -> Result<()> {
 
     eprintln!("\u{2705}  Mock data written to {}", mock_path.display());
 
-let response_count = mock_data
+    let response_count = mock_data
         .get("responses")
         .and_then(|r| r.as_object())
         .map(|m| m.len())
@@ -189,8 +189,7 @@ mod tests {
         };
         let err = mock_add(args).await.unwrap_err();
         assert!(
-            err.to_string().contains("real LLM backend")
-                || err.to_string().contains("mock"),
+            err.to_string().contains("real LLM backend") || err.to_string().contains("mock"),
             "expected mock-related error, got: {err}"
         );
     }
@@ -210,8 +209,7 @@ mod tests {
         };
         let err = mock_add(args).await.unwrap_err();
         assert!(
-            err.to_string().contains("real LLM backend")
-                || err.to_string().contains("mock"),
+            err.to_string().contains("real LLM backend") || err.to_string().contains("mock"),
             "expected mock-related error, got: {err}"
         );
     }
@@ -313,7 +311,8 @@ mod tests {
         // Re-test the same flow synchronously by exercising
         // extract_agent_calls with multiple unnamed calls to confirm the parser
         // correctly identifies the offending lines.
-        let script = "agent({ prompt = \"a\" })\nagent({ name = \"ok\" })\nagent({ prompt = \"c\" })";
+        let script =
+            "agent({ prompt = \"a\" })\nagent({ name = \"ok\" })\nagent({ prompt = \"c\" })";
         let calls = luft::mock_gen::extract_agent_calls(script);
         let unnamed: Vec<_> = calls.iter().filter(|c| c.name.is_none()).collect();
         assert_eq!(unnamed.len(), 2);

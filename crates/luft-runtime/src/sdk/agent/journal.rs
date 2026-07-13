@@ -108,7 +108,7 @@ mod tests {
         assert_eq!(tokens, 99);
     }
 
-#[test]
+    #[test]
     fn record_without_journal_is_noop() {
         // Must not panic when no journal is configured.
         let key = AgentCacheKey::new("p", Some("m"), 1);

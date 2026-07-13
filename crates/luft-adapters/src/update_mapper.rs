@@ -5,9 +5,9 @@
 //! field types we extract text/usage from the serialized JSON. Only the top-level
 //! [`SessionUpdate`] variant names are matched directly.
 
+use agent_client_protocol::schema::SessionUpdate;
 use luft_core::contract::event::{AgentEvent, EventSender, ProgressDelta};
 use luft_core::contract::ids::{AgentId, RunId, TokenUsage};
-use agent_client_protocol::schema::SessionUpdate;
 use serde::Serialize;
 use std::sync::Mutex;
 

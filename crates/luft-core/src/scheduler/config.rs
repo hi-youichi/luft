@@ -124,10 +124,7 @@ mod tests {
         assert_eq!(back.quota_per_run, cfg.quota_per_run);
         assert_eq!(back.retry.max_attempts, cfg.retry.max_attempts);
         assert_eq!(back.retry.initial_backoff, cfg.retry.initial_backoff);
-        assert_eq!(
-            back.retry.backoff_multiplier,
-            cfg.retry.backoff_multiplier
-        );
+        assert_eq!(back.retry.backoff_multiplier, cfg.retry.backoff_multiplier);
         assert_eq!(back.retry.max_backoff, cfg.retry.max_backoff);
         assert_eq!(back.retry.schema_retry_max, cfg.retry.schema_retry_max);
     }

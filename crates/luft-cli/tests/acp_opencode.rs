@@ -85,10 +85,7 @@ async fn acp_cancel_returns_promptly() {
         .await
         .expect_err("cancel should produce an error");
     assert!(
-        matches!(
-            err,
-            luft::core::contract::backend::BackendError::Cancelled
-        ),
+        matches!(err, luft::core::contract::backend::BackendError::Cancelled),
         "expected Cancelled, got {err:?}"
     );
 }

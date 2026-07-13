@@ -87,7 +87,11 @@ pub fn extract_meta(script: &str) -> Result<Option<PlanMeta>, ScriptError> {
 fn lua_to_meta_phase(value: Value) -> Result<MetaPhase, ScriptError> {
     let table = match value {
         Value::Table(t) => t,
-        _ => return Err(ScriptError::Internal("meta.phases[*] must be a table".into())),
+        _ => {
+            return Err(ScriptError::Internal(
+                "meta.phases[*] must be a table".into(),
+            ))
+        }
     };
     let label: String = table
         .get("label")
@@ -103,7 +107,12 @@ fn lua_to_meta_phase(value: Value) -> Result<MetaPhase, ScriptError> {
         .get::<Option<Vec<u32>>>("depends_on")
         .map_err(|e| ScriptError::Internal(format!("meta.phases[*].depends_on: {e}")))?
         .unwrap_or_default();
-    Ok(MetaPhase { label, detail, agents, depends_on })
+    Ok(MetaPhase {
+        label,
+        detail,
+        agents,
+        depends_on,
+    })
 }
 
 /// Register no-op stubs so accidental top-level SDK calls don't crash extraction.
@@ -117,22 +126,28 @@ fn register_stubs(lua: &Lua) -> mlua::Result<()> {
     globals.set("log", log)?;
     let budget = lua.create_function(|_, _: mlua::MultiValue| Ok(Value::Nil))?;
     globals.set("budget", budget)?;
-    let agent = lua.create_function(|lua, _: mlua::MultiValue| Ok(Value::Table(lua.create_table()?)))?;
+    let agent =
+        lua.create_function(|lua, _: mlua::MultiValue| Ok(Value::Table(lua.create_table()?)))?;
     globals.set("agent", agent)?;
-    let parallel = lua.create_function(|lua, _: mlua::MultiValue| Ok(Value::Table(lua.create_table()?)))?;
+    let parallel =
+        lua.create_function(|lua, _: mlua::MultiValue| Ok(Value::Table(lua.create_table()?)))?;
     globals.set("parallel", parallel)?;
-    let pipeline = lua.create_function(|lua, _: mlua::MultiValue| Ok(Value::Table(lua.create_table()?)))?;
+    let pipeline =
+        lua.create_function(|lua, _: mlua::MultiValue| Ok(Value::Table(lua.create_table()?)))?;
     globals.set("pipeline", pipeline)?;
-    let workflow = lua.create_function(|lua, _: mlua::MultiValue| Ok(Value::Table(lua.create_table()?)))?;
+    let workflow =
+        lua.create_function(|lua, _: mlua::MultiValue| Ok(Value::Table(lua.create_table()?)))?;
     globals.set("workflow", workflow)?;
 
     let json_table = lua.create_table()?;
     let encode = lua.create_function(|_, v: Value| {
         Ok(serde_json::to_string(&lua_value_to_json(&v)).unwrap_or_default())
     })?;
-    let decode = lua.create_function(|lua, s: String| match serde_json::from_str::<serde_json::Value>(&s) {
-        Ok(v) => json_to_lua_value(lua, &v),
-        Err(_) => Ok(Value::Nil),
+    let decode = lua.create_function(|lua, s: String| {
+        match serde_json::from_str::<serde_json::Value>(&s) {
+            Ok(v) => json_to_lua_value(lua, &v),
+            Err(_) => Ok(Value::Nil),
+        }
     })?;
     json_table.set("encode", encode)?;
     json_table.set("decode", decode)?;
@@ -183,9 +198,13 @@ fn json_to_lua_value(lua: &Lua, v: &serde_json::Value) -> mlua::Result<Value> {
         serde_json::Value::Null => Ok(Value::Nil),
         serde_json::Value::Bool(b) => Ok(Value::Boolean(*b)),
         serde_json::Value::Number(n) => {
-            if let Some(i) = n.as_i64() { Ok(Value::Integer(i)) }
-            else if let Some(f) = n.as_f64() { Ok(Value::Number(f)) }
-            else { Ok(Value::Nil) }
+            if let Some(i) = n.as_i64() {
+                Ok(Value::Integer(i))
+            } else if let Some(f) = n.as_f64() {
+                Ok(Value::Number(f))
+            } else {
+                Ok(Value::Nil)
+            }
         }
         serde_json::Value::String(s) => Ok(Value::String(lua.create_string(s)?)),
         serde_json::Value::Array(arr) => {
@@ -210,30 +229,39 @@ pub fn validate_meta(meta: &PlanMeta, script: &str) -> MetaValidation {
     let mut out = MetaValidation::default();
 
     if meta.phases.is_empty() {
-        out.warnings.push("meta.phases is empty; progress display will show nothing".into());
+        out.warnings
+            .push("meta.phases is empty; progress display will show nothing".into());
     }
 
     let mut seen_labels = std::collections::HashSet::new();
     for (idx, phase) in meta.phases.iter().enumerate() {
         if phase.label.trim().is_empty() {
-            out.errors.push(format!("meta.phases[{}].label is empty", idx));
+            out.errors
+                .push(format!("meta.phases[{}].label is empty", idx));
         }
         if !seen_labels.insert(phase.label.as_str()) {
-            out.errors.push(format!("duplicate phase label: '{}'", phase.label));
+            out.errors
+                .push(format!("duplicate phase label: '{}'", phase.label));
         }
         for dep in &phase.depends_on {
             if *dep == 0 {
-                out.errors.push(format!("meta.phases[{}].depends_on uses 0; must be 1-based", idx));
+                out.errors.push(format!(
+                    "meta.phases[{}].depends_on uses 0; must be 1-based",
+                    idx
+                ));
                 continue;
             }
             let dep_idx = (*dep as usize).saturating_sub(1);
             if dep_idx >= meta.phases.len() {
                 out.errors.push(format!(
                     "meta.phases[{}].depends_on={} out of range (have {} phases)",
-                    idx, dep, meta.phases.len()
+                    idx,
+                    dep,
+                    meta.phases.len()
                 ));
             } else if dep_idx == idx {
-                out.errors.push(format!("meta.phases[{}] depends on itself", idx));
+                out.errors
+                    .push(format!("meta.phases[{}] depends on itself", idx));
             }
         }
     }
@@ -284,12 +312,15 @@ function main() report({ ok = true }) end
 
     #[test]
     fn extract_meta_not_a_table() {
-        assert!(extract_meta("meta = \"hello\"\nreport({})").unwrap().is_none());
+        assert!(extract_meta("meta = \"hello\"\nreport({})")
+            .unwrap()
+            .is_none());
     }
 
     #[test]
     fn extract_meta_default_values() {
-        let script = "meta = { phases = { { label = 'p', detail = 'd' } } }\nfunction main() report({}) end";
+        let script =
+            "meta = { phases = { { label = 'p', detail = 'd' } } }\nfunction main() report({}) end";
         let meta = extract_meta(script).unwrap().unwrap();
         assert_eq!(meta.phases[0].agents, 0);
         assert!(meta.phases[0].depends_on.is_empty());
@@ -306,8 +337,18 @@ function main() report({ ok = true }) end
     fn validate_meta_ok() {
         let meta = PlanMeta {
             phases: vec![
-                MetaPhase { label: "a".into(), detail: "1".into(), agents: 1, depends_on: vec![] },
-                MetaPhase { label: "b".into(), detail: "2".into(), agents: 2, depends_on: vec![1] },
+                MetaPhase {
+                    label: "a".into(),
+                    detail: "1".into(),
+                    agents: 1,
+                    depends_on: vec![],
+                },
+                MetaPhase {
+                    label: "b".into(),
+                    detail: "2".into(),
+                    agents: 2,
+                    depends_on: vec![1],
+                },
             ],
             reasoning: String::new(),
         };
@@ -319,8 +360,16 @@ function main() report({ ok = true }) end
     fn validate_meta_duplicate_label() {
         let meta = PlanMeta {
             phases: vec![
-                MetaPhase { label: "a".into(), detail: "1".into(), ..Default::default() },
-                MetaPhase { label: "a".into(), detail: "2".into(), ..Default::default() },
+                MetaPhase {
+                    label: "a".into(),
+                    detail: "1".into(),
+                    ..Default::default()
+                },
+                MetaPhase {
+                    label: "a".into(),
+                    detail: "2".into(),
+                    ..Default::default()
+                },
             ],
             reasoning: String::new(),
         };
@@ -331,8 +380,17 @@ function main() report({ ok = true }) end
     fn validate_meta_zero_depends_on() {
         let meta = PlanMeta {
             phases: vec![
-                MetaPhase { label: "a".into(), detail: "1".into(), ..Default::default() },
-                MetaPhase { label: "b".into(), detail: "2".into(), depends_on: vec![0], ..Default::default() },
+                MetaPhase {
+                    label: "a".into(),
+                    detail: "1".into(),
+                    ..Default::default()
+                },
+                MetaPhase {
+                    label: "b".into(),
+                    detail: "2".into(),
+                    depends_on: vec![0],
+                    ..Default::default()
+                },
             ],
             reasoning: String::new(),
         };
@@ -343,7 +401,12 @@ function main() report({ ok = true }) end
     #[test]
     fn validate_meta_self_dependency() {
         let meta = PlanMeta {
-            phases: vec![MetaPhase { label: "a".into(), detail: "1".into(), depends_on: vec![1], ..Default::default() }],
+            phases: vec![MetaPhase {
+                label: "a".into(),
+                detail: "1".into(),
+                depends_on: vec![1],
+                ..Default::default()
+            }],
             reasoning: String::new(),
         };
         assert!(!validate_meta(&meta, "").is_valid());
@@ -352,7 +415,12 @@ function main() report({ ok = true }) end
     #[test]
     fn validate_meta_out_of_range() {
         let meta = PlanMeta {
-            phases: vec![MetaPhase { label: "a".into(), detail: "1".into(), depends_on: vec![5], ..Default::default() }],
+            phases: vec![MetaPhase {
+                label: "a".into(),
+                detail: "1".into(),
+                depends_on: vec![5],
+                ..Default::default()
+            }],
             reasoning: String::new(),
         };
         assert!(!validate_meta(&meta, "").is_valid());
@@ -361,7 +429,12 @@ function main() report({ ok = true }) end
     #[test]
     fn plan_meta_serde_roundtrip() {
         let meta = PlanMeta {
-            phases: vec![MetaPhase { label: "x".into(), detail: "y".into(), agents: 3, depends_on: vec![1, 2] }],
+            phases: vec![MetaPhase {
+                label: "x".into(),
+                detail: "y".into(),
+                agents: 3,
+                depends_on: vec![1, 2],
+            }],
             reasoning: "why".into(),
         };
         let json = serde_json::to_string(&meta).unwrap();

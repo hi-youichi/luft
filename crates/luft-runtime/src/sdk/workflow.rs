@@ -4,11 +4,11 @@
 //! this run's scheduler, context, and journal. The sub-workflow's `report()`
 //! value is returned to the caller.
 
-use luft_core::contract::event::AgentEvent;
 use crate::error::ExecLimits;
 use crate::sdk::convert::{lua_value_from_json, value_to_json};
 use crate::sdk::SdkContext;
 use crate::Runtime;
+use luft_core::contract::event::AgentEvent;
 use mlua::{Lua, Table, Value};
 use std::sync::atomic::Ordering;
 

@@ -199,10 +199,7 @@ mod tests {
 
     #[test]
     fn call_count_starts_at_zero() {
-        let b = MockBackend::new(
-            "m",
-            vec![MockBehavior::Hang],
-        );
+        let b = MockBackend::new("m", vec![MockBehavior::Hang]);
         assert_eq!(b.call_count(), 0);
     }
 

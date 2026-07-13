@@ -21,10 +21,10 @@
 //! because `&Lua` is not `Send` and cannot enter an async block.
 
 use super::journal::{record, slot_from_result};
-use luft_core::contract::event::AgentEvent;
-use luft_core::scheduler::SchedulerError;
 use crate::sdk::task::build_result_table;
 use crate::sdk::SdkContext;
+use luft_core::contract::event::AgentEvent;
+use luft_core::scheduler::SchedulerError;
 use mlua::{Function, Lua, Table, Thread, Value};
 use std::sync::atomic::Ordering;
 use tokio::sync::mpsc;
@@ -311,13 +311,13 @@ fn dispatch_task(
 #[cfg(test)]
 mod tests {
     use super::register;
+    use crate::sdk::agent::single;
+    use crate::sdk::{ReportSink, SdkContext};
     use luft_core::contract::backend::RunContext;
     use luft_core::contract::ids::TokenUsage;
     use luft_core::scheduler::{BackendRegistry, SchedulerConfig};
     use luft_core::Scheduler;
     use luft_core::{FailKind, MockBackend, MockBehavior};
-    use crate::sdk::agent::single;
-    use crate::sdk::{ReportSink, SdkContext};
     use mlua::Lua;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;

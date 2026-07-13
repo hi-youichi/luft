@@ -200,11 +200,11 @@ pub(crate) mod test_support {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::Ordering;
     use luft_core::contract::backend::{AgentTask, RunContext};
     use luft_core::contract::ids::RunId;
     use luft_core::{BackendRegistry, Scheduler, SchedulerConfig};
     use std::path::PathBuf;
+    use std::sync::atomic::Ordering;
     use tokio_util::sync::CancellationToken;
 
     fn make_sdk_context() -> SdkContext {
@@ -492,7 +492,10 @@ mod tests {
             *guard = Some(serde_json::json!({"written": true}));
         }
         let guard = sink.lock().unwrap();
-        assert_eq!(guard.as_ref().unwrap(), &serde_json::json!({"written": true}));
+        assert_eq!(
+            guard.as_ref().unwrap(),
+            &serde_json::json!({"written": true})
+        );
     }
 
     // -----------------------------------------------------------------------

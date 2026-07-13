@@ -320,11 +320,7 @@ impl PhaseRenderer {
         }
     }
 
-    fn on_plan_preview(
-        &self,
-        reasoning: &str,
-        phases: &[luft::core::contract::event::PlanPhase],
-    ) {
+    fn on_plan_preview(&self, reasoning: &str, phases: &[luft::core::contract::event::PlanPhase]) {
         if !reasoning.is_empty() {
             self.print(&format!("│  {}", style(reasoning).dim()));
         }

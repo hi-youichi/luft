@@ -84,7 +84,9 @@ mod tests {
         // the binding layer (which calls build_task → expects a Table). The test
         // simply verifies the function resolves, not that it succeeds.
         let script = r#"local _ = agent"#;
-        lua.load(script).exec().expect("agent must be a callable global");
+        lua.load(script)
+            .exec()
+            .expect("agent must be a callable global");
     }
 
     #[tokio::test]
