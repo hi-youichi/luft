@@ -1,6 +1,6 @@
 [package]
 name = "luft-core"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 description = "Luft core contracts: AgentBackend trait, scheduling, journaling, state"
 license = "MIT"

@@ -202,6 +202,7 @@ async fn run_planner_agent(
         mcp_endpoint: None,
         timeout: None,
         output_schema: None,
+        workdir_override: None,
     };
     backend
         .run(task, ctx)

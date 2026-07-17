@@ -55,6 +55,12 @@ pub(crate) fn build_task(
         None => prompt,
     };
 
+    let workdir_override = opts
+        .get::<Option<String>>("working_folder")
+        .ok()
+        .flatten()
+        .map(PathBuf::from);
+
     let cache_key = AgentCacheKey::new(&prompt, model.as_deref(), phase_id);
     let agent_seq = agent_seq_counter.fetch_add(1, Ordering::Relaxed);
     let task = AgentTask {
@@ -71,6 +77,7 @@ pub(crate) fn build_task(
         mcp_endpoint: None,
         timeout,
         output_schema,
+        workdir_override,
     };
     Ok((task, cache_key, backend))
 }

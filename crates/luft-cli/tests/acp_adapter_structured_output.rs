@@ -32,6 +32,7 @@ fn test_task(timeout_secs: u64, output_schema: Option<serde_json::Value>) -> Age
         mcp_endpoint: None,
         timeout: Some(Duration::from_secs(timeout_secs)),
         output_schema,
+        workdir_override: None,
         description: None,
         role: None,
         name: None,

@@ -746,6 +746,7 @@ async fn try_fix_script(
         mcp_endpoint: None,
         timeout: Some(std::time::Duration::from_secs(FIX_LUA_TIMEOUT_SECS)),
         output_schema: None,
+        workdir_override: None,
     };
 
     use luft::core::contract::event::AgentEvent;

@@ -170,6 +170,7 @@ mod tests {
             mcp_endpoint: None,
             timeout: None,
             output_schema: None,
+        workdir_override: None,
         }
     }
 
