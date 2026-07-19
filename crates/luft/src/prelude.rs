@@ -6,21 +6,21 @@
 //! use luft::prelude::*;
 //! ```
 
+pub use crate::builder::{Luft, LuftBuilder, RunHandle, RunOutcome};
+pub use crate::error::LuftError;
 pub use luft_core::contract::backend::{
-    AgentBackend, AgentCapabilities, AgentResult, AgentStatus, AgentTask,
-    Artifact, BackendError, LogRef, McpEndpoint, RunContext, ToolPolicy,
+    AgentBackend, AgentCapabilities, AgentResult, AgentStatus, AgentTask, Artifact, BackendError,
+    LogRef, McpEndpoint, RunContext, ToolPolicy,
 };
 pub use luft_core::contract::event::{AgentEvent, RunStatus};
 pub use luft_core::contract::finding::Finding;
 pub use luft_core::contract::ids::{AgentId, PhaseId, RunId, TokenUsage};
-pub use luft_core::scheduler::{BackendRegistry, RetryPolicy, Scheduler, SchedulerConfig};
 pub use luft_core::journal::JournalStore;
+pub use luft_core::scheduler::{BackendRegistry, RetryPolicy, Scheduler, SchedulerConfig};
 pub use luft_core::state::{CheckpointStatus, RunCheckpoint};
-pub use luft_runtime::{validate, ExecLimits, ScriptError};
 pub use luft_planner::{plan_workflow, PlannedWorkflow, PlannerConfig};
+pub use luft_runtime::{validate, ExecLimits, ScriptError};
 pub use luft_service::query::{ReportStatus, StatusOutput};
-pub use crate::builder::{Luft, LuftBuilder, RunHandle, RunOutcome};
-pub use crate::error::LuftError;
 
 #[cfg(test)]
 mod tests {
@@ -156,7 +156,8 @@ mod tests {
         );
         _takes(&mock);
         // Carry the function pointer without having to re-specify B.
-        let _f: fn(&luft_core::mock_backend::MockBackend) = _takes::<luft_core::mock_backend::MockBackend>;
+        let _f: fn(&luft_core::mock_backend::MockBackend) =
+            _takes::<luft_core::mock_backend::MockBackend>;
     }
 
     #[test]
@@ -208,10 +209,7 @@ mod tests {
         // The wildcard re-exports must point at the same types as their
         // home crate path — verifying nothing was accidentally shadowed
         // or wrapped at the prelude layer.
-        assert_eq!(
-            type_name_of::<RunId>(),
-            type_name_of::<luft_core::RunId>(),
-        );
+        assert_eq!(type_name_of::<RunId>(), type_name_of::<luft_core::RunId>(),);
         assert_eq!(
             type_name_of::<TokenUsage>(),
             type_name_of::<luft_core::TokenUsage>(),

@@ -255,7 +255,7 @@ mod tests {
                     cache_write: 0,
                 },
                 report: serde_json::json!({"result": "done"}),
-            ts: chrono::Utc::now(),
+                ts: chrono::Utc::now(),
             },
             AgentEvent::Log {
                 run_id,

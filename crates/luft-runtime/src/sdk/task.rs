@@ -4,11 +4,11 @@
 //! [`AgentTask`] (plus cache key + optional backend id) and turn a scheduler
 //! result back into the Lua result table handed to the workflow.
 
+use crate::sdk::convert::{lua_value_from_json, value_to_json};
 use luft_core::contract::backend::AgentTask;
 use luft_core::contract::finding::Finding;
 use luft_core::contract::ids::PhaseId;
 use luft_core::journal::AgentCacheKey;
-use crate::sdk::convert::{lua_value_from_json, value_to_json};
 use mlua::{Lua, Table, Value};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -55,6 +55,12 @@ pub(crate) fn build_task(
         None => prompt,
     };
 
+    let workdir_override = opts
+        .get::<Option<String>>("working_folder")
+        .ok()
+        .flatten()
+        .map(PathBuf::from);
+
     let cache_key = AgentCacheKey::new(&prompt, model.as_deref(), phase_id);
     let agent_seq = agent_seq_counter.fetch_add(1, Ordering::Relaxed);
     let task = AgentTask {
@@ -71,6 +77,7 @@ pub(crate) fn build_task(
         mcp_endpoint: None,
         timeout,
         output_schema,
+        workdir_override,
     };
     Ok((task, cache_key, backend))
 }

@@ -24,6 +24,7 @@
 //!  6. [`collect_session_result`] — assemble the final [`AgentResult`].
 
 use super::{permission, result_collector, update_mapper};
+use async_trait::async_trait;
 use luft_core::contract::backend::{
     AgentBackend, AgentCapabilities, AgentResult, AgentTask, BackendError, RunContext, ToolPolicy,
 };
@@ -31,7 +32,6 @@ use luft_core::contract::event::EventSender;
 #[cfg(feature = "unstable_end_turn_token_usage")]
 use luft_core::contract::ids::TokenUsage;
 use luft_core::contract::ids::{AgentId, RunId};
-use async_trait::async_trait;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};

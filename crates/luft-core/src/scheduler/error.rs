@@ -135,10 +135,7 @@ mod tests {
 
     #[test]
     fn construct_quota_exceeded() {
-        let e = SchedulerError::QuotaExceeded {
-            limit: 5,
-            used: 5,
-        };
+        let e = SchedulerError::QuotaExceeded { limit: 5, used: 5 };
         match e {
             SchedulerError::QuotaExceeded { limit, used } => {
                 assert_eq!(limit, 5);
@@ -307,19 +304,10 @@ mod tests {
                 SchedulerError::UnknownBackend("id".to_string()),
                 "UnknownBackend",
             ),
+            (SchedulerError::NoBackendRegistered, "NoBackendRegistered"),
+            (SchedulerError::RunNotFound(RunId::nil()), "RunNotFound"),
             (
-                SchedulerError::NoBackendRegistered,
-                "NoBackendRegistered",
-            ),
-            (
-                SchedulerError::RunNotFound(RunId::nil()),
-                "RunNotFound",
-            ),
-            (
-                SchedulerError::QuotaExceeded {
-                    limit: 1,
-                    used: 2,
-                },
+                SchedulerError::QuotaExceeded { limit: 1, used: 2 },
                 "QuotaExceeded",
             ),
             (SchedulerError::RunCancelled, "RunCancelled"),
@@ -380,10 +368,7 @@ mod tests {
 
     #[test]
     fn quota_exceeded_with_zero_limit_and_zero_used() {
-        let e = SchedulerError::QuotaExceeded {
-            limit: 0,
-            used: 0,
-        };
+        let e = SchedulerError::QuotaExceeded { limit: 0, used: 0 };
         assert_eq!(e.to_string(), "quota exceeded: limit=0, used=0");
     }
 
@@ -416,10 +401,7 @@ mod tests {
             attempts: 0,
             source: BackendError::Cancelled,
         };
-        assert_eq!(
-            e.to_string(),
-            "backend error after 0 attempts: cancelled"
-        );
+        assert_eq!(e.to_string(), "backend error after 0 attempts: cancelled");
     }
 
     #[test]
@@ -506,10 +488,7 @@ mod tests {
             SchedulerError::UnknownBackend(String::new()),
             SchedulerError::NoBackendRegistered,
             SchedulerError::RunNotFound(RunId::nil()),
-            SchedulerError::QuotaExceeded {
-                limit: 0,
-                used: 0,
-            },
+            SchedulerError::QuotaExceeded { limit: 0, used: 0 },
             SchedulerError::RunCancelled,
             SchedulerError::AgentCancelled,
             SchedulerError::NonRetryable(BackendError::Timeout),

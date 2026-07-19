@@ -162,7 +162,10 @@ mod tests {
         // the inner Vec must contain the payload (i.e. flush was called).
         let mut buf = std::io::Cursor::new(Vec::<u8>::new());
         send(&mut buf, serde_json::json!({"x": 1}));
-        assert!(!buf.get_ref().is_empty(), "flush should have written payload");
+        assert!(
+            !buf.get_ref().is_empty(),
+            "flush should have written payload"
+        );
     }
 
     #[test]
@@ -178,8 +181,7 @@ mod tests {
         let mut buf: Vec<u8> = Vec::new();
         send(&mut buf, serde_json::json!([1, 2, 3]));
         let s = String::from_utf8(buf).unwrap();
-        let parsed: serde_json::Value =
-            serde_json::from_str(s.trim_end_matches('\n')).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(s.trim_end_matches('\n')).unwrap();
         assert_eq!(parsed, serde_json::json!([1, 2, 3]));
     }
 
@@ -201,8 +203,7 @@ mod tests {
         });
         send(&mut buf, payload.clone());
         let s = String::from_utf8(buf).unwrap();
-        let parsed: serde_json::Value =
-            serde_json::from_str(s.trim_end_matches('\n')).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(s.trim_end_matches('\n')).unwrap();
         assert_eq!(parsed, payload);
     }
 

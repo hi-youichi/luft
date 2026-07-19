@@ -5,12 +5,12 @@
 //! in input order. Cached items (resume) are filled in without re-running.
 
 use super::journal::{record, slot_from_cache, slot_from_result, Slot};
+use crate::sdk::task::{build_result_table, build_task};
+use crate::sdk::SdkContext;
 use luft_core::contract::backend::AgentTask;
 use luft_core::contract::event::AgentEvent;
 use luft_core::contract::ids::AgentId;
 use luft_core::journal::AgentCacheKey;
-use crate::sdk::task::{build_result_table, build_task};
-use crate::sdk::SdkContext;
 use mlua::{Function, Lua, Table, Value};
 use std::sync::atomic::Ordering;
 
@@ -140,15 +140,15 @@ pub(super) fn register(lua: &Lua, cx: &SdkContext) -> mlua::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::register;
+    use crate::sdk::task::build_task;
+    use crate::sdk::ReportSink;
+    use crate::sdk::SdkContext;
     use luft_core::contract::backend::{AgentStatus, RunContext};
     use luft_core::contract::ids::TokenUsage;
     use luft_core::journal::JournalStore;
     use luft_core::scheduler::{BackendRegistry, SchedulerConfig};
     use luft_core::Scheduler;
     use luft_core::{FailKind, MockBackend, MockBehavior};
-    use crate::sdk::task::build_task;
-    use crate::sdk::ReportSink;
-    use crate::sdk::SdkContext;
     use mlua::Lua;
     use std::sync::atomic::AtomicU32;
     use std::sync::{Arc, Mutex};

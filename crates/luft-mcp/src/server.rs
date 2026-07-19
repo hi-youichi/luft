@@ -129,10 +129,10 @@ impl McpServer {
             "resources/templates/list" => Ok(resource_templates_list_result()),
 
             "resources/read" => {
-                let uri = params
-                    .get("uri")
-                    .and_then(|v| v.as_str())
-                    .ok_or((error_codes::INVALID_PARAMS, "missing 'uri' parameter".into()))?;
+                let uri = params.get("uri").and_then(|v| v.as_str()).ok_or((
+                    error_codes::INVALID_PARAMS,
+                    "missing 'uri' parameter".into(),
+                ))?;
                 match build_read_response(uri, &self.search_dirs) {
                     Ok(v) => Ok(v),
                     Err(e) => Err((error_codes::INTERNAL_ERROR, e.to_string())),
@@ -141,7 +141,9 @@ impl McpServer {
 
             "tools/list" => Ok(tools_list_result()),
 
-            "tools/call" => Ok(handle_call(params, &self.luft, &self.runs, &self.search_dirs).await),
+            "tools/call" => {
+                Ok(handle_call(params, &self.luft, &self.runs, &self.search_dirs).await)
+            }
 
             "notifications/initialized" => {
                 // Notification acknowledged — no result.
@@ -162,8 +164,8 @@ mod tests {
     use serde_json::json;
 
     fn build_server() -> McpServer {
-        use std::time::Duration;
         use luft_core::{MockBackend, MockBehavior, TokenUsage};
+        use std::time::Duration;
         let backend = MockBackend::new(
             "mock",
             vec![MockBehavior::Success {
@@ -185,7 +187,10 @@ mod tests {
     #[tokio::test]
     async fn dispatch_initialize() {
         let server = build_server();
-        let result = server.dispatch_method("initialize", &json!({})).await.unwrap();
+        let result = server
+            .dispatch_method("initialize", &json!({}))
+            .await
+            .unwrap();
         assert_eq!(result["protocolVersion"], "2024-11-05");
         assert_eq!(result["serverInfo"]["name"], "luft");
     }
@@ -200,7 +205,10 @@ mod tests {
     #[tokio::test]
     async fn dispatch_resources_list() {
         let server = build_server();
-        let result = server.dispatch_method("resources/list", &json!({})).await.unwrap();
+        let result = server
+            .dispatch_method("resources/list", &json!({}))
+            .await
+            .unwrap();
         assert_eq!(result["resources"].as_array().unwrap().len(), 2);
     }
 
@@ -228,7 +236,10 @@ mod tests {
     #[tokio::test]
     async fn dispatch_resources_read_missing_uri() {
         let server = build_server();
-        let err = server.dispatch_method("resources/read", &json!({})).await.unwrap_err();
+        let err = server
+            .dispatch_method("resources/read", &json!({}))
+            .await
+            .unwrap_err();
         assert_eq!(err.0, error_codes::INVALID_PARAMS);
         assert!(err.1.contains("missing 'uri'"));
     }
@@ -246,7 +257,10 @@ mod tests {
     #[tokio::test]
     async fn dispatch_tools_list() {
         let server = build_server();
-        let result = server.dispatch_method("tools/list", &json!({})).await.unwrap();
+        let result = server
+            .dispatch_method("tools/list", &json!({}))
+            .await
+            .unwrap();
         assert_eq!(result["tools"].as_array().unwrap().len(), 4);
     }
 
@@ -254,7 +268,10 @@ mod tests {
     async fn dispatch_tools_call_list_workflows() {
         let server = build_server();
         let result = server
-            .dispatch_method("tools/call", &json!({"name": "list_workflows", "arguments": {}}))
+            .dispatch_method(
+                "tools/call",
+                &json!({"name": "list_workflows", "arguments": {}}),
+            )
             .await
             .unwrap();
         assert_eq!(result["isError"], false);
@@ -263,7 +280,10 @@ mod tests {
     #[tokio::test]
     async fn dispatch_unknown_method() {
         let server = build_server();
-        let err = server.dispatch_method("bogus/method", &json!({})).await.unwrap_err();
+        let err = server
+            .dispatch_method("bogus/method", &json!({}))
+            .await
+            .unwrap_err();
         assert_eq!(err.0, error_codes::METHOD_NOT_FOUND);
     }
 
@@ -363,8 +383,8 @@ mod tests {
 
     #[tokio::test]
     async fn search_dirs_override() {
-        use std::time::Duration;
         use luft_core::{MockBackend, MockBehavior, TokenUsage};
+        use std::time::Duration;
         let dir = tempfile::TempDir::new().unwrap();
         std::fs::write(dir.path().join("custom.lua"), "-- custom").unwrap();
 
@@ -384,7 +404,10 @@ mod tests {
         let server = McpServer::new(luft).search_dirs(vec![dir.path().to_path_buf()]);
 
         let result = server
-            .dispatch_method("tools/call", &json!({"name": "list_workflows", "arguments": {}}))
+            .dispatch_method(
+                "tools/call",
+                &json!({"name": "list_workflows", "arguments": {}}),
+            )
             .await
             .unwrap();
         let text = result["content"][0]["text"].as_str().unwrap();

@@ -26,6 +26,7 @@ fn task(prompt: &str, timeout: Duration) -> AgentTask {
         mcp_endpoint: None,
         timeout: Some(timeout),
         output_schema: None,
+        workdir_override: None,
     }
 }
 
@@ -85,10 +86,7 @@ async fn acp_cancel_returns_promptly() {
         .await
         .expect_err("cancel should produce an error");
     assert!(
-        matches!(
-            err,
-            luft::core::contract::backend::BackendError::Cancelled
-        ),
+        matches!(err, luft::core::contract::backend::BackendError::Cancelled),
         "expected Cancelled, got {err:?}"
     );
 }

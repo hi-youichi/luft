@@ -31,14 +31,14 @@
 //! results before submitting to the scheduler (M1 resume support) and record
 //! their outputs back into the journal keyed by cache key.
 
-use luft_core::contract::backend::RunContext;
-use luft_core::contract::event::{AgentEvent, PlanPhase};
-use luft_core::journal::JournalStore;
-use luft_core::Scheduler;
 use crate::error::{ExecLimits, ScriptError};
 use crate::sdk::convert::serde_json_to_lua;
 use crate::sdk::SdkContext;
 use crate::{pipeline, sdk};
+use luft_core::contract::backend::RunContext;
+use luft_core::contract::event::{AgentEvent, PlanPhase};
+use luft_core::journal::JournalStore;
+use luft_core::Scheduler;
 use mlua::{Lua, Table, Value};
 use std::sync::{Arc, Mutex};
 use tokio::runtime::Handle;
@@ -565,7 +565,14 @@ mod tests {
     fn apply_sandbox_removes_debug_package_require_loadfile_dofile_loadstring() {
         let lua = Lua::new();
         apply_sandbox(&lua).unwrap();
-        for name in ["debug", "package", "require", "loadfile", "dofile", "loadstring"] {
+        for name in [
+            "debug",
+            "package",
+            "require",
+            "loadfile",
+            "dofile",
+            "loadstring",
+        ] {
             match lua.globals().get::<Value>(name).unwrap() {
                 Value::Nil => {}
                 other => panic!("{name} must be nil after sandbox, got {other:?}"),
@@ -651,7 +658,10 @@ mod tests {
         assert!(!extracted.phases[0].dynamic);
         assert_eq!(extracted.phases[1].label, "audit");
         assert!(extracted.phases[1].dynamic);
-        assert_eq!(extracted.phases[1].description.as_deref(), Some("long audit"));
+        assert_eq!(
+            extracted.phases[1].description.as_deref(),
+            Some("long audit")
+        );
     }
 
     #[test]
@@ -950,9 +960,7 @@ mod tests {
         let ev = rx.try_recv().expect("PlanPreview must be emitted");
         match ev {
             AgentEvent::PlanPreview {
-                reasoning,
-                phases,
-                ..
+                reasoning, phases, ..
             } => {
                 assert_eq!(reasoning, "p");
                 assert_eq!(phases.len(), 1);

@@ -40,7 +40,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 pub mod meta;
-pub use meta::{extract_meta, validate_meta as validate_meta_extracted, MetaPhase, MetaValidation, PlanMeta};
+pub use meta::{
+    extract_meta, validate_meta as validate_meta_extracted, MetaPhase, MetaValidation, PlanMeta,
+};
 
 /// Planning configuration.
 #[derive(Debug, Clone)]
@@ -139,7 +141,9 @@ pub async fn plan_workflow(
                 let meta = match meta::extract_meta(&script) {
                     Ok(Some(m)) => {
                         let v = meta::validate_meta(&m, &script);
-                        for w in &v.warnings { tracing::warn!(warning = %w, "planner meta validation warning"); }
+                        for w in &v.warnings {
+                            tracing::warn!(warning = %w, "planner meta validation warning");
+                        }
                         if !v.is_valid() {
                             last_error = format!("meta validation failed: {}", v.errors.join("; "));
                             continue;
@@ -147,9 +151,16 @@ pub async fn plan_workflow(
                         Some(m)
                     }
                     Ok(None) => None,
-                    Err(e) => { tracing::warn!(error = %e, "meta extraction failed; ignoring"); None }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "meta extraction failed; ignoring");
+                        None
+                    }
                 };
-                return Ok(PlannedWorkflow { script, mock_data, meta });
+                return Ok(PlannedWorkflow {
+                    script,
+                    mock_data,
+                    meta,
+                });
             }
             Err(e) => {
                 tracing::warn!(attempt, error = %e, "generated script failed validation");
@@ -191,6 +202,7 @@ async fn run_planner_agent(
         mcp_endpoint: None,
         timeout: None,
         output_schema: None,
+        workdir_override: None,
     };
     backend
         .run(task, ctx)

@@ -190,8 +190,7 @@ impl JournalStore {
 
         if matches!(
             checkpoint.status,
-            crate::state::CheckpointStatus::Completed
-                | crate::state::CheckpointStatus::Cancelled
+            crate::state::CheckpointStatus::Completed | crate::state::CheckpointStatus::Cancelled
         ) {
             return Err(JournalError::NotResumable {
                 status: format!("{:?}", checkpoint.status),
@@ -502,10 +501,8 @@ impl RunCreationMode {
                     let checkpoint_path = journal_dir.join(dir_name).join("checkpoint.json");
                     if let Ok(content) = std::fs::read_to_string(&checkpoint_path) {
                         if let Ok(checkpoint) = serde_json::from_str::<RunCheckpoint>(&content) {
-                            if matches!(
-                                checkpoint.status,
-                                crate::state::CheckpointStatus::Running
-                            ) {
+                            if matches!(checkpoint.status, crate::state::CheckpointStatus::Running)
+                            {
                                 let run_id = checkpoint.run_id;
                                 return Ok((run_id, Some(checkpoint)));
                             }
@@ -762,7 +759,7 @@ mod tests {
             let _ = journal.inner.save_checkpoint(&cp);
         }
 
-// GC with very short duration
+        // GC with very short duration
         let cleaned = gc_runs(&run_dir, Duration::from_secs(3600)).unwrap();
         assert_eq!(cleaned, 1);
     }
@@ -778,18 +775,13 @@ mod tests {
     // snake_case strings that match the canonical on-disk mapping.
     // ----------------------------------------------------------------------
 
-    fn read_checkpoint_status_for(
-        run_dir: &std::path::Path,
-        agent_id: AgentId,
-    ) -> Option<String> {
+    fn read_checkpoint_status_for(run_dir: &std::path::Path, agent_id: AgentId) -> Option<String> {
         let cp_path = run_dir.join("checkpoint.json");
         let content = std::fs::read_to_string(&cp_path).ok()?;
         let raw: serde_json::Value = serde_json::from_str(&content).ok()?;
         let ar = raw.get("agent_results")?.as_object()?;
         for (_k, v) in ar {
-            if v.get("agent_id").and_then(|id| id.as_str())
-                == Some(&agent_id.to_string())
-            {
+            if v.get("agent_id").and_then(|id| id.as_str()) == Some(&agent_id.to_string()) {
                 return v.get("status").and_then(|s| s.as_str()).map(String::from);
             }
         }
@@ -872,8 +864,7 @@ mod tests {
             )
             .unwrap();
 
-        let persisted = read_checkpoint_status_for(dir.path(), agent_id)
-            .expect("status on disk");
+        let persisted = read_checkpoint_status_for(dir.path(), agent_id).expect("status on disk");
         assert_eq!(
             persisted, "timed_out",
             "cache_agent(TimedOut) must persist \"timed_out\"; got {persisted:?}"
@@ -941,8 +932,7 @@ mod tests {
             sample_token_usage(0, 0),
         );
 
-        let persisted = read_checkpoint_status_for(dir.path(), agent_id)
-            .expect("status on disk");
+        let persisted = read_checkpoint_status_for(dir.path(), agent_id).expect("status on disk");
         assert_eq!(persisted, "timed_out");
         assert_ne!(persisted, "timedout");
     }
@@ -1063,9 +1053,6 @@ mod tests {
         // Status enum round-trip is enforced by serde, but the persisted
         // cache status string (verified above) is the part that the on-disk
         // contract depends on.
-        assert!(matches!(
-            agent_done,
-            AgentStatus::TimedOut
-        ));
+        assert!(matches!(agent_done, AgentStatus::TimedOut));
     }
 }

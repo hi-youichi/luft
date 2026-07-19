@@ -15,8 +15,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use crate::resources::list_examples;
 use crate::protocol::tool_result;
+use crate::resources::list_examples;
 
 /// Information tracked for each started run.
 #[derive(Debug, Clone)]
@@ -70,11 +70,7 @@ pub async fn handle_call(
 ///
 /// Arguments: `{ "script": "...", "path": "...", "args": {...} }`
 /// Either `script` (inline Lua) or `path` (.lua file) must be provided.
-pub async fn execute_workflow(
-    luft: &Luft,
-    runs: &RunRegistry,
-    args: &Value,
-) -> Value {
+pub async fn execute_workflow(luft: &Luft, runs: &RunRegistry, args: &Value) -> Value {
     // Resolve the script source.
     let script = match resolve_script_source(args) {
         Ok(s) => s,
@@ -114,9 +110,12 @@ pub async fn execute_workflow(
 
     // Track the run_id → run_dir_name mapping. The RunHandle can be dropped
     // because the underlying tokio::spawn task is detached.
-    runs.lock()
-        .await
-        .insert(run_id.clone(), RunInfo { run_dir_name: run_dir_name.clone() });
+    runs.lock().await.insert(
+        run_id.clone(),
+        RunInfo {
+            run_dir_name: run_dir_name.clone(),
+        },
+    );
 
     let msg = json!({
         "run_id": run_id,
@@ -178,11 +177,7 @@ async fn resolve_run_dir(runs: &RunRegistry, run_id: &str) -> String {
 }
 
 /// Query the status of a run by its run_id or run_dir.
-pub async fn get_run_status_tool(
-    luft: &Luft,
-    runs: &RunRegistry,
-    args: &Value,
-) -> Value {
+pub async fn get_run_status_tool(luft: &Luft, runs: &RunRegistry, args: &Value) -> Value {
     let Some(run_id) = args.get("run_id").and_then(|v| v.as_str()) else {
         return tool_result("missing required parameter: run_id", true);
     };
@@ -208,11 +203,7 @@ pub async fn get_run_status_tool(
 // ── get_run_events ──────────────────────────────────────────────────────
 
 /// Query the event log for a run.
-pub async fn get_run_events_tool(
-    luft: &Luft,
-    runs: &RunRegistry,
-    args: &Value,
-) -> Value {
+pub async fn get_run_events_tool(luft: &Luft, runs: &RunRegistry, args: &Value) -> Value {
     let Some(run_id) = args.get("run_id").and_then(|v| v.as_str()) else {
         return tool_result("missing required parameter: run_id", true);
     };
@@ -238,7 +229,10 @@ pub async fn get_run_events_tool(
         .iter()
         .map(|e| serde_json::to_value(e).unwrap_or(Value::Null))
         .collect();
-    tool_result(&serde_json::to_string(&serialized).unwrap_or_default(), false)
+    tool_result(
+        &serde_json::to_string(&serialized).unwrap_or_default(),
+        false,
+    )
 }
 
 /// Filter events: return all events *after* the one matching `since_id`.
@@ -395,8 +389,8 @@ mod tests {
     // ── handle_call dispatch ────────────────────────────────────────────
 
     fn build_test_luft() -> Luft {
-        use std::time::Duration;
         use luft_core::{MockBackend, MockBehavior, TokenUsage};
+        use std::time::Duration;
         let backend = MockBackend::new(
             "mock",
             vec![MockBehavior::Success {
@@ -421,7 +415,10 @@ mod tests {
         let params = json!({ "name": "bogus", "arguments": {} });
         let result = handle_call(&params, &luft, &runs, &dirs).await;
         assert_eq!(result["isError"], true);
-        assert!(result["content"][0]["text"].as_str().unwrap().contains("unknown tool"));
+        assert!(result["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("unknown tool"));
     }
 
     #[tokio::test]
@@ -433,7 +430,10 @@ mod tests {
         let params = json!({ "arguments": {} });
         let result = handle_call(&params, &luft, &runs, &dirs).await;
         assert_eq!(result["isError"], true);
-        assert!(result["content"][0]["text"].as_str().unwrap().contains("missing 'name'"));
+        assert!(result["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("missing 'name'"));
     }
 
     // ── list_workflows_tool ─────────────────────────────────────────────
@@ -468,7 +468,10 @@ mod tests {
         let args = json!({});
         let result = get_run_status_tool(&luft, &runs, &args).await;
         assert_eq!(result["isError"], true);
-        assert!(result["content"][0]["text"].as_str().unwrap().contains("missing required"));
+        assert!(result["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("missing required"));
     }
 
     #[tokio::test]
@@ -491,7 +494,10 @@ mod tests {
         let args = json!({});
         let result = get_run_events_tool(&luft, &runs, &args).await;
         assert_eq!(result["isError"], true);
-        assert!(result["content"][0]["text"].as_str().unwrap().contains("missing required"));
+        assert!(result["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("missing required"));
     }
 
     #[tokio::test]
@@ -514,7 +520,10 @@ mod tests {
         let args = json!({});
         let result = execute_workflow(&luft, &runs, &args).await;
         assert_eq!(result["isError"], true);
-        assert!(result["content"][0]["text"].as_str().unwrap().contains("either 'script' or 'path'"));
+        assert!(result["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("either 'script' or 'path'"));
     }
 
     #[tokio::test]
@@ -534,7 +543,8 @@ mod tests {
     async fn execute_workflow_success() {
         let luft = build_test_luft();
         let runs = new_run_registry();
-        let script = "meta = { reasoning = \"test\", phases = {} }\nfunction main() report({ok=true}) end";
+        let script =
+            "meta = { reasoning = \"test\", phases = {} }\nfunction main() report({ok=true}) end";
         let args = json!({ "script": script });
         let result = execute_workflow(&luft, &runs, &args).await;
         assert_eq!(result["isError"], false);
@@ -577,7 +587,9 @@ mod tests {
         let runs = new_run_registry();
         runs.lock().await.insert(
             "uuid-123".into(),
-            RunInfo { run_dir_name: "task_12345".into() },
+            RunInfo {
+                run_dir_name: "task_12345".into(),
+            },
         );
         let dir = resolve_run_dir(&runs, "uuid-123").await;
         assert_eq!(dir, "task_12345");
@@ -626,7 +638,8 @@ mod tests {
         let runs = new_run_registry();
 
         // Execute a simple workflow.
-        let script = "meta = { reasoning = \"e2e\", phases = {} }\nfunction main() report({ok=true}) end";
+        let script =
+            "meta = { reasoning = \"e2e\", phases = {} }\nfunction main() report({ok=true}) end";
         let args = json!({ "script": script });
         let result = execute_workflow(&luft, &runs, &args).await;
         assert_eq!(result["isError"], false);
@@ -660,7 +673,8 @@ mod tests {
         let luft = build_test_luft();
         let runs = new_run_registry();
 
-        let script = "meta = { reasoning = \"filter\", phases = {} }\nfunction main() report({ok=true}) end";
+        let script =
+            "meta = { reasoning = \"filter\", phases = {} }\nfunction main() report({ok=true}) end";
         let args = json!({ "script": script });
         let result = execute_workflow(&luft, &runs, &args).await;
         let text = result["content"][0]["text"].as_str().unwrap();

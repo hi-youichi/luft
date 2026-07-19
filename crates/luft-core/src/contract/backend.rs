@@ -130,6 +130,10 @@ pub struct AgentTask {
     /// When set, the runtime validates the agent's output against this schema
     /// and may retry or reject if validation fails.
     pub output_schema: Option<serde_json::Value>,
+
+    /// Per-agent working directory override from Lua `working_folder` opt.
+    #[serde(default)]
+    pub workdir_override: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

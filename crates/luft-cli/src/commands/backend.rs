@@ -342,7 +342,7 @@ fn check_acp_handshake(binary: &Path, timeout: Duration, backend_id: &str) -> Re
             let _ = child.start_kill().ok();
             let _ = child.wait().await;
 
-match result {
+            match result {
                 Ok(Ok(())) => Ok(()),
                 Ok(Err(e)) => Err(format!("protocol: {e}")),
                 Err(_) => Err("timed out waiting for initialize response".into()),
@@ -447,8 +447,7 @@ mod tests {
     #[test]
     fn apply_config_update_acp_emit_raw_events_invalid() {
         let mut cfg = LuftConfig::default();
-        let err =
-            apply_config_update(&mut cfg, "acp.emit_raw_events", "maybe").unwrap_err();
+        let err = apply_config_update(&mut cfg, "acp.emit_raw_events", "maybe").unwrap_err();
         assert!(err.contains("invalid bool"));
         assert!(err.contains("maybe"));
     }
@@ -477,7 +476,10 @@ mod tests {
     fn apply_config_update_acp_args_single() {
         let mut cfg = LuftConfig::default();
         apply_config_update(&mut cfg, "acp.args", "verbose").unwrap();
-        assert_eq!(cfg.backend.acp.args.as_ref().unwrap(), &vec!["verbose".to_string()]);
+        assert_eq!(
+            cfg.backend.acp.args.as_ref().unwrap(),
+            &vec!["verbose".to_string()]
+        );
     }
 
     #[test]

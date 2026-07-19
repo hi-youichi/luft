@@ -83,17 +83,17 @@
 //!
 //! [`Result<T, LuftError>`]: Result
 
-pub use luft_core as core;
-pub use luft_storage as storage;
-pub use luft_runtime as runtime;
 pub use luft_adapters as adapters;
+pub use luft_core as core;
 pub use luft_planner as planner;
+pub use luft_runtime as runtime;
 pub use luft_service as service;
+pub use luft_storage as storage;
 
-#[allow(dead_code)]
-mod mcp;
 mod builder;
 mod error;
+#[allow(dead_code)]
+mod mcp;
 pub mod prelude;
 
 pub use builder::{Luft, LuftBuilder, RunHandle, RunOutcome};

@@ -1,7 +1,7 @@
+use anyhow::Result;
 use luft_core::contract::event::AgentEvent;
 use luft_core::contract::finding::Finding;
 use luft_core::state::{get_run_store, list_runs as list_run_dirs, RunCheckpoint};
-use anyhow::Result;
 use std::path::Path;
 
 /// Summary view of a run's checkpoint — the query DTO shared by the CLI.
@@ -140,10 +140,10 @@ mod tests {
     use luft_core::contract::ids::TokenUsage;
 
     use chrono::Utc;
-    use std::collections::HashMap;
-    use luft_core::state::{AgentResultCache, CheckpointStatus, PhaseSummary};
     use luft_core::contract::event::LogLevel;
     use luft_core::contract::finding::Severity;
+    use luft_core::state::{AgentResultCache, CheckpointStatus, PhaseSummary};
+    use std::collections::HashMap;
 
     #[test]
     fn get_status_non_existing_run() {
@@ -186,7 +186,7 @@ mod tests {
             status: RunStatus::Completed,
             total_tokens: TokenUsage::default(),
             report: report.clone(),
-        ts: chrono::Utc::now(),
+            ts: chrono::Utc::now(),
         };
         std::fs::write(
             run_dir.join("events.jsonl"),
@@ -261,18 +261,21 @@ mod tests {
         let run_id = uuid::Uuid::now_v7();
         let agent_id = uuid::Uuid::now_v7();
         let mut agent_results = HashMap::new();
-        agent_results.insert(agent_id, AgentResultCache {
+        agent_results.insert(
             agent_id,
-            phase_id: 1,
-            status: "ok".into(),
-            output: serde_json::json!({}),
-            findings: vec![],
-            tokens: 500,
-            completed_at: 1719000100,
-            cache_key_hash: None,
-            description: None,
-            role: None,
-        });
+            AgentResultCache {
+                agent_id,
+                phase_id: 1,
+                status: "ok".into(),
+                output: serde_json::json!({}),
+                findings: vec![],
+                tokens: 500,
+                completed_at: 1719000100,
+                cache_key_hash: None,
+                description: None,
+                role: None,
+            },
+        );
         let cp = RunCheckpoint {
             run_id,
             task: "task".into(),
@@ -400,12 +403,14 @@ mod tests {
         let store = get_run_store(&dir_name, &temp_dir).unwrap();
         store.init_run(run_id, "task").unwrap();
         for i in 0..3 {
-            store.append_event(&AgentEvent::Log {
-                run_id,
-                agent_id: None,
-                level: LogLevel::Info,
-                msg: format!("log {}", i),
-            }).unwrap();
+            store
+                .append_event(&AgentEvent::Log {
+                    run_id,
+                    agent_id: None,
+                    level: LogLevel::Info,
+                    msg: format!("log {}", i),
+                })
+                .unwrap();
         }
         let logs = get_logs(&dir_name, &temp_dir, None).unwrap();
         assert_eq!(logs.len(), 3);
@@ -421,12 +426,14 @@ mod tests {
         let store = get_run_store(&dir_name, &temp_dir).unwrap();
         store.init_run(run_id, "task").unwrap();
         for i in 0..5 {
-            store.append_event(&AgentEvent::Log {
-                run_id,
-                agent_id: None,
-                level: LogLevel::Info,
-                msg: format!("log {}", i),
-            }).unwrap();
+            store
+                .append_event(&AgentEvent::Log {
+                    run_id,
+                    agent_id: None,
+                    level: LogLevel::Info,
+                    msg: format!("log {}", i),
+                })
+                .unwrap();
         }
         let logs = get_logs(&dir_name, &temp_dir, Some(2)).unwrap();
         assert_eq!(logs.len(), 2);
@@ -472,5 +479,4 @@ mod tests {
         assert_eq!(cp.status, CheckpointStatus::Cancelled);
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
-
 }

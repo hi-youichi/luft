@@ -198,8 +198,8 @@ fn find_example_file(name: &str, search_dirs: &[PathBuf]) -> Option<PathBuf> {
 /// Returns a JSON object with a `contents` array (on success) or an error
 /// message string (on failure).
 pub fn build_read_response(uri: &str, search_dirs: &[PathBuf]) -> Result<Value> {
-    let parsed = WorkflowUri::parse(uri)
-        .ok_or_else(|| anyhow::anyhow!("unknown resource URI: {uri}"))?;
+    let parsed =
+        WorkflowUri::parse(uri).ok_or_else(|| anyhow::anyhow!("unknown resource URI: {uri}"))?;
     let content = read_resource(&parsed, search_dirs)?;
     Ok(json!({
         "contents": [{
@@ -220,7 +220,10 @@ mod tests {
 
     #[test]
     fn parse_schema() {
-        assert_eq!(WorkflowUri::parse("workflow://schema"), Some(WorkflowUri::Schema));
+        assert_eq!(
+            WorkflowUri::parse("workflow://schema"),
+            Some(WorkflowUri::Schema)
+        );
     }
 
     #[test]
@@ -312,9 +315,11 @@ mod tests {
         let lua = "meta = { reasoning = \"demo\", phases = {} }\nfunction main() report('ok') end";
         fs::write(dir.path().join("demo.lua"), lua).unwrap();
 
-        let content =
-            read_resource(&WorkflowUri::Example("demo".into()), &[dir.path().to_path_buf()])
-                .unwrap();
+        let content = read_resource(
+            &WorkflowUri::Example("demo".into()),
+            &[dir.path().to_path_buf()],
+        )
+        .unwrap();
         assert_eq!(content.mime_type, LUA_MIME);
         assert_eq!(content.text, lua);
     }
@@ -327,7 +332,10 @@ mod tests {
             &[dir.path().to_path_buf()],
         );
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("example not found: nope"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("example not found: nope"));
     }
 
     #[test]
@@ -417,7 +425,11 @@ mod tests {
     #[test]
     fn list_examples_description_fallback_to_comment() {
         let dir = TempDir::new().unwrap();
-        fs::write(dir.path().join("comment.lua"), "-- First comment line\nreturn 1").unwrap();
+        fs::write(
+            dir.path().join("comment.lua"),
+            "-- First comment line\nreturn 1",
+        )
+        .unwrap();
         let entries = list_examples(&[dir.path().to_path_buf()]);
         assert_eq!(entries[0].description, "First comment line");
     }
@@ -456,7 +468,8 @@ mod tests {
     fn build_read_response_example_found() {
         let dir = TempDir::new().unwrap();
         fs::write(dir.path().join("x.lua"), "return 42").unwrap();
-        let resp = build_read_response("workflow://example/x", &[dir.path().to_path_buf()]).unwrap();
+        let resp =
+            build_read_response("workflow://example/x", &[dir.path().to_path_buf()]).unwrap();
         assert_eq!(resp["contents"][0]["text"], "return 42");
         assert_eq!(resp["contents"][0]["mimeType"], "text/x-lua");
     }
@@ -486,7 +499,11 @@ mod tests {
     #[test]
     fn extract_description_from_file_with_no_meta() {
         let dir = TempDir::new().unwrap();
-        fs::write(dir.path().join("nometa.lua"), "-- Just a comment\nfunction main() end").unwrap();
+        fs::write(
+            dir.path().join("nometa.lua"),
+            "-- Just a comment\nfunction main() end",
+        )
+        .unwrap();
         let entries = list_examples(&[dir.path().to_path_buf()]);
         assert_eq!(entries[0].description, "Just a comment");
     }

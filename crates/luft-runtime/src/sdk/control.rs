@@ -4,9 +4,9 @@
 //! on a Lua global. `phase()` advances the shared phase counter that
 //! `agent()`/`parallel()` read for cache keys and events.
 
-use luft_core::contract::event::{AgentEvent, LogLevel};
 use crate::sdk::PhaseSpan;
 use crate::sdk::SdkContext;
+use luft_core::contract::event::{AgentEvent, LogLevel};
 use mlua::{Lua, Table, Value};
 use std::sync::atomic::Ordering;
 
@@ -235,12 +235,12 @@ pub(crate) fn register_control_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sdk::ReportSink;
     use luft_core::contract::backend::RunContext;
     use luft_core::contract::ids::TokenUsage;
     use luft_core::scheduler::{BackendRegistry, SchedulerConfig};
     use luft_core::Scheduler;
     use luft_core::{MockBackend, MockBehavior};
-    use crate::sdk::ReportSink;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
     use tokio::sync::broadcast;

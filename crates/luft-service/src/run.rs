@@ -1,3 +1,4 @@
+use anyhow::Result;
 use luft_core::contract::backend::{AgentBackend, RunContext};
 use luft_core::contract::event::{AgentEvent, RunStatus};
 use luft_core::contract::ids::{RunId, TokenUsage};
@@ -7,7 +8,6 @@ use luft_core::scheduler::{BackendRegistry, Scheduler, SchedulerConfig};
 use luft_core::state::{list_runs, CheckpointStatus, RunCheckpoint};
 use luft_runtime::{ExecLimits, Runtime, ScriptError};
 use luft_storage::{open_db, EventWriter};
-use anyhow::Result;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -224,7 +224,8 @@ pub fn resolve_resume(run_dir_name: &str, base_dir: &Path) -> Result<RunSpec> {
         task_label: checkpoint.task,
         resuming: true,
         extra_args: serde_json::json!({}),
-        workflow_meta: checkpoint.workflow_meta
+        workflow_meta: checkpoint
+            .workflow_meta
             .and_then(|v| serde_json::from_value(v).ok()),
     })
 }
@@ -328,7 +329,11 @@ pub async fn prepare(
         std::fs::write(run_dir.join("workflow.lua"), &spec.script)?;
         match &spec.workflow_meta {
             Some(meta) => journal
-                .init_run_with_meta(spec.run_id, &spec.task_label, serde_json::to_value(meta).unwrap())
+                .init_run_with_meta(
+                    spec.run_id,
+                    &spec.task_label,
+                    serde_json::to_value(meta).unwrap(),
+                )
                 .map_err(|e| anyhow::anyhow!("failed to init journal with meta: {}", e))?,
             None => journal
                 .init_run(spec.run_id, &spec.task_label)

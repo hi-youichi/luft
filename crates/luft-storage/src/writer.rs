@@ -5,12 +5,12 @@
 //! into structured SQL writes against the tables defined in
 //! `migrations/20250819000001_initial.sql`.
 
-use luft_core::contract::backend::AgentStatus;
-use luft_core::contract::event::{AgentEvent, ProgressDelta, RunStatus};
-use luft_core::contract::ids::{AgentId, PhaseId, RunId};
 use crate::db::DbPool;
 use crate::error::StorageResult;
 use chrono::{DateTime, Utc};
+use luft_core::contract::backend::AgentStatus;
+use luft_core::contract::event::{AgentEvent, ProgressDelta, RunStatus};
+use luft_core::contract::ids::{AgentId, PhaseId, RunId};
 use serde_json::Value as Json;
 use sqlx::Row;
 use std::sync::Arc;
@@ -841,9 +841,9 @@ pub type SharedWriter = Arc<EventWriter>;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::open_db;
     use luft_core::contract::event::LogLevel;
     use luft_core::contract::ids::TokenUsage;
-    use crate::db::open_db;
     use std::path::PathBuf;
     use tempfile::tempdir;
 
@@ -887,7 +887,7 @@ mod tests {
                 cache_write: 0,
             },
             report: serde_json::json!({"result": "ok"}),
-        ts: chrono::Utc::now(),
+            ts: chrono::Utc::now(),
         })
         .await
         .unwrap();
@@ -1174,7 +1174,7 @@ mod tests {
             phase_id: 1,
             ok: 2,
             failed: 1,
-        ts: chrono::Utc::now(),
+            ts: chrono::Utc::now(),
         })
         .await
         .unwrap();

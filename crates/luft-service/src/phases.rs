@@ -14,11 +14,11 @@
 //! - **Completed agents**: `checkpoint.agent_results` (authoritative).
 //! - **Running agents**: events with `AgentStarted` but no paired `AgentDone`.
 
+use chrono::{DateTime, Utc};
 use luft_core::contract::event::AgentEvent;
 use luft_core::contract::ids::RunId;
 use luft_core::state::{CheckpointStatus, RunCheckpoint};
 use luft_planner::PlanMeta;
-use chrono::{DateTime, Utc};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 
@@ -151,7 +151,11 @@ pub fn build_phases_view(checkpoint: &RunCheckpoint, events: &[AgentEvent]) -> P
 // Phase list construction
 // ---------------------------------------------------------------------------
 
-fn build_from_meta(meta: &PlanMeta, checkpoint: &RunCheckpoint, events: &[AgentEvent]) -> Vec<PhaseRow> {
+fn build_from_meta(
+    meta: &PlanMeta,
+    checkpoint: &RunCheckpoint,
+    events: &[AgentEvent],
+) -> Vec<PhaseRow> {
     let phase_started_ts = collect_phase_started_ts(events);
     let phase_done_info = collect_phase_done_info(events);
     let completed_map = build_completed_map(checkpoint);
@@ -168,11 +172,7 @@ fn build_from_meta(meta: &PlanMeta, checkpoint: &RunCheckpoint, events: &[AgentE
 
             let elapsed_secs = compute_phase_elapsed(phase_id, &phase_started_ts, &phase_done_info);
 
-            let agents = build_agent_rows(
-                phase_id,
-                &completed_agents,
-                &running_agents,
-            );
+            let agents = build_agent_rows(phase_id, &completed_agents, &running_agents);
 
             PhaseRow {
                 phase_id,
@@ -200,7 +200,13 @@ fn build_from_events(checkpoint: &RunCheckpoint, events: &[AgentEvent]) -> Vec<P
     let mut phase_ids: Vec<(u32, String, usize)> = Vec::new();
     let mut seen: HashSet<u32> = HashSet::new();
     for e in events {
-        if let AgentEvent::PhaseStarted { phase_id, label, planned, .. } = e {
+        if let AgentEvent::PhaseStarted {
+            phase_id,
+            label,
+            planned,
+            ..
+        } = e
+        {
             if seen.insert(*phase_id) {
                 phase_ids.push((*phase_id, label.clone(), *planned));
             }
@@ -215,7 +221,8 @@ fn build_from_events(checkpoint: &RunCheckpoint, events: &[AgentEvent]) -> Vec<P
         .iter()
         .map(|(phase_id, label, planned)| {
             let (ok, failed, status) = resolve_phase_status(*phase_id, checkpoint, &completed_map);
-            let elapsed_secs = compute_phase_elapsed(*phase_id, &phase_started_ts, &phase_done_info);
+            let elapsed_secs =
+                compute_phase_elapsed(*phase_id, &phase_started_ts, &phase_done_info);
             let agents = build_agent_rows(*phase_id, &completed_agents, &running_agents);
 
             PhaseRow {
@@ -308,7 +315,10 @@ fn collect_running_agents(
 
     let mut map: HashMap<u32, Vec<AgentRow>> = HashMap::new();
     for e in events {
-        if let AgentEvent::AgentStarted { phase_id, agent_id, .. } = e {
+        if let AgentEvent::AgentStarted {
+            phase_id, agent_id, ..
+        } = e
+        {
             if completed.contains_key(agent_id) || done_agents.contains(agent_id) {
                 continue;
             }
@@ -377,8 +387,22 @@ struct PhaseDoneInfo {
 fn collect_phase_done_info(events: &[AgentEvent]) -> HashMap<u32, PhaseDoneInfo> {
     let mut map = HashMap::new();
     for e in events {
-        if let AgentEvent::PhaseDone { phase_id, ts, ok, failed, .. } = e {
-            map.insert(*phase_id, PhaseDoneInfo { ts: *ts, ok: *ok, failed: *failed });
+        if let AgentEvent::PhaseDone {
+            phase_id,
+            ts,
+            ok,
+            failed,
+            ..
+        } = e
+        {
+            map.insert(
+                *phase_id,
+                PhaseDoneInfo {
+                    ts: *ts,
+                    ok: *ok,
+                    failed: *failed,
+                },
+            );
         }
     }
     map
@@ -393,7 +417,11 @@ fn compute_phase_elapsed(
     let end = done.get(&phase_id)?;
     let dur = end.ts.signed_duration_since(*start);
     let secs = dur.num_milliseconds() as f64 / 1000.0;
-    if secs >= 0.0 { Some(secs) } else { None }
+    if secs >= 0.0 {
+        Some(secs)
+    } else {
+        None
+    }
 }
 
 fn compute_run_elapsed(events: &[AgentEvent], checkpoint: &RunCheckpoint) -> Option<f64> {
@@ -416,12 +444,20 @@ fn compute_run_elapsed(events: &[AgentEvent], checkpoint: &RunCheckpoint) -> Opt
     match (run_started, run_done) {
         (Some(start), Some(end)) => {
             let secs = end.signed_duration_since(start).num_milliseconds() as f64 / 1000.0;
-            if secs >= 0.0 { Some(secs) } else { None }
+            if secs >= 0.0 {
+                Some(secs)
+            } else {
+                None
+            }
         }
         (Some(start), None) => {
             // Run still in progress — use now.
             let secs = Utc::now().signed_duration_since(start).num_milliseconds() as f64 / 1000.0;
-            if secs >= 0.0 { Some(secs) } else { None }
+            if secs >= 0.0 {
+                Some(secs)
+            } else {
+                None
+            }
         }
         (None, _) => {
             // No RunStarted event — fallback to checkpoint timestamps.
@@ -441,10 +477,10 @@ fn compute_run_elapsed(events: &[AgentEvent], checkpoint: &RunCheckpoint) -> Opt
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
     use luft_core::contract::ids::{AgentId, PhaseId, RunId, TokenUsage};
     use luft_core::state::{AgentResultCache, PhaseSummary};
     use luft_planner::{MetaPhase, PlanMeta};
-    use chrono::TimeZone;
     use std::collections::HashMap;
 
     fn ts(secs: i64) -> DateTime<Utc> {
@@ -531,9 +567,24 @@ mod tests {
     fn meta_running_current_phase() {
         let meta = PlanMeta {
             phases: vec![
-                MetaPhase { label: "a".into(), detail: "1".into(), agents: 1, ..Default::default() },
-                MetaPhase { label: "b".into(), detail: "2".into(), agents: 1, ..Default::default() },
-                MetaPhase { label: "c".into(), detail: "3".into(), agents: 1, ..Default::default() },
+                MetaPhase {
+                    label: "a".into(),
+                    detail: "1".into(),
+                    agents: 1,
+                    ..Default::default()
+                },
+                MetaPhase {
+                    label: "b".into(),
+                    detail: "2".into(),
+                    agents: 1,
+                    ..Default::default()
+                },
+                MetaPhase {
+                    label: "c".into(),
+                    detail: "3".into(),
+                    agents: 1,
+                    ..Default::default()
+                },
             ],
             reasoning: String::new(),
         };
@@ -547,20 +598,25 @@ mod tests {
     #[test]
     fn meta_with_completed_agents() {
         let meta = PlanMeta {
-            phases: vec![
-                MetaPhase { label: "gather".into(), detail: "collect".into(), agents: 2, ..Default::default() },
-            ],
+            phases: vec![MetaPhase {
+                label: "gather".into(),
+                detail: "collect".into(),
+                agents: 2,
+                ..Default::default()
+            }],
             reasoning: String::new(),
         };
         let a1 = AgentId::now_v7();
         let a2 = AgentId::now_v7();
-        let checkpoint = cp_with_agents(Some(meta), 1, vec![
-            (a1, 1, "ok", 120, 0),
-            (a2, 1, "ok", 80, 1),
-        ]);
+        let checkpoint = cp_with_agents(
+            Some(meta),
+            1,
+            vec![(a1, 1, "ok", 120, 0), (a2, 1, "ok", 80, 1)],
+        );
         let view = build_phases_view(&checkpoint, &[]);
         assert_eq!(view.phases[0].agents.len(), 2);
-        let tokens: std::collections::HashSet<_> = view.phases[0].agents.iter().map(|a| a.tokens).collect();
+        let tokens: std::collections::HashSet<_> =
+            view.phases[0].agents.iter().map(|a| a.tokens).collect();
         assert!(tokens.contains(&Some(120)));
         assert!(tokens.contains(&Some(80)));
         let findings_total: usize = view.phases[0].agents.iter().map(|a| a.findings).sum();
@@ -570,29 +626,28 @@ mod tests {
     #[test]
     fn meta_with_running_agent_from_events() {
         let meta = PlanMeta {
-            phases: vec![
-                MetaPhase { label: "analyze".into(), detail: "analyze".into(), agents: 2, ..Default::default() },
-            ],
+            phases: vec![MetaPhase {
+                label: "analyze".into(),
+                detail: "analyze".into(),
+                agents: 2,
+                ..Default::default()
+            }],
             reasoning: String::new(),
         };
         let a1 = AgentId::now_v7();
         let running_agent = AgentId::now_v7();
-        let checkpoint = cp_with_agents(Some(meta), 1, vec![
-            (a1, 1, "ok", 640, 2),
-        ]);
-        let events = vec![
-            AgentEvent::AgentStarted {
-                run_id: checkpoint.run_id,
-                phase_id: 1,
-                agent_id: running_agent,
-                prompt_preview: "working".into(),
-                model: None,
-                description: None,
-                role: None,
-                name: None,
-                agent_seq: 0,
-            },
-        ];
+        let checkpoint = cp_with_agents(Some(meta), 1, vec![(a1, 1, "ok", 640, 2)]);
+        let events = vec![AgentEvent::AgentStarted {
+            run_id: checkpoint.run_id,
+            phase_id: 1,
+            agent_id: running_agent,
+            prompt_preview: "working".into(),
+            model: None,
+            description: None,
+            role: None,
+            name: None,
+            agent_seq: 0,
+        }];
         let view = build_phases_view(&checkpoint, &events);
         assert_eq!(view.phases[0].agents.len(), 2);
         // First agent is completed (from checkpoint)
@@ -607,17 +662,32 @@ mod tests {
     #[test]
     fn meta_phase_elapsed_from_ts() {
         let meta = PlanMeta {
-            phases: vec![MetaPhase { label: "p".into(), detail: "d".into(), agents: 1, ..Default::default() }],
+            phases: vec![MetaPhase {
+                label: "p".into(),
+                detail: "d".into(),
+                agents: 1,
+                ..Default::default()
+            }],
             reasoning: String::new(),
         };
         let checkpoint = cp(Some(meta), 1);
         let events = vec![
             AgentEvent::PhaseStarted {
-                run_id: checkpoint.run_id, phase_id: 1, label: "p".into(), planned: 1,
-                parent_span_id: None, description: None, role: None, ts: ts(100),
+                run_id: checkpoint.run_id,
+                phase_id: 1,
+                label: "p".into(),
+                planned: 1,
+                parent_span_id: None,
+                description: None,
+                role: None,
+                ts: ts(100),
             },
             AgentEvent::PhaseDone {
-                run_id: checkpoint.run_id, phase_id: 1, ok: 1, failed: 0, ts: ts(103),
+                run_id: checkpoint.run_id,
+                phase_id: 1,
+                ok: 1,
+                failed: 0,
+                ts: ts(103),
             },
         ];
         let view = build_phases_view(&checkpoint, &events);
@@ -627,7 +697,12 @@ mod tests {
     #[test]
     fn meta_phase_elapsed_none_when_ts_missing() {
         let meta = PlanMeta {
-            phases: vec![MetaPhase { label: "p".into(), detail: "d".into(), agents: 1, ..Default::default() }],
+            phases: vec![MetaPhase {
+                label: "p".into(),
+                detail: "d".into(),
+                agents: 1,
+                ..Default::default()
+            }],
             reasoning: String::new(),
         };
         let checkpoint = cp(Some(meta), 1);
@@ -639,7 +714,12 @@ mod tests {
     #[test]
     fn meta_failed_phase_status() {
         let meta = PlanMeta {
-            phases: vec![MetaPhase { label: "p".into(), detail: "d".into(), agents: 1, ..Default::default() }],
+            phases: vec![MetaPhase {
+                label: "p".into(),
+                detail: "d".into(),
+                agents: 1,
+                ..Default::default()
+            }],
             reasoning: String::new(),
         };
         let mut checkpoint = cp(Some(meta), 1);
@@ -665,12 +745,24 @@ mod tests {
         let checkpoint = cp(None, 1);
         let events = vec![
             AgentEvent::PhaseStarted {
-                run_id: checkpoint.run_id, phase_id: 1, label: "discover".into(), planned: 2,
-                parent_span_id: None, description: None, role: None, ts: ts(100),
+                run_id: checkpoint.run_id,
+                phase_id: 1,
+                label: "discover".into(),
+                planned: 2,
+                parent_span_id: None,
+                description: None,
+                role: None,
+                ts: ts(100),
             },
             AgentEvent::PhaseStarted {
-                run_id: checkpoint.run_id, phase_id: 2, label: "report".into(), planned: 1,
-                parent_span_id: None, description: None, role: None, ts: ts(200),
+                run_id: checkpoint.run_id,
+                phase_id: 2,
+                label: "report".into(),
+                planned: 1,
+                parent_span_id: None,
+                description: None,
+                role: None,
+                ts: ts(200),
             },
         ];
         let view = build_phases_view(&checkpoint, &events);
@@ -694,7 +786,12 @@ mod tests {
     #[test]
     fn header_fields_populated() {
         let meta = PlanMeta {
-            phases: vec![MetaPhase { label: "x".into(), detail: "y".into(), agents: 1, ..Default::default() }],
+            phases: vec![MetaPhase {
+                label: "x".into(),
+                detail: "y".into(),
+                agents: 1,
+                ..Default::default()
+            }],
             reasoning: String::new(),
         };
         let checkpoint = cp(Some(meta), 1);
@@ -708,7 +805,11 @@ mod tests {
     fn header_elapsed_from_run_events() {
         let checkpoint = cp(None, 1);
         let events = vec![
-            AgentEvent::RunStarted { run_id: checkpoint.run_id, task: "t".into(), ts: ts(100) },
+            AgentEvent::RunStarted {
+                run_id: checkpoint.run_id,
+                task: "t".into(),
+                ts: ts(100),
+            },
             AgentEvent::RunDone {
                 run_id: checkpoint.run_id,
                 status: luft_core::contract::event::RunStatus::Completed,
@@ -751,8 +852,18 @@ mod tests {
     fn pending_phase_has_no_agents() {
         let meta = PlanMeta {
             phases: vec![
-                MetaPhase { label: "a".into(), detail: "1".into(), agents: 1, ..Default::default() },
-                MetaPhase { label: "b".into(), detail: "2".into(), agents: 1, ..Default::default() },
+                MetaPhase {
+                    label: "a".into(),
+                    detail: "1".into(),
+                    agents: 1,
+                    ..Default::default()
+                },
+                MetaPhase {
+                    label: "b".into(),
+                    detail: "2".into(),
+                    agents: 1,
+                    ..Default::default()
+                },
             ],
             reasoning: String::new(),
         };

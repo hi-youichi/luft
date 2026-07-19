@@ -700,8 +700,7 @@ mod tests {
     #[test]
     fn event_logger_write_pretty_flush_buffer() {
         let r = rid();
-        let dir =
-            std::env::temp_dir().join(format!("luft_evlog_pretty_{}", uuid::Uuid::now_v7()));
+        let dir = std::env::temp_dir().join(format!("luft_evlog_pretty_{}", uuid::Uuid::now_v7()));
         let evt = AgentEvent::PipelineDone {
             run_id: r,
             stages_completed: 2,

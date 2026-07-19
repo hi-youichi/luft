@@ -11,12 +11,12 @@
 //! parallel execution: agents verify each other's work before the result
 //! reaches the user.
 
+use crate::error::ScriptError;
+use crate::sdk::SdkContext;
 use luft_core::contract::backend::{AgentStatus, RunContext};
 use luft_core::contract::event::AgentEvent;
 use luft_core::contract::finding::Finding;
 use luft_core::Scheduler;
-use crate::error::ScriptError;
-use crate::sdk::SdkContext;
 use mlua::{Lua, Table, Value};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::Ordering;
@@ -268,6 +268,7 @@ async fn generate_findings(
                 mcp_endpoint: None,
                 timeout: None,
                 output_schema: None,
+        workdir_override: None,
             };
             tasks.push((task, None::<String>));
         }
@@ -329,6 +330,7 @@ async fn verify_findings(
                 mcp_endpoint: None,
                 timeout: None,
                 output_schema: None,
+        workdir_override: None,
             };
 
             let result = scheduler.run_agent(run_ctx.run_id, task, None).await;
@@ -666,6 +668,8 @@ fn json_to_lua_value(lua: &Lua, json: serde_json::Value) -> Result<Value, mlua::
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sdk::ReportSink;
+    use async_trait::async_trait;
     use luft_core::contract::backend::{
         AgentBackend, AgentCapabilities, AgentResult, BackendError, LogRef,
     };
@@ -673,8 +677,6 @@ mod tests {
     use luft_core::contract::ids::TokenUsage;
     use luft_core::scheduler::{BackendRegistry, RetryPolicy, SchedulerConfig};
     use luft_core::{AgentTask, MockBackend, MockBehavior};
-    use crate::sdk::ReportSink;
-    use async_trait::async_trait;
     use std::sync::Arc;
     use std::time::Duration;
     use tokio::sync::broadcast;

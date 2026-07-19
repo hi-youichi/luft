@@ -3,9 +3,9 @@
 //! `report()` records the workflow's final output into the shared report sink;
 //! `json` exposes (de)serialization helpers to scripts.
 
-use luft_core::contract::event::AgentEvent;
 use crate::sdk::convert::{json_string_to_value, value_to_json};
 use crate::sdk::SdkContext;
+use luft_core::contract::event::AgentEvent;
 use mlua::{Lua, Value};
 use std::sync::atomic::Ordering;
 
@@ -55,12 +55,12 @@ pub(crate) fn register_report_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<()
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sdk::ReportSink;
     use luft_core::contract::backend::RunContext;
     use luft_core::contract::ids::TokenUsage;
     use luft_core::scheduler::{BackendRegistry, SchedulerConfig};
     use luft_core::Scheduler;
     use luft_core::{MockBackend, MockBehavior};
-    use crate::sdk::ReportSink;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
     use tokio::sync::broadcast;

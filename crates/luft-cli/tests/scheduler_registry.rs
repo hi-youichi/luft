@@ -13,9 +13,7 @@
 //! 4. Clone + Debug interaction with overwrites
 //! 5. Trait-surface compile-time assertions
 
-use luft::core::contract::backend::{
-    AgentBackend, AgentCapabilities, BackendError, RunContext,
-};
+use luft::core::contract::backend::{AgentBackend, AgentCapabilities, BackendError, RunContext};
 use luft::core::contract::{AgentResult, AgentTask};
 use luft::core::{BackendRegistry, SchedulerError};
 use std::sync::Arc;
@@ -49,11 +47,7 @@ impl AgentBackend for StubBackend {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
-    async fn run(
-        &self,
-        _task: AgentTask,
-        _ctx: RunContext,
-    ) -> Result<AgentResult, BackendError> {
+    async fn run(&self, _task: AgentTask, _ctx: RunContext) -> Result<AgentResult, BackendError> {
         unimplemented!("registry tests must never invoke backend.run()")
     }
 }
@@ -105,7 +99,10 @@ fn f2_overwrite_repeated_many_times_single_id() {
     let got = reg.get("only").expect("single id post-overwrite get");
     assert_eq!(got.id(), "only");
     // default_backend still resolves (the registry has exactly one key).
-    assert_eq!(reg.default_backend().expect("single entry default").id(), "only");
+    assert_eq!(
+        reg.default_backend().expect("single entry default").id(),
+        "only"
+    );
 }
 
 #[test]
@@ -265,8 +262,7 @@ fn boundary_many_distinct_ids_coexist() {
     let mut reg = BackendRegistry::new();
     let ids: Vec<&'static str> = (0..64)
         .map(|i| {
-            let s: &'static str =
-                Box::leak(format!("backend-{i:02}").into_boxed_str());
+            let s: &'static str = Box::leak(format!("backend-{i:02}").into_boxed_str());
             s
         })
         .collect();
@@ -349,7 +345,7 @@ fn error_get_returns_cloned_arc() {
     reg.register(backend("x"));
     let handle = reg.get("x").unwrap();
     reg.register(backend("x")); // overwrite — warn emitted
-    // The pre-overwrite Arc must still be usable by its holder.
+                                // The pre-overwrite Arc must still be usable by its holder.
     assert_eq!(handle.id(), "x");
 }
 
