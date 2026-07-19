@@ -70,6 +70,7 @@ impl EventWriter {
                 role: _,
                 name: _,
                 agent_seq: _,
+                ts: _,
             } => {
                 self.write_agent_started(
                     *run_id,
@@ -99,6 +100,7 @@ impl EventWriter {
                 findings: _,
                 prompt: _,
                 retry_count,
+                ts: _,
             } => {
                 self.write_agent_done(
                     *run_id,
