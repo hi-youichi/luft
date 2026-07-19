@@ -5,6 +5,7 @@ use luft::core::{AgentBackend, MockBackend, MockBehavior, TokenUsage};
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 /// Maps a backend id to the default executable name resolved from `PATH`.
 /// Most ids double as their own binary name; `claude-acp` is the exception —
@@ -78,8 +79,74 @@ pub fn create_backend(
                 ..Default::default()
             }),
         ))),
+        "codex" => {
+            let binary = if cfg!(windows) {
+                PathBuf::from("npx.cmd")
+            } else {
+                PathBuf::from("npx")
+            };
+            let cfg = apply_codex_acp_overrides(luft::adapters::AcpConfig {
+                id: "codex",
+                binary,
+                acp_args: vec![
+                    "-y".to_string(),
+                    "@agentclientprotocol/codex-acp".to_string(),
+                ],
+                log_level: None,
+                emit_raw_events,
+                model,
+                ..Default::default()
+            });
+            Ok(Arc::new(luft::adapters::AcpAdapter::new(cfg)))
+        }
         _ => anyhow::bail!("unknown backend: {}", id),
     }
+}
+
+/// Merge the dedicated Codex ACP configuration without allowing secrets to be
+/// stored in the TOML file. Credential variables must use `inherit_env`.
+fn apply_codex_acp_overrides(mut cfg: luft::adapters::AcpConfig) -> luft::adapters::AcpConfig {
+    let over = crate::config::load_config()
+        .map(|c| c.backend.codex_acp)
+        .unwrap_or_default();
+    if let Some(command) = over.command {
+        cfg.binary = command;
+    }
+    if let Some(args) = over.args {
+        cfg.acp_args = args;
+    }
+    if let Some(timeout) = over.connect_timeout_secs {
+        cfg.connect_timeout = Duration::from_secs(timeout);
+    }
+    if let Some(emit_raw_events) = over.emit_raw_events {
+        cfg.emit_raw_events = emit_raw_events;
+    }
+    if let Some(names) = over.inherit_env {
+        for name in names {
+            if !cfg.env_passthrough.contains(&name) {
+                cfg.env_passthrough.push(name);
+            }
+        }
+    }
+    if let Some(env) = over.env {
+        for (name, value) in env {
+            if is_sensitive_env_var(&name) {
+                tracing::warn!(env = %name, "ignoring sensitive Codex ACP env configured in file; use inherit_env instead");
+            } else {
+                cfg.env.insert(name, value);
+            }
+        }
+    }
+    cfg.log_level = None; // codex-acp does not accept --log-level
+    cfg
+}
+
+fn is_sensitive_env_var(name: &str) -> bool {
+    let normalized = name.to_ascii_uppercase();
+    normalized.contains("KEY")
+        || normalized.contains("TOKEN")
+        || normalized.contains("SECRET")
+        || normalized.contains("PASSWORD")
 }
 
 /// Merge config file ACP overrides into the given config.
@@ -124,10 +191,32 @@ pub fn detect_available_backends() -> Vec<&'static str> {
     let cfg = crate::config::load_config();
     let override_binary = cfg.as_ref().and_then(|c| c.backend.acp.binary.as_deref());
 
-    ["opencode", "claude-acp", "loom-acp"]
+    let mut result: Vec<&'static str> = ["opencode", "claude-acp", "loom-acp"]
         .into_iter()
         .filter(|id| is_binary_available(id, override_binary))
-        .collect()
+        .collect();
+
+    // Probe for codex (npx-based). Check user-configured command first,
+    // then the platform-default npx / npx.cmd.
+    let codex_cmd = cfg
+        .as_ref()
+        .and_then(|c| c.backend.codex_acp.command.as_deref());
+    let codex_available = if let Some(cmd) = codex_cmd {
+        if cmd.is_absolute() {
+            cmd.exists()
+        } else {
+            which_exists(cmd.to_str().unwrap_or("npx"))
+        }
+    } else if cfg!(windows) {
+        which_exists("npx.cmd")
+    } else {
+        which_exists("npx")
+    };
+    if codex_available {
+        result.push("codex");
+    }
+
+    result
 }
 
 /// Check whether a backend's binary is available on PATH or at an absolute
@@ -265,10 +354,22 @@ mod tests {
         let backends = detect_available_backends();
         for id in &backends {
             assert!(
-                *id == "opencode" || *id == "claude-acp" || *id == "loom-acp",
+                *id == "opencode"
+                    || *id == "claude-acp"
+                    || *id == "loom-acp"
+                    || *id == "codex",
                 "unexpected backend id: {id}",
             );
         }
+    }
+
+    #[test]
+    fn sensitive_env_names_are_rejected_from_file_config() {
+        for name in ["CODEX_API_KEY", "OPENAI_TOKEN", "MY_SECRET", "PASSWORD"] {
+            assert!(is_sensitive_env_var(name), "{name} must be sensitive");
+        }
+        assert!(!is_sensitive_env_var("NO_BROWSER"));
+        assert!(!is_sensitive_env_var("INITIAL_AGENT_MODE"));
     }
 
     // ── is_binary_available ─────────────────────────────────────
@@ -338,5 +439,26 @@ mod tests {
     fn which_exists_never_panics() {
         let _ = which_exists("echo");
         let _ = which_exists("");
+    }
+
+    // ── codex backend ───────────────────────────────────────────
+
+    #[test]
+    fn create_backend_codex_returns_codex_id() {
+        let backend = create_backend("codex", false, None).unwrap();
+        assert_eq!(backend.id(), "codex");
+    }
+
+    #[test]
+    fn create_backend_codex_with_model() {
+        let backend =
+            create_backend("codex", false, Some("o4-mini".into())).unwrap();
+        assert_eq!(backend.id(), "codex");
+    }
+
+    #[test]
+    fn create_backend_codex_emit_raw_events() {
+        let backend = create_backend("codex", true, None).unwrap();
+        assert_eq!(backend.id(), "codex");
     }
 }

@@ -34,6 +34,7 @@ fn test_task() -> AgentTask {
         role: None,
         name: None,
         agent_seq: 0,
+        thread_id: None,
     }
 }
 
@@ -70,6 +71,7 @@ async fn acp_adapter_sets_model_via_config_option() {
         connect_timeout: Duration::from_secs(10),
         emit_raw_events: true,
         env_passthrough,
+        env: Default::default(),
         model: Some("model-b".to_string()),
     };
     let adapter = AcpAdapter::new(config);
@@ -113,6 +115,7 @@ async fn acp_adapter_skips_unavailable_model_without_error() {
         connect_timeout: Duration::from_secs(10),
         emit_raw_events: true,
         env_passthrough,
+        env: Default::default(),
         // Not in the advertised "model-a,model-b" list: validate_and_set_model
         // should log a warning and fall back to the agent default, not fail.
         model: Some("model-does-not-exist".to_string()),

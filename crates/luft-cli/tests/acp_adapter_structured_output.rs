@@ -32,6 +32,7 @@ fn test_task(timeout_secs: u64, output_schema: Option<serde_json::Value>) -> Age
         mcp_endpoint: None,
         timeout: Some(Duration::from_secs(timeout_secs)),
         output_schema,
+        thread_id: None,
         workdir_override: None,
         description: None,
         role: None,
@@ -67,6 +68,7 @@ async fn acp_adapter_extracts_structured_output_from_tool_call() {
         connect_timeout: Duration::from_secs(10),
         emit_raw_events: true,
         env_passthrough: fake_acp_env(),
+        env: Default::default(),
         model: None,
     };
     let adapter = AcpAdapter::new(config);

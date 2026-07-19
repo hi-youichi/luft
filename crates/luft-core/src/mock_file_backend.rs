@@ -57,6 +57,7 @@ impl MockEntry {
             tokens_used: self.tokens,
             artifacts: vec![],
             logs: LogRef::default(),
+            thread_id: None,
         }
     }
 
@@ -239,7 +240,8 @@ mod tests {
             mcp_endpoint: None,
             timeout: None,
             output_schema: None,
-        workdir_override: None,
+            workdir_override: None,
+            thread_id: None,
         }
     }
 

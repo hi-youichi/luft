@@ -269,6 +269,7 @@ async fn generate_findings(
                 timeout: None,
                 output_schema: None,
         workdir_override: None,
+        thread_id: None,
             };
             tasks.push((task, None::<String>));
         }
@@ -331,6 +332,7 @@ async fn verify_findings(
                 timeout: None,
                 output_schema: None,
         workdir_override: None,
+        thread_id: None,
             };
 
             let result = scheduler.run_agent(run_ctx.run_id, task, None).await;

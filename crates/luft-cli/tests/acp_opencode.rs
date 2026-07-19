@@ -26,6 +26,7 @@ fn task(prompt: &str, timeout: Duration) -> AgentTask {
         mcp_endpoint: None,
         timeout: Some(timeout),
         output_schema: None,
+        thread_id: None,
         workdir_override: None,
     }
 }

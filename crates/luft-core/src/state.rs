@@ -366,17 +366,22 @@ impl RunStore {
     /// Write checkpoint to disk without acquiring any locks.
     fn write_checkpoint_to_disk(&self, checkpoint: &RunCheckpoint) -> Result<(), std::io::Error> {
         let checkpoint_path = self.run_dir.join("checkpoint.json");
+        let temp_path = self.run_dir.join("checkpoint.json.tmp");
         let content = serde_json::to_string_pretty(checkpoint)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        fs::write(&checkpoint_path, content)
+        std::fs::write(&temp_path, &content)?;
+        std::fs::rename(&temp_path, &checkpoint_path)?;
+        Ok(())
     }
 
     /// Save checkpoint to disk (public API, acquires lock).
     pub fn save_checkpoint(&self, checkpoint: &RunCheckpoint) -> Result<(), std::io::Error> {
         let checkpoint_path = self.run_dir.join("checkpoint.json");
+        let temp_path = self.run_dir.join("checkpoint.json.tmp");
         let content = serde_json::to_string_pretty(checkpoint)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        fs::write(&checkpoint_path, content)?;
+        std::fs::write(&temp_path, &content)?;
+        std::fs::rename(&temp_path, &checkpoint_path)?;
 
         let mut checkpoint_guard = self.checkpoint.write().unwrap();
         *checkpoint_guard = Some(checkpoint.clone());

@@ -1,6 +1,6 @@
 [package]
 name = "luft-adapters"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2021"
 description = "ACP backend adapter for Luft"
 license = "MIT"
@@ -12,7 +12,7 @@ categories = ["api-bindings", "asynchronous"]
 unstable_end_turn_token_usage = ["agent-client-protocol/unstable_end_turn_token_usage"]
 
 [dependencies]
-luft-core = { path = "../luft-core", version = "0.3.1" }
+luft-core = { path = "../luft-core", version = "0.3.2" }
 agent-client-protocol = { version = "0.14" }
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["compat"] }

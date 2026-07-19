@@ -48,12 +48,12 @@ pub mod run_dir;
 pub mod scheduler;
 pub mod state;
 
-#[cfg(any(feature = "testing", test))]
 pub mod mock_backend;
 #[cfg(feature = "testing")]
 pub mod mock_file_backend;
 #[cfg(feature = "testing")]
 pub mod mock_gen;
+pub mod testing;
 
 pub use contract::*;
 pub use journal::{
@@ -72,3 +72,7 @@ pub use state::{
 pub use mock_backend::{FailKind, MockBackend, MockBehavior};
 #[cfg(feature = "testing")]
 pub use mock_file_backend::{MockFileBackend, MockStats, MockStatsSnapshot};
+pub use testing::{
+    CallRecord, CountingBackend, CrashBackend, SharedBackend,
+    completed_span_names, read_checkpoint, wait_for_calls,
+};

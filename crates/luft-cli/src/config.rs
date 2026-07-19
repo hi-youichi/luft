@@ -1,6 +1,7 @@
 //! Luft config file (`~/.config/luft/config.toml`) — read, write, merge.
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 /// Top-level luft config file.
@@ -26,6 +27,9 @@ pub struct BackendConfig {
     pub model: Option<String>,
     #[serde(default)]
     pub acp: AcpConfigOverride,
+    /// Per-backend settings for the Codex ACP adapter.
+    #[serde(default)]
+    pub codex_acp: AcpBackendOverride,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -36,6 +40,22 @@ pub struct AcpConfigOverride {
     pub connect_timeout_secs: Option<u64>,
     pub idle_timeout_secs: Option<u64>,
     pub emit_raw_events: Option<bool>,
+}
+
+/// Overrides for the Codex ACP subprocess.
+///
+/// `inherit_env` contains environment variable names only, so credentials stay
+/// in the caller's environment rather than being serialized to disk. `env` is
+/// restricted to non-sensitive runtime switches such as `NO_BROWSER`.
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct AcpBackendOverride {
+    pub command: Option<PathBuf>,
+    pub args: Option<Vec<String>>,
+    pub connect_timeout_secs: Option<u64>,
+    pub idle_timeout_secs: Option<u64>,
+    pub emit_raw_events: Option<bool>,
+    pub inherit_env: Option<Vec<String>>,
+    pub env: Option<BTreeMap<String, String>>,
 }
 
 // ── paths ──────────────────────────────────────────────────────────────────
@@ -184,6 +204,75 @@ mod tests {
         assert!(s.contains("acp"));
     }
 
+    // ── AcpBackendOverride (codex_acp) ─────────────────────────────────
+
+    #[test]
+    fn acp_backend_override_default_is_empty() {
+        let cfg = AcpBackendOverride::default();
+        assert!(cfg.command.is_none());
+        assert!(cfg.args.is_none());
+        assert!(cfg.connect_timeout_secs.is_none());
+        assert!(cfg.idle_timeout_secs.is_none());
+        assert!(cfg.emit_raw_events.is_none());
+        assert!(cfg.inherit_env.is_none());
+        assert!(cfg.env.is_none());
+    }
+
+    #[test]
+    fn backend_config_debug_includes_codex_acp() {
+        let cfg = BackendConfig::default();
+        let s = format!("{cfg:?}");
+        assert!(s.contains("codex_acp"), "Debug must show codex_acp");
+    }
+
+    #[test]
+    fn codex_acp_roundtrip_serialization() {
+        let cfg = BackendConfig {
+            codex_acp: AcpBackendOverride {
+                command: Some("/usr/local/bin/codex-acp".into()),
+                args: Some(vec!["--verbose".into()]),
+                connect_timeout_secs: Some(20),
+                idle_timeout_secs: Some(600),
+                emit_raw_events: Some(true),
+                inherit_env: Some(vec!["FOO".into()]),
+                env: Some(BTreeMap::from([
+                    ("BAR".to_string(), "baz".to_string()),
+                ])),
+            },
+            ..BackendConfig::default()
+        };
+        let s = toml::to_string(&cfg).unwrap();
+        let parsed: BackendConfig = toml::from_str(&s).unwrap();
+        assert_eq!(
+            parsed.codex_acp.command.as_deref(),
+            Some(std::path::Path::new("/usr/local/bin/codex-acp"))
+        );
+        assert_eq!(
+            parsed.codex_acp.args.as_ref().unwrap(),
+            &vec!["--verbose".to_string()]
+        );
+        assert_eq!(parsed.codex_acp.connect_timeout_secs, Some(20));
+        assert_eq!(parsed.codex_acp.idle_timeout_secs, Some(600));
+        assert_eq!(parsed.codex_acp.emit_raw_events, Some(true));
+        assert_eq!(
+            parsed.codex_acp.inherit_env.as_ref().unwrap(),
+            &vec!["FOO".to_string()]
+        );
+        assert_eq!(
+            parsed.codex_acp.env.as_ref().unwrap().get("BAR"),
+            Some(&"baz".to_string())
+        );
+    }
+
+    #[test]
+    fn codex_acp_default_roundtrip_is_empty() {
+        let cfg = BackendConfig::default();
+        let s = toml::to_string(&cfg).unwrap();
+        let parsed: BackendConfig = toml::from_str(&s).unwrap();
+        assert!(parsed.codex_acp.command.is_none());
+        assert!(parsed.codex_acp.args.is_none());
+    }
+
     // ── Paths ────────────────────────────────────────────────────────
 
     #[test]
@@ -220,6 +309,7 @@ mod tests {
             backend: BackendConfig {
                 default: Some("opencode".into()),
                 model: Some("claude-3-5-sonnet".into()),
+                codex_acp: AcpBackendOverride::default(),
                 acp: AcpConfigOverride {
                     binary: Some("/usr/local/bin/opencode".into()),
                     args: Some(vec!["--verbose".into(), "--no-color".into()]),
