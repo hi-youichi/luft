@@ -66,7 +66,7 @@ struct CapabilitiesView {
 }
 
 pub fn list_backends() {
-    let known_ids = &["mock", "loom-acp", "opencode"];
+    let known_ids = &["mock", "loom-acp", "opencode", "codex"];
 
     println!(
         "     id     \u{2502} streaming \u{2502} mcp_injection \u{2502} structured_output \u{2502} models"
@@ -80,7 +80,7 @@ pub fn list_backends() {
             Ok(be) => {
                 let caps = be.capabilities();
                 let models = if caps.models.is_empty() {
-                    if *id == "opencode" || *id == "loom-acp" {
+                    if *id == "opencode" || *id == "loom-acp" || *id == "codex" {
                         "(any)".into()
                     } else {
                         "(n/a)".into()
@@ -118,6 +118,11 @@ pub fn info_backend(id: Option<String>) {
             let caps = be.capabilities();
             let binary = match be_id.as_str() {
                 "mock" => "(built-in)".into(),
+                "codex" => cfg
+                    .as_ref()
+                    .and_then(|c| c.backend.codex_acp.command.as_ref())
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|| if cfg!(windows) { "npx.cmd".into() } else { "npx".into() }),
                 _ => cfg
                     .as_ref()
                     .and_then(|c| c.backend.acp.binary.as_ref())
@@ -125,6 +130,7 @@ pub fn info_backend(id: Option<String>) {
                     .unwrap_or_else(|| be_id.clone()),
             };
             let acp_cfg = cfg.as_ref().map(|c| &c.backend.acp);
+            let codex_cfg = cfg.as_ref().map(|c| &c.backend.codex_acp);
             let info = BackendInfo {
                 id: be.id().to_string(),
                 capabilities: CapabilitiesView {
@@ -135,11 +141,17 @@ pub fn info_backend(id: Option<String>) {
                 },
                 binary,
                 config: ConfigView {
-                    args: acp_cfg.and_then(|c| c.args.clone()).unwrap_or_default(),
-                    log_level: acp_cfg.and_then(|c| c.log_level.clone()),
-                    connect_timeout_secs: acp_cfg
-                        .and_then(|c| c.connect_timeout_secs)
-                        .unwrap_or(10),
+                    args: if be_id == "codex" {
+                        codex_cfg.and_then(|c| c.args.clone()).unwrap_or_else(codex_default_args)
+                    } else {
+                        acp_cfg.and_then(|c| c.args.clone()).unwrap_or_default()
+                    },
+                    log_level: if be_id == "codex" { None } else { acp_cfg.and_then(|c| c.log_level.clone()) },
+                    connect_timeout_secs: if be_id == "codex" {
+                        codex_cfg.and_then(|c| c.connect_timeout_secs).unwrap_or(10)
+                    } else {
+                        acp_cfg.and_then(|c| c.connect_timeout_secs).unwrap_or(10)
+                    },
                     idle_timeout_secs: acp_cfg.and_then(|c| c.idle_timeout_secs).unwrap_or(300),
                     emit_raw_events: acp_cfg.and_then(|c| c.emit_raw_events).unwrap_or(true),
                 },
@@ -155,6 +167,23 @@ pub fn check_backend(id: Option<String>) {
     match be_id.as_str() {
         "mock" => {
             println!("\u{2713} mock backend is always available");
+        }
+        "codex" => {
+            let cfg = crate::config::load_config();
+            let binary = cfg
+                .as_ref()
+                .and_then(|c| c.backend.codex_acp.command.as_ref())
+                .cloned()
+                .unwrap_or_else(|| std::path::PathBuf::from(if cfg!(windows) { "npx.cmd" } else { "npx" }));
+            let timeout = cfg
+                .as_ref()
+                .and_then(|c| c.backend.codex_acp.connect_timeout_secs)
+                .map(Duration::from_secs)
+                .unwrap_or(Duration::from_secs(30));
+            match check_acp_handshake(&binary, timeout, "codex") {
+                Ok(()) => println!("\u{2713} Codex ACP initialize handshake succeeded"),
+                Err(error) => println!("\u{2717} Codex ACP handshake failed: {error}"),
+            }
         }
         "loom-acp" | "opencode" => {
             // Check config override first, then PATH.
@@ -301,13 +330,18 @@ fn check_acp_handshake(binary: &Path, timeout: Duration, backend_id: &str) -> Re
         local.block_on(&rt, async move {
             let mut cmd = tokio::process::Command::new(&binary);
             let cfg = crate::config::load_config();
-            let acp_args = cfg
-                .as_ref()
-                .and_then(|c| c.backend.acp.args.clone())
-                .unwrap_or_default();
+            let acp_args = if backend_id == "codex" {
+                cfg.as_ref()
+                    .and_then(|c| c.backend.codex_acp.args.clone())
+                    .unwrap_or_else(codex_default_args)
+            } else {
+                cfg.as_ref()
+                    .and_then(|c| c.backend.acp.args.clone())
+                    .unwrap_or_default()
+            };
             if !acp_args.is_empty() {
                 cmd.args(&acp_args);
-            } else if backend_id != "loom-acp" {
+            } else if backend_id == "opencode" {
                 cmd.arg("acp");
             }
             cmd.stdin(Stdio::piped())
@@ -353,6 +387,10 @@ fn check_acp_handshake(binary: &Path, timeout: Duration, backend_id: &str) -> Re
     handle
         .join()
         .map_err(|_| "internal error: handshake thread panicked")?
+}
+
+fn codex_default_args() -> Vec<String> {
+    vec!["-y".into(), "@agentclientprotocol/codex-acp".into()]
 }
 
 #[cfg(test)]
@@ -536,6 +574,7 @@ mod tests {
                 default: Some("keep".into()),
                 model: Some("keep-model".into()),
                 acp: AcpConfigOverride::default(),
+                codex_acp: Default::default(),
             },
             planner: PlannerConfig {
                 model: Some("keep-planner".into()),

@@ -5,6 +5,7 @@ use luft::core::{AgentBackend, MockBackend, MockBehavior, TokenUsage};
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 /// Construct a backend by id. `emit_raw_events` toggles the ACP backend's raw
 /// `session/update` passthrough (ignored by the mock backend).
@@ -40,8 +41,71 @@ pub fn create_backend(
                 ..Default::default()
             }),
         ))),
+        "codex" => {
+            let binary = if cfg!(windows) {
+                PathBuf::from("npx.cmd")
+            } else {
+                PathBuf::from("npx")
+            };
+            Ok(Arc::new(luft::adapters::AcpAdapter::new(
+                apply_codex_acp_overrides(luft::adapters::AcpConfig {
+                    id: "codex",
+                    binary,
+                    acp_args: vec!["-y".into(), "@agentclientprotocol/codex-acp".into()],
+                    log_level: None,
+                    emit_raw_events,
+                    model,
+                    ..Default::default()
+                }),
+            )))
+        }
         _ => anyhow::bail!("unknown backend: {}", id),
     }
+}
+
+/// Merge the dedicated Codex ACP configuration without allowing secrets to be
+/// stored in the TOML file. Credential variables must use `inherit_env`.
+fn apply_codex_acp_overrides(mut cfg: luft::adapters::AcpConfig) -> luft::adapters::AcpConfig {
+    let over = crate::config::load_config()
+        .map(|c| c.backend.codex_acp)
+        .unwrap_or_default();
+    if let Some(command) = over.command {
+        cfg.binary = command;
+    }
+    if let Some(args) = over.args {
+        cfg.acp_args = args;
+    }
+    if let Some(timeout) = over.connect_timeout_secs {
+        cfg.connect_timeout = Duration::from_secs(timeout);
+    }
+    if let Some(emit_raw_events) = over.emit_raw_events {
+        cfg.emit_raw_events = emit_raw_events;
+    }
+    if let Some(names) = over.inherit_env {
+        for name in names {
+            if !cfg.env_passthrough.contains(&name) {
+                cfg.env_passthrough.push(name);
+            }
+        }
+    }
+    if let Some(env) = over.env {
+        for (name, value) in env {
+            if is_sensitive_env_var(&name) {
+                tracing::warn!(env = %name, "ignoring sensitive Codex ACP env configured in file; use inherit_env instead");
+            } else {
+                cfg.env.insert(name, value);
+            }
+        }
+    }
+    cfg
+}
+
+fn is_sensitive_env_var(name: &str) -> bool {
+    let normalized = name.to_ascii_uppercase();
+    normalized.contains("KEY")
+        || normalized.contains("TOKEN")
+        || normalized.contains("SECRET")
+        || normalized.contains("PASSWORD")
 }
 
 /// Merge config file ACP overrides into the given config.
@@ -81,10 +145,21 @@ pub fn detect_available_backends() -> Vec<&'static str> {
     let cfg = crate::config::load_config();
     let override_binary = cfg.as_ref().and_then(|c| c.backend.acp.binary.as_deref());
 
-    ["opencode", "loom-acp"]
+    let mut available: Vec<&'static str> = ["opencode", "loom-acp"]
         .into_iter()
         .filter(|id| is_binary_available(id, override_binary))
-        .collect()
+        .collect();
+
+    let codex_command = cfg
+        .as_ref()
+        .and_then(|c| c.backend.codex_acp.command.as_deref());
+    let codex_binary = codex_command
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(if cfg!(windows) { "npx.cmd" } else { "npx" }));
+    if is_binary_available("codex", Some(&codex_binary)) {
+        available.push("codex");
+    }
+    available
 }
 
 /// Check whether a backend's binary is available on PATH or at an absolute
@@ -197,10 +272,19 @@ mod tests {
         let backends = detect_available_backends();
         for id in &backends {
             assert!(
-                *id == "opencode" || *id == "loom-acp",
+                *id == "opencode" || *id == "loom-acp" || *id == "codex",
                 "unexpected backend id: {id}",
             );
         }
+    }
+
+    #[test]
+    fn sensitive_env_names_are_rejected_from_file_config() {
+        for name in ["CODEX_API_KEY", "OPENAI_TOKEN", "MY_SECRET", "PASSWORD"] {
+            assert!(is_sensitive_env_var(name), "{name} must be sensitive");
+        }
+        assert!(!is_sensitive_env_var("NO_BROWSER"));
+        assert!(!is_sensitive_env_var("INITIAL_AGENT_MODE"));
     }
 
     // ── is_binary_available ─────────────────────────────────────

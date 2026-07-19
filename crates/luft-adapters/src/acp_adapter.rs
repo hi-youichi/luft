@@ -32,6 +32,7 @@ use luft_core::contract::event::EventSender;
 #[cfg(feature = "unstable_end_turn_token_usage")]
 use luft_core::contract::ids::TokenUsage;
 use luft_core::contract::ids::{AgentId, RunId};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
@@ -138,6 +139,9 @@ pub struct AcpConfig {
     /// needed for the binary to bootstrap on the current OS (PATH, user
     /// dirs, temp, locale, shell).
     pub env_passthrough: Vec<String>,
+    /// Fixed, non-sensitive variables for the ACP subprocess. These override
+    /// inherited values of the same name.
+    pub env: BTreeMap<String, String>,
     /// Model to use for LLM calls. Passed via ACP `session/set_config_option`
     /// with category `model`. If the agent does not support model selection,
     /// this is silently ignored.
@@ -188,6 +192,7 @@ impl Default for AcpConfig {
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
+            env: BTreeMap::new(),
             model: None,
         }
     }
@@ -365,6 +370,7 @@ fn spawn_agent(config: &AcpConfig) -> Result<(tokio::process::Child, AcpTranspor
             cmd.env(name, value);
         }
     }
+    cmd.envs(&config.env);
 
     let mut child = cmd.spawn().map_err(|e| {
         tracing::error!(binary = %config.binary.display(), error = %e, "failed to spawn ACP backend");
