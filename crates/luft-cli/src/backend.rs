@@ -6,6 +6,17 @@ use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+/// Maps a backend id to the default executable name resolved from `PATH`.
+/// Most ids double as their own binary name; `claude-acp` is the exception —
+/// it wraps the official `claude-code-acp` npm package (see
+/// `docs/architecture/adapters.md`).
+pub(crate) fn default_binary_name(id: &str) -> String {
+    match id {
+        "claude-acp" => "claude-code-acp".to_string(),
+        other => other.to_string(),
+    }
+}
+
 /// Construct a backend by id. `emit_raw_events` toggles the ACP backend's raw
 /// `session/update` passthrough (ignored by the mock backend).
 /// `model` sets the LLM model for ACP backends (passed via ACP config options).
@@ -40,6 +51,33 @@ pub fn create_backend(
                 ..Default::default()
             }),
         ))),
+        "claude-acp" => Ok(Arc::new(luft::adapters::AcpAdapter::new(
+            apply_acp_overrides(luft::adapters::AcpConfig {
+                id: "claude-acp",
+                binary: PathBuf::from(default_binary_name("claude-acp")),
+                acp_args: vec![],
+                emit_raw_events,
+                model,
+                // `claude-code-acp` (the official Claude Agent SDK ACP wrapper)
+                // authenticates via `ANTHROPIC_API_KEY`. Its terminal-based
+                // OAuth login flows require a real TTY, which the ACP
+                // subprocess never gets (stdin/stdout are piped for the
+                // JSON-RPC transport, stderr is `/dev/null`) — so the API key
+                // is the only auth path that works headless. This is a
+                // deliberate, backend-scoped exception to the "no provider
+                // keys by default" policy documented on
+                // `AcpConfig::env_passthrough`.
+                env_passthrough: {
+                    let mut v: Vec<String> = luft::adapters::AcpConfig::DEFAULT_ENV_PASSTHROUGH
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect();
+                    v.push("ANTHROPIC_API_KEY".to_string());
+                    v
+                },
+                ..Default::default()
+            }),
+        ))),
         _ => anyhow::bail!("unknown backend: {}", id),
     }
 }
@@ -67,9 +105,14 @@ fn apply_acp_overrides(mut cfg: luft::adapters::AcpConfig) -> luft::adapters::Ac
     cfg
 }
 
+/// Auto-detect priority: `opencode` first (multi-provider, most commonly
+/// installed), then `claude-acp` (official Claude Agent SDK wrapper, single
+/// provider), falling back to `mock` when neither binary is on `PATH`.
 pub fn detect_backend() -> &'static str {
     if which_exists("opencode") {
         "opencode"
+    } else if which_exists(&default_binary_name("claude-acp")) {
+        "claude-acp"
     } else {
         "mock"
     }
@@ -81,7 +124,7 @@ pub fn detect_available_backends() -> Vec<&'static str> {
     let cfg = crate::config::load_config();
     let override_binary = cfg.as_ref().and_then(|c| c.backend.acp.binary.as_deref());
 
-    ["opencode", "loom-acp"]
+    ["opencode", "claude-acp", "loom-acp"]
         .into_iter()
         .filter(|id| is_binary_available(id, override_binary))
         .collect()
@@ -92,7 +135,7 @@ pub fn detect_available_backends() -> Vec<&'static str> {
 fn is_binary_available(id: &str, override_binary: Option<&Path>) -> bool {
     let binary = override_binary
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(id));
+        .unwrap_or_else(|| PathBuf::from(default_binary_name(id)));
     if binary.is_absolute() {
         binary.exists()
     } else {
@@ -172,11 +215,36 @@ mod tests {
     }
 
     #[test]
+    fn create_backend_returns_claude_acp() {
+        let backend = create_backend("claude-acp", false, None).unwrap();
+        assert_eq!(backend.id(), "claude-acp");
+    }
+
+    #[test]
+    fn create_backend_claude_acp_with_model() {
+        let backend = create_backend("claude-acp", false, Some("claude-opus-4-8".into())).unwrap();
+        assert_eq!(backend.id(), "claude-acp");
+    }
+
+    #[test]
     fn create_backend_unknown_id() {
         match create_backend("bogus", false, None) {
             Err(e) => assert!(e.to_string().contains("unknown backend")),
             Ok(_) => panic!("expected error for unknown backend"),
         }
+    }
+
+    // ── default_binary_name ──────────────────────────────────────
+
+    #[test]
+    fn default_binary_name_maps_claude_acp_to_npm_package_binary() {
+        assert_eq!(default_binary_name("claude-acp"), "claude-code-acp");
+    }
+
+    #[test]
+    fn default_binary_name_identity_for_self_named_backends() {
+        assert_eq!(default_binary_name("opencode"), "opencode");
+        assert_eq!(default_binary_name("loom-acp"), "loom-acp");
     }
 
     // ── detect_backend ──────────────────────────────────────────
@@ -185,7 +253,7 @@ mod tests {
     fn detect_backend_returns_valid_id() {
         let id = detect_backend();
         assert!(
-            id == "opencode" || id == "mock",
+            id == "opencode" || id == "claude-acp" || id == "mock",
             "unexpected backend id: {id}",
         );
     }
@@ -197,7 +265,7 @@ mod tests {
         let backends = detect_available_backends();
         for id in &backends {
             assert!(
-                *id == "opencode" || *id == "loom-acp",
+                *id == "opencode" || *id == "claude-acp" || *id == "loom-acp",
                 "unexpected backend id: {id}",
             );
         }

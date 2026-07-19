@@ -140,7 +140,9 @@ output = findings 非空 ? findings 的 JSON : { "text": message }
 
 ## 7. 当前状态与局限（v0.1）
 
-- 仅实现 `opencode` 一种后端；多后端/能力路由是 v0.2。
+- `AcpAdapter` 本身是协议无关的 ACP **client**：`opencode`、`loom-acp`、`claude-acp` 三个 backend id 共享同一套 `run_acp_session`，区别只在 `AcpConfig`（binary/args/env_passthrough）。
+- `claude-acp` 包装官方 [`@zed-industries/claude-code-acp`](https://github.com/zed-industries/claude-code-acp)（Claude Agent SDK 的 ACP agent 实现，与 luft 的 client 角色相反）。它只支持 `ANTHROPIC_API_KEY` 鉴权——其终端 OAuth 登录流程需要真实 TTY，而 luft 的子进程 stdin/stdout 被 JSON-RPC 占满、stderr 直接 `/dev/null`，走不通。因此 `claude-acp` 的 `env_passthrough` 相对默认列表多带了 `ANTHROPIC_API_KEY`，是刻意的、限定于该 backend 的例外（见 `AcpConfig::env_passthrough` 上的说明）。
+- Model 选择（`--model`）依赖对端在 `session/new` 的 `config_options` 里广播一个 `category: "model"` 的 ungrouped select；`opencode` 和 `claude-code-acp` 都满足这个形状，`validate_and_set_model` 据此发 `session/set_config_option`。不满足则静默跳过，回退到 agent 默认模型。
 - `mcp_injection=false`：agent 当前**不连**到 Luft 的 MCP 数据面（见 [mcp.md](./mcp.md)），findings 只能从文本回退解析。
 - `extract_inputs` 的 `mcp_tool` 恒为 `None`——MCP 工具维度的权限尚未接线。
 - token 用量依赖 opencode 在 update 里上报 `usage`；若后端不报则为 0。

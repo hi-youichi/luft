@@ -66,7 +66,7 @@ struct CapabilitiesView {
 }
 
 pub fn list_backends() {
-    let known_ids = &["mock", "loom-acp", "opencode"];
+    let known_ids = &["mock", "loom-acp", "opencode", "claude-acp"];
 
     println!(
         "     id     \u{2502} streaming \u{2502} mcp_injection \u{2502} structured_output \u{2502} models"
@@ -80,7 +80,7 @@ pub fn list_backends() {
             Ok(be) => {
                 let caps = be.capabilities();
                 let models = if caps.models.is_empty() {
-                    if *id == "opencode" || *id == "loom-acp" {
+                    if *id == "opencode" || *id == "loom-acp" || *id == "claude-acp" {
                         "(any)".into()
                     } else {
                         "(n/a)".into()
@@ -122,7 +122,7 @@ pub fn info_backend(id: Option<String>) {
                     .as_ref()
                     .and_then(|c| c.backend.acp.binary.as_ref())
                     .map(|p| p.display().to_string())
-                    .unwrap_or_else(|| be_id.clone()),
+                    .unwrap_or_else(|| crate::backend::default_binary_name(&be_id).to_string()),
             };
             let acp_cfg = cfg.as_ref().map(|c| &c.backend.acp);
             let info = BackendInfo {
@@ -156,14 +156,16 @@ pub fn check_backend(id: Option<String>) {
         "mock" => {
             println!("\u{2713} mock backend is always available");
         }
-        "loom-acp" | "opencode" => {
+        "loom-acp" | "opencode" | "claude-acp" => {
             // Check config override first, then PATH.
             let cfg = crate::config::load_config();
             let binary = cfg
                 .as_ref()
                 .and_then(|c| c.backend.acp.binary.as_ref())
                 .map(|p| p.to_path_buf())
-                .unwrap_or_else(|| std::path::PathBuf::from(be_id.as_str()));
+                .unwrap_or_else(|| {
+                    std::path::PathBuf::from(crate::backend::default_binary_name(&be_id))
+                });
             if binary.is_absolute() {
                 if binary.exists() {
                     println!("\u{2713} {be_id} binary found at {}", binary.display());
@@ -307,7 +309,7 @@ fn check_acp_handshake(binary: &Path, timeout: Duration, backend_id: &str) -> Re
                 .unwrap_or_default();
             if !acp_args.is_empty() {
                 cmd.args(&acp_args);
-            } else if backend_id != "loom-acp" {
+            } else if backend_id != "loom-acp" && backend_id != "claude-acp" {
                 cmd.arg("acp");
             }
             cmd.stdin(Stdio::piped())

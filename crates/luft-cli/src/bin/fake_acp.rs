@@ -2,18 +2,47 @@
 //!
 //! This binary speaks enough of the Agent Client Protocol (ACP) v1 to let
 //! Luft's `AcpAdapter` complete a one-shot session. It is used by tests
-//! that verify `structured_output` MCP tool capture.
+//! that verify `structured_output` MCP tool capture and `model` config-option
+//! wiring.
 //!
 //! Wire protocol: newline-delimited JSON-RPC 2.0.
 //!
 //! Supported request methods:
 //! - `initialize`   -> returns protocol version v1
-//! - `session/new`  -> returns session id "sess-test"
+//! - `session/new`  -> returns session id "sess-test"; if `FAKE_ACP_MODELS`
+//!   (comma-separated model ids) is set, also advertises a `model`
+//!   `SessionConfigOption` (category "model", ungrouped select) so callers can
+//!   exercise `AcpAdapter`'s `validate_and_set_model` path.
+//! - `session/set_config_option` -> when `configId` is `"model"`, records the
+//!   requested value (written to the file at `FAKE_ACP_MODEL_OUT`, if set) and
+//!   echoes back the updated config options.
 //! - `session/prompt` -> emits a `session/update` ToolCall notification with
 //!   title "structured_output" and the raw input supplied via `--raw-input`,
 //!   then returns a PromptResponse with stop_reason "end_turn".
 
 use std::io::{BufRead, Write};
+
+/// Build the `model` `SessionConfigOption` JSON (schema `agent-client-protocol`
+/// v1) for the given model list and current selection. All optional fields are
+/// spelled out explicitly (rather than omitted) so this stays valid regardless
+/// of which fields the schema crate treats as defaultable.
+fn model_config_option(models: &[String], current: &str) -> serde_json::Value {
+    serde_json::json!({
+        "id": "model",
+        "name": "Model",
+        "description": null,
+        "category": "model",
+        "type": "select",
+        "currentValue": current,
+        "options": models.iter().map(|m| serde_json::json!({
+            "value": m,
+            "name": m,
+            "description": null,
+            "_meta": null,
+        })).collect::<Vec<_>>(),
+        "_meta": null,
+    })
+}
 
 fn main() {
     let raw_input_arg = std::env::var("FAKE_ACP_RAW_INPUT")
@@ -27,6 +56,13 @@ fn main() {
 
     let raw_input: serde_json::Value = serde_json::from_str(&raw_input_arg)
         .unwrap_or_else(|_| serde_json::json!({"answer": raw_input_arg}));
+
+    let models: Vec<String> = std::env::var("FAKE_ACP_MODELS")
+        .ok()
+        .map(|v| v.split(',').map(|s| s.trim().to_string()).collect())
+        .unwrap_or_default();
+    let mut current_model = models.first().cloned().unwrap_or_default();
+    let model_out = std::env::var("FAKE_ACP_MODEL_OUT").ok();
 
     let stdin = std::io::stdin();
     let mut stdout = std::io::stdout();
@@ -61,11 +97,42 @@ fn main() {
                 send(&mut stdout, resp);
             }
             "session/new" => {
+                let mut result = serde_json::json!({ "sessionId": "sess-test" });
+                if !models.is_empty() {
+                    result["configOptions"] =
+                        serde_json::json!([model_config_option(&models, &current_model)]);
+                }
+                let resp = serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": result
+                });
+                send(&mut stdout, resp);
+            }
+            "session/set_config_option" => {
+                let config_id = req
+                    .get("params")
+                    .and_then(|p| p.get("configId"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                if config_id == "model" {
+                    if let Some(value) = req
+                        .get("params")
+                        .and_then(|p| p.get("value"))
+                        .and_then(|v| v.as_str())
+                    {
+                        current_model = value.to_string();
+                        if let Some(path) = &model_out {
+                            let _ = std::fs::write(path, &current_model);
+                        }
+                    }
+                }
                 let resp = serde_json::json!({
                     "jsonrpc": "2.0",
                     "id": id,
                     "result": {
-                        "sessionId": "sess-test"
+                        "configOptions": [model_config_option(&models, &current_model)],
+                        "_meta": null
                     }
                 });
                 send(&mut stdout, resp);
