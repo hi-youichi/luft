@@ -369,7 +369,6 @@ fn check_acp_handshake(binary: &Path, timeout: Duration, backend_id: &str) -> Re
         local.block_on(&rt, async move {
             let mut cmd = tokio::process::Command::new(&binary);
             let cfg = crate::config::load_config();
-
             // Backend-aware args resolution:
             //  - codex: read codex_acp.args, default to codex_default_args()
             //  - others: read acp.args, fallback to "acp" only for opencode
@@ -382,7 +381,6 @@ fn check_acp_handshake(binary: &Path, timeout: Duration, backend_id: &str) -> Re
                     .and_then(|c| c.backend.acp.args.clone())
                     .unwrap_or_default()
             };
-
             if !acp_args.is_empty() {
                 cmd.args(&acp_args);
             } else if backend_id == "opencode" {
@@ -431,6 +429,10 @@ fn check_acp_handshake(binary: &Path, timeout: Duration, backend_id: &str) -> Re
     handle
         .join()
         .map_err(|_| "internal error: handshake thread panicked")?
+}
+
+fn codex_default_args() -> Vec<String> {
+    vec!["-y".into(), "@agentclientprotocol/codex-acp".into()]
 }
 
 #[cfg(test)]
@@ -733,8 +735,4 @@ mod tests {
         );
     }
 
-}
-/// Default args for the codex ACP backend when user has not configured any.
-fn codex_default_args() -> Vec<String> {
-    vec!["-y".to_string(), "@agentclientprotocol/codex-acp".to_string()]
 }

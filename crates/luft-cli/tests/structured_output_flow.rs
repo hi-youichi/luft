@@ -38,6 +38,7 @@ fn fake_acp_backend() -> Arc<dyn AgentBackend> {
         connect_timeout: Duration::from_secs(10),
         emit_raw_events: true,
         env_passthrough,
+        env: Default::default(),
         model: None,
     };
     Arc::new(AcpAdapter::new(config))

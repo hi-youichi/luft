@@ -65,6 +65,52 @@ pub fn create_backend(
     }
 }
 
+/// Merge the dedicated Codex ACP configuration without allowing secrets to be
+/// stored in the TOML file. Credential variables must use `inherit_env`.
+fn apply_codex_acp_overrides(mut cfg: luft::adapters::AcpConfig) -> luft::adapters::AcpConfig {
+    let over = crate::config::load_config()
+        .map(|c| c.backend.codex_acp)
+        .unwrap_or_default();
+    if let Some(command) = over.command {
+        cfg.binary = command;
+    }
+    if let Some(args) = over.args {
+        cfg.acp_args = args;
+    }
+    if let Some(timeout) = over.connect_timeout_secs {
+        cfg.connect_timeout = Duration::from_secs(timeout);
+    }
+    if let Some(emit_raw_events) = over.emit_raw_events {
+        cfg.emit_raw_events = emit_raw_events;
+    }
+    if let Some(names) = over.inherit_env {
+        for name in names {
+            if !cfg.env_passthrough.contains(&name) {
+                cfg.env_passthrough.push(name);
+            }
+        }
+    }
+    if let Some(env) = over.env {
+        for (name, value) in env {
+            if is_sensitive_env_var(&name) {
+                tracing::warn!(env = %name, "ignoring sensitive Codex ACP env configured in file; use inherit_env instead");
+            } else {
+                cfg.env.insert(name, value);
+            }
+        }
+    }
+    cfg.log_level = None; // codex-acp does not accept --log-level
+    cfg
+}
+
+fn is_sensitive_env_var(name: &str) -> bool {
+    let normalized = name.to_ascii_uppercase();
+    normalized.contains("KEY")
+        || normalized.contains("TOKEN")
+        || normalized.contains("SECRET")
+        || normalized.contains("PASSWORD")
+}
+
 /// Merge config file ACP overrides into the given config.
 fn apply_acp_overrides(mut cfg: luft::adapters::AcpConfig) -> luft::adapters::AcpConfig {
     let over = crate::config::load_config()
@@ -85,32 +131,6 @@ fn apply_acp_overrides(mut cfg: luft::adapters::AcpConfig) -> luft::adapters::Ac
     if let Some(a) = over.args {
         cfg.acp_args = a;
     }
-    cfg
-}
-
-/// Merge `[backend.codex_acp]` config overrides into the given config.
-/// Unlike `apply_acp_overrides`, this reads the dedicated `codex_acp` section
-/// and **always forces `log_level = None`** (codex-acp does not accept
-/// `--log-level`).
-fn apply_codex_acp_overrides(
-    mut cfg: luft::adapters::AcpConfig,
-) -> luft::adapters::AcpConfig {
-    let over = crate::config::load_config()
-        .map(|c| c.backend.codex_acp)
-        .unwrap_or_default();
-    if let Some(b) = over.command {
-        cfg.binary = b;
-    }
-    if let Some(a) = over.args {
-        cfg.acp_args = a;
-    }
-    if let Some(s) = over.connect_timeout_secs {
-        cfg.connect_timeout = Duration::from_secs(s);
-    }
-    if let Some(v) = over.emit_raw_events {
-        cfg.emit_raw_events = v;
-    }
-    cfg.log_level = None; // codex-acp does not accept --log-level
     cfg
 }
 
@@ -270,6 +290,15 @@ mod tests {
                 "unexpected backend id: {id}",
             );
         }
+    }
+
+    #[test]
+    fn sensitive_env_names_are_rejected_from_file_config() {
+        for name in ["CODEX_API_KEY", "OPENAI_TOKEN", "MY_SECRET", "PASSWORD"] {
+            assert!(is_sensitive_env_var(name), "{name} must be sensitive");
+        }
+        assert!(!is_sensitive_env_var("NO_BROWSER"));
+        assert!(!is_sensitive_env_var("INITIAL_AGENT_MODE"));
     }
 
     // ── is_binary_available ─────────────────────────────────────

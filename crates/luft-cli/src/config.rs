@@ -27,7 +27,7 @@ pub struct BackendConfig {
     pub model: Option<String>,
     #[serde(default)]
     pub acp: AcpConfigOverride,
-    /// Per-backend override for the `codex` ACP backend ([backend.codex_acp]).
+    /// Per-backend settings for the Codex ACP adapter.
     #[serde(default)]
     pub codex_acp: AcpBackendOverride,
 }
@@ -42,8 +42,11 @@ pub struct AcpConfigOverride {
     pub emit_raw_events: Option<bool>,
 }
 
-/// Per-backend override for the `codex` ACP backend ([backend.codex_acp]).
-/// Uses `command` (not `binary`) to stay distinct from the shared [backend.acp].
+/// Overrides for the Codex ACP subprocess.
+///
+/// `inherit_env` contains environment variable names only, so credentials stay
+/// in the caller's environment rather than being serialized to disk. `env` is
+/// restricted to non-sensitive runtime switches such as `NO_BROWSER`.
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct AcpBackendOverride {
     pub command: Option<PathBuf>,
@@ -306,6 +309,7 @@ mod tests {
             backend: BackendConfig {
                 default: Some("opencode".into()),
                 model: Some("claude-3-5-sonnet".into()),
+                codex_acp: AcpBackendOverride::default(),
                 acp: AcpConfigOverride {
                     binary: Some("/usr/local/bin/opencode".into()),
                     args: Some(vec!["--verbose".into(), "--no-color".into()]),
