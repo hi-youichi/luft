@@ -88,8 +88,8 @@ pub fn decide(policy: Option<&ToolPolicy>, input: &PermissionInputs) -> Decision
         };
     }
 
-    // Unknown request type with a policy present: opencode self-manages reads.
-    Decision::Approve
+    // Unknown request type with a policy present: fail-closed (deny).
+    Decision::Deny("unrecognized request type".into())
 }
 
 /// Best-effort extraction of [`PermissionInputs`] from an ACP request.
@@ -243,14 +243,28 @@ mod tests {
         assert!(matches!(decide(Some(&p), &input), Decision::Deny(_)));
     }
 
-    // --- fallthrough to Decision::Approve (line 88) ---
+    // --- catch-all deny (fail-closed) ---
     #[test]
-    fn unknown_request_with_policy_approves() {
+    fn unknown_request_with_policy_denies() {
         let p = policy(false, &[], &[]);
+        // Catch-all is fail-closed: unrecognized request types are denied
+        // regardless of default_decision.
         assert_eq!(
             decide(Some(&p), &PermissionInputs::default()),
-            Decision::Approve
+            Decision::Deny("unrecognized request type".into())
         );
+    }
+
+    #[test]
+    fn unknown_request_with_policy_and_no_rules_denies() {
+        // Even with no rules, an unrecognized request type should be denied
+        // (fail-closed catch-all).
+        let p = policy(false, &[], &[]);
+        let input = PermissionInputs {
+            ..Default::default()
+        };
+        let decision = decide(Some(&p), &input);
+        assert!(matches!(decision, Decision::Deny(_)));
     }
 
     // --- find_str_field: nested object (lines 113-119) ---

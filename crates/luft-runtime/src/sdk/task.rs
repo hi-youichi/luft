@@ -78,6 +78,7 @@ pub(crate) fn build_task(
         timeout,
         output_schema,
         workdir_override,
+        thread_id: None,
     };
     Ok((task, cache_key, backend))
 }

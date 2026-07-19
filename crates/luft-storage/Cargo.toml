@@ -1,6 +1,6 @@
 [package]
 name = "luft-storage"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2021"
 description = "SQLite persistence for Luft"
 license = "MIT"
@@ -9,7 +9,7 @@ keywords = ["luft", "agent", "orchestration", "sqlite"]
 categories = ["database", "asynchronous"]
 
 [dependencies]
-luft-core = { path = "../luft-core", version = "0.3.1" }
+luft-core = { path = "../luft-core", version = "0.3.2" }
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "chrono", "uuid", "json", "macros", "migrate"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

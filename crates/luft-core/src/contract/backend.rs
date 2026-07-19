@@ -47,6 +47,7 @@
 //!             tokens_used: Default::default(),
 //!             artifacts: vec![],
 //!             logs: LogRef::default(),
+//!             thread_id: None,
 //!         })
 //!     }
 //!
@@ -134,6 +135,10 @@ pub struct AgentTask {
     /// Per-agent working directory override from Lua `working_folder` opt.
     #[serde(default)]
     pub workdir_override: Option<PathBuf>,
+
+    /// Thread ID for cross-process conversation resume (Loom SqliteSaver).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thread_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -149,6 +154,10 @@ pub struct AgentResult {
     #[serde(default)]
     pub artifacts: Vec<Artifact>,
     pub logs: LogRef,
+
+    /// Thread ID used during execution, echoed back for checkpoint linking.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thread_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

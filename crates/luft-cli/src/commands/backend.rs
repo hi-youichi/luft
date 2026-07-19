@@ -66,7 +66,7 @@ struct CapabilitiesView {
 }
 
 pub fn list_backends() {
-    let known_ids = &["mock", "loom-acp", "opencode"];
+    let known_ids = &["mock", "loom-acp", "opencode", "codex"];
 
     println!(
         "     id     \u{2502} streaming \u{2502} mcp_injection \u{2502} structured_output \u{2502} models"
@@ -80,7 +80,7 @@ pub fn list_backends() {
             Ok(be) => {
                 let caps = be.capabilities();
                 let models = if caps.models.is_empty() {
-                    if *id == "opencode" || *id == "loom-acp" {
+                    if *id == "opencode" || *id == "loom-acp" || *id == "codex" {
                         "(any)".into()
                     } else {
                         "(n/a)".into()
@@ -116,15 +116,55 @@ pub fn info_backend(id: Option<String>) {
     match crate::backend::create_backend(&be_id, false, None) {
         Ok(be) => {
             let caps = be.capabilities();
-            let binary = match be_id.as_str() {
-                "mock" => "(built-in)".into(),
-                _ => cfg
-                    .as_ref()
-                    .and_then(|c| c.backend.acp.binary.as_ref())
+            let (binary, config) = if be_id == "codex" {
+                let codex_cfg = cfg.as_ref().map(|c| &c.backend.codex_acp);
+                let bin = codex_cfg
+                    .and_then(|c| c.command.as_ref())
                     .map(|p| p.display().to_string())
-                    .unwrap_or_else(|| be_id.clone()),
+                    .unwrap_or_else(|| {
+                        if cfg!(windows) {
+                            "npx.cmd".into()
+                        } else {
+                            "npx".into()
+                        }
+                    });
+                let config = ConfigView {
+                    args: codex_cfg
+                        .and_then(|c| c.args.clone())
+                        .unwrap_or_else(codex_default_args),
+                    log_level: None, // codex-acp does not accept --log-level
+                    connect_timeout_secs: codex_cfg
+                        .and_then(|c| c.connect_timeout_secs)
+                        .unwrap_or(10),
+                    idle_timeout_secs: codex_cfg
+                        .and_then(|c| c.idle_timeout_secs)
+                        .unwrap_or(300),
+                    emit_raw_events: codex_cfg
+                        .and_then(|c| c.emit_raw_events)
+                        .unwrap_or(true),
+                };
+                (bin, config)
+            } else {
+                let bin = match be_id.as_str() {
+                    "mock" => "(built-in)".into(),
+                    _ => cfg
+                        .as_ref()
+                        .and_then(|c| c.backend.acp.binary.as_ref())
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_else(|| be_id.clone()),
+                };
+                let acp_cfg = cfg.as_ref().map(|c| &c.backend.acp);
+                let config = ConfigView {
+                    args: acp_cfg.and_then(|c| c.args.clone()).unwrap_or_default(),
+                    log_level: acp_cfg.and_then(|c| c.log_level.clone()),
+                    connect_timeout_secs: acp_cfg
+                        .and_then(|c| c.connect_timeout_secs)
+                        .unwrap_or(10),
+                    idle_timeout_secs: acp_cfg.and_then(|c| c.idle_timeout_secs).unwrap_or(300),
+                    emit_raw_events: acp_cfg.and_then(|c| c.emit_raw_events).unwrap_or(true),
+                };
+                (bin, config)
             };
-            let acp_cfg = cfg.as_ref().map(|c| &c.backend.acp);
             let info = BackendInfo {
                 id: be.id().to_string(),
                 capabilities: CapabilitiesView {
@@ -134,15 +174,7 @@ pub fn info_backend(id: Option<String>) {
                     models: caps.models,
                 },
                 binary,
-                config: ConfigView {
-                    args: acp_cfg.and_then(|c| c.args.clone()).unwrap_or_default(),
-                    log_level: acp_cfg.and_then(|c| c.log_level.clone()),
-                    connect_timeout_secs: acp_cfg
-                        .and_then(|c| c.connect_timeout_secs)
-                        .unwrap_or(10),
-                    idle_timeout_secs: acp_cfg.and_then(|c| c.idle_timeout_secs).unwrap_or(300),
-                    emit_raw_events: acp_cfg.and_then(|c| c.emit_raw_events).unwrap_or(true),
-                },
+                config,
             };
             println!("{}", serde_json::to_string_pretty(&info).unwrap());
         }
@@ -155,6 +187,42 @@ pub fn check_backend(id: Option<String>) {
     match be_id.as_str() {
         "mock" => {
             println!("\u{2713} mock backend is always available");
+        }
+        "codex" => {
+            let cfg = crate::config::load_config();
+            let binary = cfg
+                .as_ref()
+                .and_then(|c| c.backend.codex_acp.command.as_ref())
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| {
+                    if cfg!(windows) {
+                        std::path::PathBuf::from("npx.cmd")
+                    } else {
+                        std::path::PathBuf::from("npx")
+                    }
+                });
+            if binary.is_absolute() {
+                if binary.exists() {
+                    println!("\u{2713} {be_id} binary found at {}", binary.display());
+                } else {
+                    println!("\u{2717} {be_id} binary not found at {}", binary.display());
+                }
+            } else if crate::backend::which_exists(binary.to_str().unwrap_or("")) {
+                println!("\u{2713} {be_id} binary found");
+            } else {
+                println!("\u{2717} {be_id} not found in PATH");
+            }
+
+            let handshake_timeout = cfg
+                .as_ref()
+                .and_then(|c| c.backend.codex_acp.connect_timeout_secs)
+                .map(Duration::from_secs)
+                .unwrap_or(Duration::from_secs(10));
+            let path = binary.to_path_buf();
+            match check_acp_handshake(&path, handshake_timeout, be_id.as_str()) {
+                Ok(()) => println!("\u{2713} ACP initialize handshake succeeded"),
+                Err(e) => println!("\u{2717} ACP handshake failed: {e}"),
+            }
         }
         "loom-acp" | "opencode" => {
             // Check config override first, then PATH.
@@ -301,13 +369,23 @@ fn check_acp_handshake(binary: &Path, timeout: Duration, backend_id: &str) -> Re
         local.block_on(&rt, async move {
             let mut cmd = tokio::process::Command::new(&binary);
             let cfg = crate::config::load_config();
-            let acp_args = cfg
-                .as_ref()
-                .and_then(|c| c.backend.acp.args.clone())
-                .unwrap_or_default();
+
+            // Backend-aware args resolution:
+            //  - codex: read codex_acp.args, default to codex_default_args()
+            //  - others: read acp.args, fallback to "acp" only for opencode
+            let acp_args: Vec<String> = if backend_id == "codex" {
+                cfg.as_ref()
+                    .and_then(|c| c.backend.codex_acp.args.clone())
+                    .unwrap_or_else(codex_default_args)
+            } else {
+                cfg.as_ref()
+                    .and_then(|c| c.backend.acp.args.clone())
+                    .unwrap_or_default()
+            };
+
             if !acp_args.is_empty() {
                 cmd.args(&acp_args);
-            } else if backend_id != "loom-acp" {
+            } else if backend_id == "opencode" {
                 cmd.arg("acp");
             }
             cmd.stdin(Stdio::piped())
@@ -536,6 +614,7 @@ mod tests {
                 default: Some("keep".into()),
                 model: Some("keep-model".into()),
                 acp: AcpConfigOverride::default(),
+                codex_acp: Default::default(),
             },
             planner: PlannerConfig {
                 model: Some("keep-planner".into()),
@@ -653,4 +732,9 @@ mod tests {
             &vec!["x".to_string(), "y".to_string(), "z".to_string()]
         );
     }
+
+}
+/// Default args for the codex ACP backend when user has not configured any.
+fn codex_default_args() -> Vec<String> {
+    vec!["-y".to_string(), "@agentclientprotocol/codex-acp".to_string()]
 }

@@ -505,6 +505,7 @@ mod tests {
             role: None,
             name: None,
             agent_seq: 0,
+            thread_id: None,
         }
     }
 
@@ -536,6 +537,7 @@ mod tests {
             tokens_used: TokenUsage::default(),
             artifacts: vec![],
             logs: LogRef::default(),
+            thread_id: None,
         }
     }
 

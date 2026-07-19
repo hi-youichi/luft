@@ -172,6 +172,11 @@ impl AcpConfig {
         "LC_CTYPE",
         // Shell (sometimes needed for spawned sub-shells)
         "SHELL",
+        // Windows: app data / program files (needed by npx, Node, etc.)
+        "APPDATA",
+        "LOCALAPPDATA",
+        "ProgramFiles",
+        "ProgramFiles(x86)",
     ];
 }
 

@@ -5,6 +5,7 @@ use luft::core::{AgentBackend, MockBackend, MockBehavior, TokenUsage};
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 /// Construct a backend by id. `emit_raw_events` toggles the ACP backend's raw
 /// `session/update` passthrough (ignored by the mock backend).
@@ -40,6 +41,26 @@ pub fn create_backend(
                 ..Default::default()
             }),
         ))),
+        "codex" => {
+            let binary = if cfg!(windows) {
+                PathBuf::from("npx.cmd")
+            } else {
+                PathBuf::from("npx")
+            };
+            let cfg = apply_codex_acp_overrides(luft::adapters::AcpConfig {
+                id: "codex",
+                binary,
+                acp_args: vec![
+                    "-y".to_string(),
+                    "@agentclientprotocol/codex-acp".to_string(),
+                ],
+                log_level: None,
+                emit_raw_events,
+                model,
+                ..Default::default()
+            });
+            Ok(Arc::new(luft::adapters::AcpAdapter::new(cfg)))
+        }
         _ => anyhow::bail!("unknown backend: {}", id),
     }
 }
@@ -67,6 +88,32 @@ fn apply_acp_overrides(mut cfg: luft::adapters::AcpConfig) -> luft::adapters::Ac
     cfg
 }
 
+/// Merge `[backend.codex_acp]` config overrides into the given config.
+/// Unlike `apply_acp_overrides`, this reads the dedicated `codex_acp` section
+/// and **always forces `log_level = None`** (codex-acp does not accept
+/// `--log-level`).
+fn apply_codex_acp_overrides(
+    mut cfg: luft::adapters::AcpConfig,
+) -> luft::adapters::AcpConfig {
+    let over = crate::config::load_config()
+        .map(|c| c.backend.codex_acp)
+        .unwrap_or_default();
+    if let Some(b) = over.command {
+        cfg.binary = b;
+    }
+    if let Some(a) = over.args {
+        cfg.acp_args = a;
+    }
+    if let Some(s) = over.connect_timeout_secs {
+        cfg.connect_timeout = Duration::from_secs(s);
+    }
+    if let Some(v) = over.emit_raw_events {
+        cfg.emit_raw_events = v;
+    }
+    cfg.log_level = None; // codex-acp does not accept --log-level
+    cfg
+}
+
 pub fn detect_backend() -> &'static str {
     if which_exists("opencode") {
         "opencode"
@@ -81,10 +128,32 @@ pub fn detect_available_backends() -> Vec<&'static str> {
     let cfg = crate::config::load_config();
     let override_binary = cfg.as_ref().and_then(|c| c.backend.acp.binary.as_deref());
 
-    ["opencode", "loom-acp"]
+    let mut result: Vec<&'static str> = ["opencode", "loom-acp"]
         .into_iter()
         .filter(|id| is_binary_available(id, override_binary))
-        .collect()
+        .collect();
+
+    // Probe for codex (npx-based). Check user-configured command first,
+    // then the platform-default npx / npx.cmd.
+    let codex_cmd = cfg
+        .as_ref()
+        .and_then(|c| c.backend.codex_acp.command.as_deref());
+    let codex_available = if let Some(cmd) = codex_cmd {
+        if cmd.is_absolute() {
+            cmd.exists()
+        } else {
+            which_exists(cmd.to_str().unwrap_or("npx"))
+        }
+    } else if cfg!(windows) {
+        which_exists("npx.cmd")
+    } else {
+        which_exists("npx")
+    };
+    if codex_available {
+        result.push("codex");
+    }
+
+    result
 }
 
 /// Check whether a backend's binary is available on PATH or at an absolute
@@ -197,7 +266,7 @@ mod tests {
         let backends = detect_available_backends();
         for id in &backends {
             assert!(
-                *id == "opencode" || *id == "loom-acp",
+                *id == "opencode" || *id == "loom-acp" || *id == "codex",
                 "unexpected backend id: {id}",
             );
         }
@@ -270,5 +339,26 @@ mod tests {
     fn which_exists_never_panics() {
         let _ = which_exists("echo");
         let _ = which_exists("");
+    }
+
+    // ── codex backend ───────────────────────────────────────────
+
+    #[test]
+    fn create_backend_codex_returns_codex_id() {
+        let backend = create_backend("codex", false, None).unwrap();
+        assert_eq!(backend.id(), "codex");
+    }
+
+    #[test]
+    fn create_backend_codex_with_model() {
+        let backend =
+            create_backend("codex", false, Some("o4-mini".into())).unwrap();
+        assert_eq!(backend.id(), "codex");
+    }
+
+    #[test]
+    fn create_backend_codex_emit_raw_events() {
+        let backend = create_backend("codex", true, None).unwrap();
+        assert_eq!(backend.id(), "codex");
     }
 }
