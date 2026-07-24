@@ -1,7 +1,7 @@
 //! Build the final [`AgentResult`] from the accumulated message + stop reason.
 //!
 //! v0.1 uses the message-fallback path: structured findings are parsed out of
-//! the agent's final text when present (MCP `report_finding` integration is P1).
+//! the agent's final text when present.
 
 use luft_core::contract::backend::{AgentResult, AgentStatus, AgentTask};
 use luft_core::contract::finding::{Finding, Severity};

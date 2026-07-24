@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-/// A structured finding reported by an agent via MCP `report_finding`.
+/// A structured finding reported by an agent.
 /// The schema *is* the contract — agents emit these instead of free text.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Finding {

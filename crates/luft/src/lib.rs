@@ -92,8 +92,6 @@ pub use luft_storage as storage;
 
 mod builder;
 mod error;
-#[allow(dead_code)]
-mod mcp;
 pub mod prelude;
 
 pub use builder::{Luft, LuftBuilder, RunHandle, RunOutcome};
