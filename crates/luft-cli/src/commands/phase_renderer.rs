@@ -781,8 +781,9 @@ mod tests {
             model: None,
             description: None,
             role: None,
-            name: Some("researcher-a".into()),
+            name: None,
             agent_seq: 0,
+            ts: chrono::Utc::now(),
         }
     }
 
@@ -829,6 +830,7 @@ mod tests {
             elapsed_ms: 1_200,
             name: Some("researcher-a".into()),
             agent_seq: 0,
+            ts: chrono::Utc::now(),
             output: serde_json::Value::Null,
             findings: Vec::<Finding>::new(),
             prompt: String::new(),

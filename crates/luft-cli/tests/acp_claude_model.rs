@@ -72,6 +72,7 @@ async fn acp_adapter_sets_model_via_config_option() {
         emit_raw_events: true,
         env_passthrough,
         env: Default::default(),
+        luft_binary: None,
         model: Some("model-b".to_string()),
     };
     let adapter = AcpAdapter::new(config);
@@ -116,6 +117,7 @@ async fn acp_adapter_skips_unavailable_model_without_error() {
         emit_raw_events: true,
         env_passthrough,
         env: Default::default(),
+        luft_binary: None,
         // Not in the advertised "model-a,model-b" list: validate_and_set_model
         // should log a warning and fall back to the agent default, not fail.
         model: Some("model-does-not-exist".to_string()),

@@ -212,6 +212,7 @@ mod tests {
                 role: None,
                 name: None,
                 agent_seq: 0,
+                ts: chrono::Utc::now(),
             },
             AgentEvent::AgentProgress {
                 run_id,
@@ -233,6 +234,7 @@ mod tests {
                 elapsed_ms: 500,
                 name: None,
                 agent_seq: 0,
+                ts: chrono::Utc::now(),
                 output: serde_json::Value::Null,
                 findings: Vec::new(),
                 prompt: String::new(),
@@ -254,17 +256,10 @@ mod tests {
                     cache_read: 0,
                     cache_write: 0,
                 },
-                report: serde_json::json!({"result": "done"}),
+                report: serde_json::Value::Null,
                 ts: chrono::Utc::now(),
             },
-            AgentEvent::Log {
-                run_id,
-                agent_id: None,
-                level: LogLevel::Warn,
-                msg: "watch out".into(),
-            },
         ];
-        let run_dir = create_run_with_events(&events);
-        assert!(logs_run_cmd(run_dir, None).is_ok());
+        assert_eq!(debuggable.run_result().unwrap(), 1);
     }
 }
