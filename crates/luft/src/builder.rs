@@ -308,6 +308,24 @@ impl Luft {
         luft_service::query::cancel_run(run_dir, &self.base_dir).map_err(LuftError::Other)?;
         Ok(())
     }
+
+    /// Clone this `Luft` with a different concurrency limit, sharing the same
+    /// backend, base directory, planner config, and exec limits.
+    ///
+    /// Lets a caller that owns a long-lived `Luft` (e.g. an MCP server built
+    /// once at process startup) honor a per-call concurrency request without
+    /// rebuilding from scratch or threading raw backend/base_dir state
+    /// through its own API.
+    #[must_use]
+    pub fn with_concurrency(&self, n: usize) -> Luft {
+        Luft {
+            backend: self.backend.clone(),
+            base_dir: self.base_dir.clone(),
+            concurrency: Some(n),
+            planner_config: self.planner_config.clone(),
+            exec_limits: self.exec_limits.clone(),
+        }
+    }
 }
 
 /// Async handle to a running orchestration.
@@ -937,6 +955,31 @@ mod tests {
         // past validation) — but the API should not panic.
         handle.cancel();
         let _ = handle.join().await;
+    }
+
+    #[tokio::test]
+    async fn with_concurrency_produces_a_working_independent_luft() {
+        let dir = tempdir().expect("tempdir");
+        let luft = LuftBuilder::new()
+            .backend(mock_backend(serde_json::json!("ok")))
+            .base_dir(dir.path())
+            .build()
+            .expect("build");
+        let scoped = luft.with_concurrency(2);
+        let outcome = scoped
+            .run_script(
+                r#"meta = { reasoning = "t", phases = {} } function main() report("scoped") end"#,
+            )
+            .await
+            .expect("run_script on scoped luft");
+        assert_eq!(outcome.result.unwrap(), serde_json::json!("scoped"));
+        // Both instances share the same base_dir — the run directory is
+        // visible on disk regardless of which handle you check it through.
+        // (`luft.list()` is checkpoint-driven and a script with no
+        // agent()/phase() calls never writes one, so it isn't a reliable
+        // presence check here.)
+        assert!(dir.path().join(&outcome.run_dir_name).exists());
+        let _ = luft;
     }
 
     #[tokio::test]

@@ -11,10 +11,15 @@
 //! - `workflow://example/{name}` — read a specific example `.lua` file
 //!
 //! ## Tools
-//! - `execute_workflow` — validate + fire-and-forget execute a Lua workflow
-//! - `list_workflows` — list available `.lua` files
-//! - `get_run_status` — query a run's checkpoint status
-//! - `get_run_events` — query a run's event log
+//! - `execute_workflow` — validate + fire-and-forget execute (or resume) a Lua workflow
+//! - `list_files` — list available `.lua` files
+//! - `list_runs` — paginated history of past runs
+//! - `get_run_status` — rich run status (phases/agents/report/error)
+//! - `get_run_events` — paginated/filtered run event log
+//! - `cancel_run` — cancel an in-flight run
+//!
+//! `run_id` is the run directory name itself throughout — there is no
+//! separate UUID layer.
 //!
 //! ## Usage
 //!
@@ -53,7 +58,7 @@ pub use resources::{
     build_read_response, list_examples, read_resource, ResourceContent, WorkflowUri,
 };
 pub use server::McpServer;
-pub use tools::{handle_call, new_run_registry, RunInfo, RunRegistry};
+pub use tools::handle_call;
 
 #[cfg(test)]
 mod tests {
@@ -66,7 +71,6 @@ mod tests {
     use super::*;
     use serde_json::Value;
     use std::path::PathBuf;
-    use std::sync::Arc;
 
     // ── Protocol type re-exports ────────────────────────────────────────
 
@@ -126,7 +130,7 @@ mod tests {
     #[test]
     fn tools_list_result_through_reexport() {
         let r = tools_list_result();
-        assert_eq!(r["tools"].as_array().unwrap().len(), 4);
+        assert_eq!(r["tools"].as_array().unwrap().len(), 6);
     }
 
     // ── Resources re-exports ────────────────────────────────────────────
@@ -178,45 +182,6 @@ mod tests {
 
     // ── Tools re-exports ────────────────────────────────────────────────
 
-    #[test]
-    fn run_info_struct_via_reexport() {
-        let info = RunInfo {
-            run_dir_name: "task_42".into(),
-        };
-        assert_eq!(info.run_dir_name, "task_42");
-    }
-
-    #[test]
-    fn run_registry_is_arc_mutex_via_reexport() {
-        // new_run_registry() should return a clonable, locked registry.
-        let r1: RunRegistry = new_run_registry();
-        let r2 = r1.clone();
-        assert_eq!(Arc::strong_count(&r1), 2);
-        // Mutex works from both handles.
-        let h1 = std::thread::spawn(move || {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .unwrap();
-            rt.block_on(async {
-                r2.lock().await.insert(
-                    "k".into(),
-                    RunInfo {
-                        run_dir_name: "v".into(),
-                    },
-                );
-            });
-        });
-        h1.join().unwrap();
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-        rt.block_on(async {
-            assert!(r1.lock().await.contains_key("k"));
-        });
-    }
-
     #[tokio::test]
     async fn handle_call_unknown_tool_via_reexport() {
         // Calling handle_call directly via the re-export with a bogus tool name
@@ -238,9 +203,8 @@ mod tests {
             .build()
             .unwrap();
 
-        let runs = new_run_registry();
         let params = serde_json::json!({ "name": "nope", "arguments": {} });
-        let result = handle_call(&params, &luft, &runs, &[]).await;
+        let result = handle_call(&params, &luft, &[]).await;
         assert_eq!(result["isError"], true);
     }
 
@@ -296,7 +260,10 @@ mod tests {
             let _: fn(&[PathBuf]) -> Vec<crate::resources::ExampleEntry> = list_examples;
         }
         fn _assert_tools_in_scope() {
-            let _: fn() -> RunRegistry = new_run_registry;
+            // `handle_call` is async; just proving the name resolves through
+            // the re-export is enough (its exact signature is exercised by
+            // the tests that actually call it).
+            let _ = handle_call;
         }
         // All checks above are type-system assertions — pass at compile time.
     }
@@ -310,6 +277,9 @@ mod tests {
         fn _check_protocol_module(_: crate::protocol::JsonRpcResponse) {}
         fn _check_resources_module(_: crate::resources::WorkflowUri) {}
         fn _check_server_module(_: McpServer) {}
-        fn _check_tools_module(_: RunInfo) {}
+        fn _check_tools_module() {
+            let _: fn(&[luft_core::contract::event::AgentEvent], &str) -> Vec<_> =
+                crate::tools::filter_events_since;
+        }
     }
 }

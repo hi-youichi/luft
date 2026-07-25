@@ -17,12 +17,15 @@ use crate::protocol::{
     tools_list_result, JsonRpcError, JsonRpcMessage, JsonRpcResponse,
 };
 use crate::resources::build_read_response;
-use crate::tools::{handle_call, new_run_registry, RunRegistry};
+use crate::tools::handle_call;
 
-/// The MCP server: owns the Luft instance and run registry.
+/// The MCP server: owns the Luft instance.
+///
+/// `run_id` in every tool is the run directory name itself — there is no
+/// separate run registry to bridge a UUID to a directory (see `tools.rs`'s
+/// module doc).
 pub struct McpServer {
     luft: Luft,
-    runs: RunRegistry,
     search_dirs: Vec<PathBuf>,
 }
 
@@ -33,7 +36,6 @@ impl McpServer {
     pub fn new(luft: Luft) -> Self {
         Self {
             luft,
-            runs: new_run_registry(),
             search_dirs: vec![PathBuf::from("examples"), PathBuf::from("workflows")],
         }
     }
@@ -141,9 +143,7 @@ impl McpServer {
 
             "tools/list" => Ok(tools_list_result()),
 
-            "tools/call" => {
-                Ok(handle_call(params, &self.luft, &self.runs, &self.search_dirs).await)
-            }
+            "tools/call" => Ok(handle_call(params, &self.luft, &self.search_dirs).await),
 
             "notifications/initialized" => {
                 // Notification acknowledged — no result.
@@ -261,16 +261,16 @@ mod tests {
             .dispatch_method("tools/list", &json!({}))
             .await
             .unwrap();
-        assert_eq!(result["tools"].as_array().unwrap().len(), 4);
+        assert_eq!(result["tools"].as_array().unwrap().len(), 6);
     }
 
     #[tokio::test]
-    async fn dispatch_tools_call_list_workflows() {
+    async fn dispatch_tools_call_list_files() {
         let server = build_server();
         let result = server
             .dispatch_method(
                 "tools/call",
-                &json!({"name": "list_workflows", "arguments": {}}),
+                &json!({"name": "list_files", "arguments": {}}),
             )
             .await
             .unwrap();
@@ -406,7 +406,7 @@ mod tests {
         let result = server
             .dispatch_method(
                 "tools/call",
-                &json!({"name": "list_workflows", "arguments": {}}),
+                &json!({"name": "list_files", "arguments": {}}),
             )
             .await
             .unwrap();
@@ -442,12 +442,12 @@ mod tests {
             .await
             .unwrap();
         let parsed: Value = serde_json::from_str(resp.trim()).unwrap();
-        assert_eq!(parsed["result"]["tools"].as_array().unwrap().len(), 4);
+        assert_eq!(parsed["result"]["tools"].as_array().unwrap().len(), 6);
 
-        // 4. tools/call: list_workflows
+        // 4. tools/call: list_files
         let resp = server
             .dispatch_line(
-                r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_workflows","arguments":{}}}"#,
+                r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_files","arguments":{}}}"#,
             )
             .await
             .unwrap();

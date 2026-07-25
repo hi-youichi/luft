@@ -162,34 +162,49 @@ pub fn resource_templates_list_result() -> Value {
     })
 }
 
-/// The `tools/list` result — four tools: execute_workflow, list_workflows,
-/// get_run_status, get_run_events.
+/// The `tools/list` result — six tools, aligned toward loom's richer
+/// `workflow_*` surface: execute_workflow, list_files, list_runs,
+/// get_run_status, get_run_events, cancel_run.
 pub fn tools_list_result() -> Value {
     serde_json::json!({
         "tools": [
             {
                 "name": "execute_workflow",
-                "description": "Execute a Luft workflow. Accepts either inline Lua script or a path to a .lua file. Returns immediately with a run_id — use get_run_status to poll progress.",
+                "description": "Execute a Luft workflow, or resume a prior checkpointed run. Exactly one of `script`, `path`, `resume_from_id` is required. Returns immediately with a run_id — use get_run_status to poll progress.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "script": { "type": "string", "description": "Inline Lua workflow script" },
                         "path": { "type": "string", "description": "Path to .lua file (relative to CWD)" },
-                        "args": { "type": "object", "description": "Workflow arguments, accessible as `args` in Lua" }
+                        "resume_from_id": { "type": "string", "description": "run_id of a prior checkpointed run to resume; mutually exclusive with script/path" },
+                        "args": { "type": "object", "description": "Workflow arguments, accessible as `args` in Lua (fresh runs only)" },
+                        "concurrency": { "type": "integer", "minimum": 1, "maximum": 64, "description": "Max concurrent agents for this run (default: engine default)" }
                     }
                 }
             },
             {
-                "name": "list_workflows",
-                "description": "List available workflow files from workflows/ and examples/ directories",
+                "name": "list_files",
+                "description": "List available .lua workflow files from workflows/ and examples/ directories",
                 "inputSchema": {
                     "type": "object",
                     "properties": {}
                 }
             },
             {
+                "name": "list_runs",
+                "description": "List past workflow runs, paginated and optionally filtered by terminal status",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "limit": { "type": "integer", "minimum": 1, "maximum": 100, "description": "Max runs to return. Default: 20, max: 100" },
+                        "cursor": { "type": "string", "description": "Opaque cursor from a previous page's next_cursor" },
+                        "status_filter": { "type": "string", "enum": ["completed", "failed", "cancelled"], "description": "Restrict to runs with this terminal status" }
+                    }
+                }
+            },
+            {
                 "name": "get_run_status",
-                "description": "Get the current status of a workflow run",
+                "description": "Get the current rich status of a workflow run, including per-phase and per-agent detail",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -200,12 +215,27 @@ pub fn tools_list_result() -> Value {
             },
             {
                 "name": "get_run_events",
-                "description": "Get events for a workflow run, optionally only those after a specific event ID",
+                "description": "Get events for a workflow run, with offset/limit pagination, type/agent filters, and an incremental since_event_id cursor",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "run_id": { "type": "string" },
-                        "since_event_id": { "type": "string", "description": "Only return events after this event ID (for incremental polling)" }
+                        "since_event_id": { "type": "string", "description": "Only return events after this event ID (for incremental polling)" },
+                        "offset": { "type": "integer", "minimum": 0, "description": "Skip the first N matching events" },
+                        "events_limit": { "type": "integer", "minimum": 1, "maximum": 500, "description": "Page size (default 50, clamped to 500)" },
+                        "types": { "type": "array", "items": { "type": "string" }, "description": "Restrict to events whose `type` is in this set" },
+                        "agent_id": { "type": "string", "description": "Restrict to events with this agent_id" }
+                    },
+                    "required": ["run_id"]
+                }
+            },
+            {
+                "name": "cancel_run",
+                "description": "Cancel an in-flight workflow run",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "run_id": { "type": "string" }
                     },
                     "required": ["run_id"]
                 }
@@ -315,15 +345,17 @@ mod tests {
     }
 
     #[test]
-    fn tools_list_has_four_tools() {
+    fn tools_list_has_six_tools() {
         let r = tools_list_result();
         let tools = r["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 4);
+        assert_eq!(tools.len(), 6);
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
         assert!(names.contains(&"execute_workflow"));
-        assert!(names.contains(&"list_workflows"));
+        assert!(names.contains(&"list_files"));
+        assert!(names.contains(&"list_runs"));
         assert!(names.contains(&"get_run_status"));
         assert!(names.contains(&"get_run_events"));
+        assert!(names.contains(&"cancel_run"));
     }
 
     #[test]
