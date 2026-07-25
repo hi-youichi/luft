@@ -273,7 +273,10 @@ mod tests {
     /// Returns `(f()'s return value, lines written to stdout)`.
     /// **MUST** be called while holding `IO_LOCK`.
     fn json_lines(lines: &[String]) -> Vec<serde_json::Value> {
-        lines.iter().filter_map(|l| serde_json::from_str(l).ok()).collect()
+        lines
+            .iter()
+            .filter_map(|l| serde_json::from_str(l).ok())
+            .collect()
     }
 
     #[cfg(unix)]

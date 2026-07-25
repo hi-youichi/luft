@@ -57,13 +57,13 @@ mod dirs {
 
 #[cfg(test)]
 mod tests {
+    use super::list_workflows;
     #[cfg(unix)]
     use std::path::PathBuf;
     #[cfg(unix)]
     use std::sync::Mutex;
     #[cfg(unix)]
     use tempfile::TempDir;
-    use super::list_workflows;
 
     #[cfg(unix)]
     static HOME_LOCK: Mutex<()> = Mutex::new(());
