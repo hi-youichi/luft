@@ -454,6 +454,7 @@ mod tests {
         let key = "HOME";
         let orig = std::env::var(key).ok();
         let dir = TempDir::new().unwrap();
+        let dir_path = dir.path().to_str().unwrap().to_string();
         std::env::set_var(key, dir.path());
 
         let lock = HOME_LOCK.lock().unwrap();
@@ -465,7 +466,7 @@ mod tests {
             };
             assert_eq!(
                 std::env::var(key).ok().as_deref(),
-                Some(dir.path().to_str().unwrap())
+                Some(dir_path.as_str())
             );
         }
 
