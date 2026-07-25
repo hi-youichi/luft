@@ -76,6 +76,7 @@ mod tests {
             },
             artifacts: vec![],
             logs: Default::default(),
+            thread_id: None,
         }
     }
 
@@ -141,6 +142,7 @@ mod tests {
             },
             artifacts: vec![],
             logs: Default::default(),
+            thread_id: None,
         }
     }
 
@@ -248,6 +250,7 @@ mod tests {
             },
             artifacts: vec![],
             logs: Default::default(),
+            thread_id: None,
         };
         let (status, output, tokens, findings) = slot_from_result(r);
         assert_eq!(status, "timed_out");

@@ -318,7 +318,6 @@ mod tests {
                     idle_timeout_secs: Some(600),
                     emit_raw_events: Some(false),
                 },
-                codex_acp: AcpBackendOverride::default(),
             },
             planner: PlannerConfig {
                 model: Some("claude-3-haiku".into()),

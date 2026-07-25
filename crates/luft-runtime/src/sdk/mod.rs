@@ -243,7 +243,8 @@ mod tests {
             mcp_endpoint: None,
             timeout: None,
             output_schema: None,
-        workdir_override: None,
+            workdir_override: None,
+            thread_id: None,
         }
     }
 
