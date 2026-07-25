@@ -74,6 +74,7 @@ mod tests {
         _lock: std::sync::MutexGuard<'static, ()>,
         _dir: TempDir,
         orig_home: Option<String>,
+        orig_xdg: Option<String>,
     }
 
     #[cfg(unix)]
@@ -92,11 +93,14 @@ mod tests {
             let dir = TempDir::new().unwrap();
             let key = config_env_var();
             let orig_home = std::env::var(key).ok();
+            let orig_xdg = std::env::var("XDG_CONFIG_HOME").ok();
             std::env::set_var(key, dir.path());
+            std::env::remove_var("XDG_CONFIG_HOME");
             HomeEnv {
                 _lock,
                 _dir: dir,
                 orig_home,
+                orig_xdg,
             }
         }
     }
@@ -109,6 +113,10 @@ mod tests {
                 Some(h) => std::env::set_var(key, h),
                 None => std::env::remove_var(key),
             }
+            match &self.orig_xdg {
+                Some(xdg) => std::env::set_var("XDG_CONFIG_HOME", xdg),
+                None => std::env::remove_var("XDG_CONFIG_HOME"),
+            }
         }
     }
 
@@ -116,6 +124,7 @@ mod tests {
     struct UnsetHomeGuard {
         _lock: std::sync::MutexGuard<'static, ()>,
         orig_home: Option<String>,
+        orig_xdg: Option<String>,
     }
 
     #[cfg(unix)]
@@ -124,8 +133,14 @@ mod tests {
             let _lock = HOME_LOCK.lock().unwrap();
             let key = config_env_var();
             let orig_home = std::env::var(key).ok();
+            let orig_xdg = std::env::var("XDG_CONFIG_HOME").ok();
             std::env::remove_var(key);
-            UnsetHomeGuard { _lock, orig_home }
+            std::env::remove_var("XDG_CONFIG_HOME");
+            UnsetHomeGuard {
+                _lock,
+                orig_home,
+                orig_xdg,
+            }
         }
     }
 
@@ -136,6 +151,10 @@ mod tests {
             match &self.orig_home {
                 Some(h) => std::env::set_var(key, h),
                 None => std::env::remove_var(key),
+            }
+            match &self.orig_xdg {
+                Some(xdg) => std::env::set_var("XDG_CONFIG_HOME", xdg),
+                None => std::env::remove_var("XDG_CONFIG_HOME"),
             }
         }
     }
