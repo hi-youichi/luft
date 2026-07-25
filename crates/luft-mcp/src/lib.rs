@@ -26,7 +26,7 @@
 //! The server is started via the CLI (`luft mcp serve`) or directly:
 //!
 //! ```no_run
-//! use luft_mcp::McpServer;
+//! use luft_mcp::LuftMcpServer;
 //! use std::time::Duration;
 //! use luft_core::{MockBackend, MockBehavior, TokenUsage};
 //!
@@ -39,8 +39,8 @@
 //! let luft = luft::Luft::builder()
 //!     .backend(backend)
 //!     .build()?;
-//! let server = McpServer::new(luft);
-//! server.serve_stdio().await?;
+//! let server = LuftMcpServer::new(luft);
+//! luft_mcp::serve_rmcp(server).await?;
 //! # Ok(())
 //! # }
 //! ```
@@ -48,6 +48,7 @@
 pub mod protocol;
 pub mod resources;
 pub mod server;
+pub mod server_rmcp;
 pub mod tools;
 
 pub use protocol::{
@@ -58,6 +59,7 @@ pub use resources::{
     build_read_response, list_examples, read_resource, ResourceContent, WorkflowUri,
 };
 pub use server::McpServer;
+pub use server_rmcp::{serve as serve_rmcp, LuftMcpServer};
 pub use tools::handle_call;
 
 #[cfg(test)]

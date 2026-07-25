@@ -33,7 +33,7 @@ pub struct McpServeArgs {
 /// Entry point for `luft mcp serve`.
 ///
 /// Constructs a Luft instance with the requested (or auto-detected) backend,
-/// wraps it in an [`luft_mcp::McpServer`], and runs the stdio loop.
+/// wraps it in an [`luft_mcp::LuftMcpServer`], and runs the stdio loop.
 pub async fn serve(args: McpServeArgs) -> Result<()> {
     let backend_id = args
         .backend
@@ -44,8 +44,8 @@ pub async fn serve(args: McpServeArgs) -> Result<()> {
 
     let luft = luft::Luft::builder().backend_arc(backend).build()?;
 
-    let server = luft_mcp::McpServer::new(luft);
-    server.serve_stdio().await?;
+    let server = luft_mcp::LuftMcpServer::new(luft);
+    luft_mcp::serve_rmcp(server).await?;
     Ok(())
 }
 
