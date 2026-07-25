@@ -11,7 +11,7 @@ use anyhow::Result;
 use serde::Deserialize;
 use serde_json::Value;
 use std::io::{self, BufRead, Write};
-#[cfg(unix)]
+#[cfg(all(unix, test))]
 use std::io::{BufReader, Seek};
 use std::path::PathBuf;
 
