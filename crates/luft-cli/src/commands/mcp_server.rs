@@ -10,7 +10,9 @@
 use anyhow::Result;
 use serde::Deserialize;
 use serde_json::Value;
-use std::io::{self, BufRead, BufReader, Seek, Write};
+use std::io::{self, BufRead, Write};
+#[cfg(unix)]
+use std::io::{BufReader, Seek};
 use std::path::PathBuf;
 
 // ── `luft mcp serve` — full MCP server ───────────────────────────────
@@ -272,6 +274,7 @@ mod tests {
     /// Run `f` with stdin / stdout redirected from / to temporary files.
     /// Returns `(f()'s return value, lines written to stdout)`.
     /// **MUST** be called while holding `IO_LOCK`.
+    #[cfg(unix)]
     fn json_lines(lines: &[String]) -> Vec<serde_json::Value> {
         lines
             .iter()

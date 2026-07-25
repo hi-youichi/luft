@@ -57,6 +57,7 @@ mod dirs {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
     use super::list_workflows;
     #[cfg(unix)]
     use std::path::PathBuf;
