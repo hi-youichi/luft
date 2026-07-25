@@ -157,6 +157,7 @@ impl ArtifactWriter {
                 findings,
                 prompt,
                 retry_count,
+                ts: _,
             } => {
                 let stats = self.agents.remove(agent_id).unwrap_or_default();
                 let record = AgentDoneRecord {

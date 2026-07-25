@@ -126,6 +126,28 @@ cargo run -- run -w examples/converge-demo.lua -b mock \
 
 > Mock 的 converge 只验证了"空输入边界"，核心多轮对抗逻辑未覆盖。见 2.1 用 opencode 重跑。
 
+### 1.6 model-compare.lua — 同一 prompt 多模型对比
+
+```bash
+cargo run -- run -w examples/model-compare.lua -b mock \
+    --log .luft/example_logs/model-compare.jsonl --log-format jsonl
+```
+
+**预期：** `models_tested == 3`，`results[i].status == "ok"`（mock 下 `output` 为空，只验证接线）。
+
+**演示要点：**
+- 每个 `agent()` 调用可以带独立的 `model` 字段，覆盖这次调用用的模型——backend 本身仍由 `--backend` 统一指定，一次 run 内不能混用多个 backend（见 [architecture/adapters.md](../../../docs/architecture/adapters.md) §7）
+- 用 `parallel(MODELS, mapperFn)` 并发跑同一个 prompt 在多个模型上，一次拿到全部结果对比
+
+真实模型对比（需要 `claude-acp` 可用，即已装 `claude-code-acp` 且设置了 `ANTHROPIC_API_KEY`）：
+
+```bash
+cargo run -- run -w examples/model-compare.lua -b claude-acp \
+    --log .luft/example_logs/model-compare-claude.jsonl --log-format jsonl
+```
+
+**预期：** `results[i].output.text` 非空，且不同模型的回答内容/长度/风格有可观察差异。
+
 ---
 
 ## 第 2 级：OpenCode Backend（分钟级）

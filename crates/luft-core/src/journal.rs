@@ -17,6 +17,7 @@
 
 use crate::contract::backend::AgentStatus;
 use crate::contract::event::{AgentEvent, EventSender};
+use chrono::Utc;
 use crate::contract::finding::Finding;
 use crate::contract::ids::{AgentId, PhaseId, RunId, TokenUsage};
 use crate::scheduler::{BackendRegistry, SchedulerConfig};
@@ -270,6 +271,7 @@ impl JournalStore {
             findings: Vec::new(),
             prompt: String::new(),
             retry_count: 0,
+            ts: Utc::now(),
         };
         self.inner.append_event(&event)?;
 

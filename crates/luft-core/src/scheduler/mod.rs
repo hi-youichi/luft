@@ -15,6 +15,7 @@ pub use error::SchedulerError;
 pub use registry::BackendRegistry;
 
 use crate::contract::*;
+use chrono::Utc;
 use dashmap::DashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
@@ -169,6 +170,7 @@ impl Scheduler {
                 findings: Vec::new(),
                 prompt: task.prompt.clone(),
                 retry_count: 0,
+                ts: Utc::now(),
             });
             return Err(SchedulerError::QuotaExceeded {
                 limit: self.config.quota_per_run,
@@ -199,6 +201,7 @@ impl Scheduler {
                     findings: Vec::new(),
                     prompt: task.prompt.clone(),
                     retry_count: 0,
+                    ts: Utc::now(),
                 });
                 self.cleanup_agent(run_id, task.agent_id);
                 return Err(cancel_kind(&run_cancel));
@@ -215,6 +218,7 @@ impl Scheduler {
             role: task.role.clone(),
             name: task.name.clone(),
             agent_seq: task.agent_seq,
+            ts: Utc::now(),
         });
 
         let start = Instant::now();
@@ -383,6 +387,7 @@ impl Scheduler {
             },
             prompt: task.prompt.clone(),
             retry_count: attempt,
+            ts: Utc::now(),
         });
         tracing::info!(?status, elapsed_ms, "agent finished");
 
