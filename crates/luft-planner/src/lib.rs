@@ -474,13 +474,117 @@ Rules:
 ///
 /// This reference is sent on every planner call (~4K tokens). Keep examples
 /// concise but illustrative. Rules are authoritative — primitives are reference.
-const LUA_DSL_REFERENCE: &str = include_str!("lua_dsl_reference.md");
+const SKILL_MAIN: &str = include_str!("skill/main.md");
+const REF_ARCHITECTURE_HEADER: &str = include_str!("skill/references/architecture-header.md");
+const REF_PRIMITIVES: &str = include_str!("skill/references/primitives.md");
+const REF_AGENT_PROMPTS: &str = include_str!("skill/references/agent-prompts.md");
+const REF_TASK_DECOMPOSITION: &str = include_str!("skill/references/task-decomposition.md");
+const REF_ADVERSARIAL_VERIFICATION: &str =
+    include_str!("skill/references/adversarial-verification.md");
+const REF_EXAMPLES: &str = include_str!("skill/references/examples.md");
+
+/// Full reference, reassembled from the split `skill/` files in the same
+/// order as the original monolithic `lua_dsl_reference.md`. Splitting the
+/// file must not change what the planner sees — see
+/// `split_content_reassembles_to_the_full_reference` below.
+pub const LUA_DSL_REFERENCE: &str = const_format::concatcp!(
+    SKILL_MAIN,
+    "\n",
+    REF_ARCHITECTURE_HEADER,
+    "\n",
+    REF_PRIMITIVES,
+    "\n",
+    REF_AGENT_PROMPTS,
+    "\n",
+    REF_TASK_DECOMPOSITION,
+    "\n",
+    REF_ADVERSARIAL_VERIFICATION,
+    "\n",
+    REF_EXAMPLES,
+);
+
+/// The Lua DSL reference packaged as a [`luft_core::Skill`] — the library-level
+/// hand-off point for any crate that embeds `luft` and wants to teach its own
+/// agent how to write Luft workflows (e.g. wrapping it into a richer
+/// agent-specific skill format with triggers/tool requirements). `luft-mcp`'s
+/// `workflow://schema` resource reads [`LUA_DSL_REFERENCE`] directly (no
+/// vendored copy), so the two stay in sync by construction.
+pub const WORKFLOW_SKILL: luft_core::Skill = luft_core::Skill {
+    name: "workflow",
+    description: "Lua DSL reference for writing multi-agent Luft workflows",
+    content: SKILL_MAIN,
+    references: &[
+        ("references/architecture-header.md", REF_ARCHITECTURE_HEADER),
+        ("references/primitives.md", REF_PRIMITIVES),
+        ("references/agent-prompts.md", REF_AGENT_PROMPTS),
+        ("references/task-decomposition.md", REF_TASK_DECOMPOSITION),
+        (
+            "references/adversarial-verification.md",
+            REF_ADVERSARIAL_VERIFICATION,
+        ),
+        ("references/examples.md", REF_EXAMPLES),
+    ],
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use luft_core::{FailKind, MockBackend, MockBehavior, TokenUsage};
     use std::time::Duration;
+
+    #[test]
+    fn workflow_skill_wraps_the_dsl_reference() {
+        assert_eq!(WORKFLOW_SKILL.name, "workflow");
+        assert!(!WORKFLOW_SKILL.description.is_empty());
+        // content is the short main body, not the full reassembled reference.
+        assert_eq!(WORKFLOW_SKILL.content, SKILL_MAIN);
+        assert!(LUA_DSL_REFERENCE.starts_with(SKILL_MAIN));
+        assert_eq!(WORKFLOW_SKILL.references.len(), 6);
+    }
+
+    #[test]
+    fn split_content_reassembles_to_the_full_reference() {
+        // Every section that existed in the pre-split monolithic file must be
+        // present somewhere in the reassembled LUA_DSL_REFERENCE. Guards
+        // against silently dropping a section during the split.
+        for marker in [
+            "# Output Format",
+            "# Execution Model",
+            "# Architecture Header",
+            "# Meta Table & Entry Point",
+            "# Agent Prompt Quality",
+            "# Task Decomposition",
+            "# Primitives",
+            "# Globals",
+            "# Error Handling",
+            "# Adversarial Verification Pattern",
+            "# Rules",
+            "# Example: per-module refactoring",
+            "# Example: whole-crate refactoring",
+            "# Example: adversarial verification",
+        ] {
+            assert!(
+                LUA_DSL_REFERENCE.contains(marker),
+                "missing section after split: {marker}"
+            );
+        }
+        assert!(
+            !LUA_DSL_REFERENCE.contains("Maestro"),
+            "stale project name survived the split"
+        );
+        assert!(LUA_DSL_REFERENCE.contains("Luft"));
+    }
+
+    #[test]
+    fn workflow_skill_references_are_reachable_and_nonempty() {
+        for (path, content) in WORKFLOW_SKILL.references {
+            assert!(!content.is_empty(), "{path} is empty");
+            assert!(
+                path.starts_with("references/"),
+                "{path} should be under references/"
+            );
+        }
+    }
 
     fn mock_returning(output: serde_json::Value) -> Arc<dyn AgentBackend> {
         Arc::new(MockBackend::new(

@@ -8,6 +8,7 @@ pub mod event;
 pub mod finding;
 pub mod ids;
 pub mod schema;
+pub mod skill;
 
 // backend: AgentBackend (trait), AgentTask, AgentResult, RunContext, BackendError
 pub use backend::*;
@@ -21,6 +22,8 @@ pub use finding::*;
 pub use ids::*;
 // schema: validate_output, SchemaError
 pub use schema::*;
+// skill: Skill
+pub use skill::Skill;
 
 #[cfg(test)]
 mod tests {
@@ -71,6 +74,14 @@ mod tests {
         // schema
         let _: fn(&serde_json::Value, &serde_json::Value) -> Result<(), SchemaError> =
             validate_output;
+
+        // skill
+        let _: Skill = Skill {
+            name: "n",
+            description: "d",
+            content: "c",
+            references: &[],
+        };
     }
 
     #[test]
@@ -84,6 +95,7 @@ mod tests {
         let _: schema::SchemaError;
         // cache module exports the `agent_cache_key` function via its own path.
         let _: fn(&str, Option<&str>, &str, u32) -> String = cache::agent_cache_key;
+        let _: skill::Skill;
     }
 
     #[test]

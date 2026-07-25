@@ -11,7 +11,7 @@
 //!
 //! | Module | Responsibility |
 //! |--------|---------------|
-//! | [`contract`] | Cross-crate traits and types: [`AgentBackend`], [`AgentTask`], [`AgentResult`], [`AgentEvent`], [`Finding`] |
+//! | [`contract`] | Cross-crate traits and types: [`AgentBackend`], [`AgentTask`], [`AgentResult`], [`AgentEvent`], [`Finding`], [`Skill`] |
 //! | [`scheduler`] | Concurrency-limited agent dispatcher with retry and journal callbacks |
 //! | [`journal`] | Checkpoint store for run resume — write agent results, read on restart |
 //! | [`state`] | Run/phase state machine: [`RunCheckpoint`], [`CheckpointStatus`] |
@@ -38,6 +38,7 @@
 //! [`AgentResult`]: contract::backend::AgentResult
 //! [`AgentEvent`]: contract::event::AgentEvent
 //! [`Finding`]: contract::finding::Finding
+//! [`Skill`]: contract::skill::Skill
 //! [`JournalCallback`]: scheduler::JournalCallback
 //! [`MockBackend`]: mock_backend::MockBackend
 //! [`MockFileBackend`]: mock_file_backend::MockFileBackend
