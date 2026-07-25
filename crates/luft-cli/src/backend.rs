@@ -31,16 +31,6 @@ pub fn create_backend(
                 ..Default::default()
             }),
         ))),
-        "loom-acp" => Ok(Arc::new(luft::adapters::AcpAdapter::new(
-            apply_acp_overrides(luft::adapters::AcpConfig {
-                id: "loom-acp",
-                binary: PathBuf::from("loom-acp"),
-                acp_args: vec![],
-                emit_raw_events,
-                model,
-                ..Default::default()
-            }),
-        ))),
         "codex" => {
             let binary = if cfg!(windows) {
                 PathBuf::from("npx.cmd")
@@ -148,7 +138,7 @@ pub fn detect_available_backends() -> Vec<&'static str> {
     let cfg = crate::config::load_config();
     let override_binary = cfg.as_ref().and_then(|c| c.backend.acp.binary.as_deref());
 
-    let mut result: Vec<&'static str> = ["opencode", "loom-acp"]
+    let mut result: Vec<&'static str> = ["opencode"]
         .into_iter()
         .filter(|id| is_binary_available(id, override_binary))
         .collect();
@@ -286,7 +276,7 @@ mod tests {
         let backends = detect_available_backends();
         for id in &backends {
             assert!(
-                *id == "opencode" || *id == "loom-acp" || *id == "codex",
+                *id == "opencode" || *id == "codex",
                 "unexpected backend id: {id}",
             );
         }

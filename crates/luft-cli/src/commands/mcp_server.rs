@@ -26,7 +26,7 @@ pub enum McpSubcommand {
 #[derive(Debug, clap::Args)]
 pub struct McpServeArgs {
     /// Backend id to use for workflow execution (default: auto-detect).
-    #[arg(long, help = "Backend id (mock, opencode, loom-acp) or auto-detect")]
+    #[arg(long, help = "Backend id (mock, opencode, codex) or auto-detect")]
     pub backend: Option<String>,
 }
 

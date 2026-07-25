@@ -66,7 +66,7 @@ struct CapabilitiesView {
 }
 
 pub fn list_backends() {
-    let known_ids = &["mock", "loom-acp", "opencode", "codex"];
+    let known_ids = &["mock", "opencode", "codex"];
 
     println!(
         "     id     \u{2502} streaming \u{2502} mcp_injection \u{2502} structured_output \u{2502} models"
@@ -80,7 +80,7 @@ pub fn list_backends() {
             Ok(be) => {
                 let caps = be.capabilities();
                 let models = if caps.models.is_empty() {
-                    if *id == "opencode" || *id == "loom-acp" || *id == "codex" {
+                    if *id == "opencode" || *id == "codex" {
                         "(any)".into()
                     } else {
                         "(n/a)".into()
@@ -224,7 +224,7 @@ pub fn check_backend(id: Option<String>) {
                 Err(e) => println!("\u{2717} ACP handshake failed: {e}"),
             }
         }
-        "loom-acp" | "opencode" => {
+        "opencode" => {
             // Check config override first, then PATH.
             let cfg = crate::config::load_config();
             let binary = cfg
