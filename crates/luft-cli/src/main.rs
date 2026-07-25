@@ -12,6 +12,7 @@
 mod backend;
 mod commands;
 mod config;
+mod install;
 mod logging;
 mod signal;
 
@@ -97,6 +98,8 @@ enum Commands {
     /// Generate mock data for an existing Lua script.
     #[command(subcommand)]
     Mock(commands::mock::MockSubcommand),
+    /// Install Luft bridges for detected agents.
+    Install,
 }
 
 #[derive(Debug, clap::Args)]
@@ -270,6 +273,7 @@ async fn dispatch(
         Commands::Mock(cmd) => match cmd {
             commands::mock::MockSubcommand::Add(args) => commands::mock::mock_add(args).await?,
         },
+        Commands::Install => commands::install::run_install()?,
     }
 
     Ok(())

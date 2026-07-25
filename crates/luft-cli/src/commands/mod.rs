@@ -6,6 +6,7 @@ pub mod backend;
 pub mod clear;
 pub mod event_log;
 pub mod generate;
+pub mod install;
 pub mod list;
 pub mod logs;
 pub mod lua_validate;

@@ -44,6 +44,8 @@ blake3 = "1"
 futures = "0.3"
 dashmap = "6"
 mlua = { version = "0.10", features = ["lua54", "vendored", "async", "serialize", "send"] }
+thiserror = "1"
+which = "6"
 
 [dev-dependencies]
 tempfile = "3"
