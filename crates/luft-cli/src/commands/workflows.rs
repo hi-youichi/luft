@@ -63,6 +63,7 @@ mod tests {
     use std::sync::Mutex;
     #[cfg(unix)]
     use tempfile::TempDir;
+    use super::list_workflows;
 
     #[cfg(unix)]
     static HOME_LOCK: Mutex<()> = Mutex::new(());
