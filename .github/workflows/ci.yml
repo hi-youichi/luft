@@ -88,6 +88,8 @@ jobs:
       with:
         path: target-release
         key: ${{ runner.os }}-cargo-build-target-release-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Build release binary
       run: cargo build --release
 
     - name: Upload Linux binary
