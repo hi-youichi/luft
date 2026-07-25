@@ -647,6 +647,7 @@ mod tests {
             role: None,
             name: None,
             agent_seq: 0,
+            ts: Default::default(),
         }];
         let view = build_phases_view(&checkpoint, &events);
         assert_eq!(view.phases[0].agents.len(), 2);

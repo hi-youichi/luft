@@ -636,6 +636,7 @@ mod tests {
             findings: vec![],
             prompt: String::new(),
             retry_count: 0,
+            ts: Default::default(),
         }
     }
 

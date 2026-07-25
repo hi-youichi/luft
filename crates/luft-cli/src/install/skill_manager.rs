@@ -187,6 +187,7 @@ impl SkillManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
     use tempfile::TempDir;
 
     fn setup_test_skills(temp_dir: &TempDir) {
@@ -199,6 +200,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_skill_manager_creation() {
         let temp_dir = TempDir::new().unwrap();
         setup_test_skills(&temp_dir);
@@ -216,9 +218,13 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_skill_manager_source_not_found() {
-        // 在没有技能源目录的情况下
+        let temp_dir = TempDir::new().unwrap();
+        let original_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(temp_dir.path()).unwrap();
         let result = SkillManager::new();
+        std::env::set_current_dir(original_dir).unwrap();
         assert!(result.is_err());
         match result {
             Err(crate::install::types::InstallError::SkillSourceNotFound(_)) => {}
@@ -227,6 +233,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_copy_skills_to_directory() {
         let temp_dir = TempDir::new().unwrap();
         setup_test_skills(&temp_dir);
@@ -248,6 +255,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_install_for_codex() {
         let temp_dir = TempDir::new().unwrap();
         setup_test_skills(&temp_dir);
@@ -268,6 +276,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_install_for_claude() {
         let temp_dir = TempDir::new().unwrap();
         setup_test_skills(&temp_dir);
@@ -288,6 +297,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_install_for_multiple_agents() {
         let temp_dir = TempDir::new().unwrap();
         setup_test_skills(&temp_dir);

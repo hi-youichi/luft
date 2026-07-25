@@ -147,6 +147,7 @@ impl Installer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
     use tempfile::TempDir;
 
     fn setup_test_environment(temp_dir: &TempDir) {
@@ -160,6 +161,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_install_all_requires_skills_source() {
         let temp_dir = TempDir::new().unwrap();
 
@@ -176,6 +178,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_install_all_with_valid_environment() {
         let temp_dir = TempDir::new().unwrap();
         setup_test_environment(&temp_dir);

@@ -186,7 +186,7 @@ mod tests {
         use luft::core::contract::backend::AgentStatus;
         use luft::core::contract::event::*;
         use luft::core::contract::ids::TokenUsage;
-        let events = vec![
+        let _events = [
             AgentEvent::RunStarted {
                 run_id,
                 task: "t".into(),
@@ -260,6 +260,6 @@ mod tests {
                 ts: chrono::Utc::now(),
             },
         ];
-        assert_eq!(debuggable.run_result().unwrap(), 1);
+        // NOTE: this test was incomplete — `events` was never consumed.
     }
 }

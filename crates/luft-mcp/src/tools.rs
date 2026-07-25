@@ -1114,8 +1114,9 @@ mod tests {
                 model: None,
                 description: None,
                 role: None,
-                name: None,
-                agent_seq: 0,
+            name: None,
+            agent_seq: 0,
+            ts: Default::default(),
             },
             AgentEvent::AgentDone {
                 run_id,
@@ -1134,6 +1135,7 @@ mod tests {
                 findings: vec![],
                 prompt: "hi".to_string(),
                 retry_count: 0,
+                ts: Default::default(),
             },
             AgentEvent::PhaseDone {
                 run_id,

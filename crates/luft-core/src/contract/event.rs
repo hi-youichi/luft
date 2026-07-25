@@ -593,6 +593,7 @@ mod tests {
             role: Some("reviewer".into()),
             name: Some("agent-1".into()),
             agent_seq: 7,
+            ts: Default::default(),
         };
         let s = serde_json::to_string(&ev).unwrap();
         assert!(s.contains("\"type\":\"agent_started\""));
@@ -720,6 +721,7 @@ mod tests {
             findings: vec![finding],
             prompt: "do it".into(),
             retry_count: 1,
+            ts: Default::default(),
         };
         let s = serde_json::to_string(&ev).unwrap();
         assert!(s.contains("\"type\":\"agent_done\""));

@@ -759,6 +759,7 @@ mod tests {
             role: None,
             name: Some(name.to_string()),
             agent_seq: 1,
+            ts: Default::default(),
         }
     }
 
@@ -780,6 +781,7 @@ mod tests {
             findings: vec![],
             prompt: "do something".to_string(),
             retry_count: 0,
+            ts: Default::default(),
         }
     }
 
@@ -983,6 +985,7 @@ mod tests {
             findings: vec![],
             prompt: String::new(),
             retry_count: 0,
+            ts: Default::default(),
         });
         let content = std::fs::read_to_string(tmp.path().join("02_err").join("report.md")).unwrap();
         assert!(content.contains("Error"));
@@ -1005,6 +1008,7 @@ mod tests {
             findings: vec![],
             prompt: String::new(),
             retry_count: 0,
+            ts: Default::default(),
         });
         let content =
             std::fs::read_to_string(tmp.path().join("03_nullout").join("report.md")).unwrap();
@@ -1028,6 +1032,7 @@ mod tests {
             findings: vec![],
             prompt: String::new(),
             retry_count: 0,
+            ts: Default::default(),
         });
         let dir = tmp.path().join("07");
         assert!(dir.exists(), "directory '07' should be created");
@@ -1070,6 +1075,7 @@ mod tests {
             ],
             prompt: String::new(),
             retry_count: 0,
+            ts: Default::default(),
         });
         let content =
             std::fs::read_to_string(tmp.path().join("01_find-agent").join("report.md")).unwrap();
@@ -1290,6 +1296,7 @@ mod tests {
             findings: vec![],
             prompt: String::new(),
             retry_count: 0,
+            ts: Default::default(),
         });
         w.handle(&AgentEvent::AgentDone {
             run_id: uuid::Uuid::now_v7(),
@@ -1303,6 +1310,7 @@ mod tests {
             findings: vec![],
             prompt: String::new(),
             retry_count: 1,
+            ts: Default::default(),
         });
         w.handle(&AgentEvent::RunDone {
             run_id: uuid::Uuid::now_v7(),
@@ -1501,6 +1509,7 @@ mod tests {
             role: None,
             name: Some("a".into()),
             agent_seq: 1,
+            ts: Default::default(),
         });
         w.handle(&AgentEvent::AgentStarted {
             run_id: uuid::Uuid::now_v7(),
@@ -1512,6 +1521,7 @@ mod tests {
             role: None,
             name: Some("b".into()),
             agent_seq: 2,
+            ts: Default::default(),
         });
         w.handle(&AgentEvent::AgentStarted {
             run_id: uuid::Uuid::now_v7(),
@@ -1523,6 +1533,7 @@ mod tests {
             role: None,
             name: None,
             agent_seq: 3,
+            ts: Default::default(),
         });
 
         for (id, seq, name) in [(a1, 1, "a"), (a2, 2, "b"), (a3, 3, "c")] {
@@ -1538,6 +1549,7 @@ mod tests {
                 findings: vec![],
                 prompt: String::new(),
                 retry_count: 0,
+                ts: Default::default(),
             });
         }
         assert!(tmp.path().join("01_a").join("report.md").exists());
@@ -1599,6 +1611,7 @@ mod tests {
             findings: vec![],
             prompt: String::new(),
             retry_count: 0,
+            ts: Default::default(),
         });
         let content = std::fs::read_to_string(tmp.path().join("01_tok").join("report.md")).unwrap();
         // Total = input + output = 10

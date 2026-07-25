@@ -47,7 +47,6 @@ impl EventWriter {
                 planned,
                 description,
                 role,
-                parent_span_id: _,
                 ..
             } => {
                 self.write_phase_started(
@@ -921,6 +920,7 @@ mod tests {
             role: None,
             name: None,
             agent_seq: 0,
+            ts: Default::default(),
         })
         .await
         .unwrap();
@@ -959,6 +959,7 @@ mod tests {
             role: None,
             name: None,
             agent_seq: 0,
+            ts: Default::default(),
         })
         .await
         .unwrap();
@@ -1005,6 +1006,7 @@ mod tests {
             role: None,
             name: None,
             agent_seq: 0,
+            ts: Default::default(),
         })
         .await
         .unwrap();
@@ -1060,6 +1062,7 @@ mod tests {
             role: None,
             name: None,
             agent_seq: 0,
+            ts: Default::default(),
         })
         .await
         .unwrap();
@@ -1101,6 +1104,7 @@ mod tests {
             role: None,
             name: None,
             agent_seq: 0,
+            ts: Default::default(),
         })
         .await
         .unwrap();
@@ -1122,6 +1126,7 @@ mod tests {
             findings: Vec::new(),
             prompt: String::new(),
             retry_count: 0,
+            ts: Default::default(),
         })
         .await
         .unwrap();
@@ -1302,6 +1307,7 @@ mod tests {
             role: None,
             name: None,
             agent_seq: 0,
+            ts: Default::default(),
         })
         .await
         .unwrap();
