@@ -370,8 +370,7 @@ mod tests {
 
     #[test]
     fn create_backend_codex_with_model() {
-        let backend =
-            create_backend("codex", false, Some("o4-mini".into())).unwrap();
+        let backend = create_backend("codex", false, Some("o4-mini".into())).unwrap();
         assert_eq!(backend.id(), "codex");
     }
 

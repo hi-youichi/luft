@@ -97,7 +97,11 @@ mod tests {
     #[test]
     fn storage_result_ok_and_err_shortcuts() {
         let ok: StorageResult<i32> = Ok(7);
-        assert_eq!(ok.unwrap(), 7);
+        if let Ok(value) = ok {
+            assert_eq!(value, 7);
+        } else {
+            panic!("Expected Ok result");
+        }
 
         let err: StorageResult<i32> = Err(StorageError::Invalid("x".into()));
         assert!(err.is_err());

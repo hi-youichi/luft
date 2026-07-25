@@ -136,12 +136,8 @@ pub fn info_backend(id: Option<String>) {
                     connect_timeout_secs: codex_cfg
                         .and_then(|c| c.connect_timeout_secs)
                         .unwrap_or(10),
-                    idle_timeout_secs: codex_cfg
-                        .and_then(|c| c.idle_timeout_secs)
-                        .unwrap_or(300),
-                    emit_raw_events: codex_cfg
-                        .and_then(|c| c.emit_raw_events)
-                        .unwrap_or(true),
+                    idle_timeout_secs: codex_cfg.and_then(|c| c.idle_timeout_secs).unwrap_or(300),
+                    emit_raw_events: codex_cfg.and_then(|c| c.emit_raw_events).unwrap_or(true),
                 };
                 (bin, config)
             } else {
@@ -734,5 +730,4 @@ mod tests {
             &vec!["x".to_string(), "y".to_string(), "z".to_string()]
         );
     }
-
 }

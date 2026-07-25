@@ -800,7 +800,6 @@ mod tests {
         let (_tmp, mut w) = new_writer();
         w.handle(&run_started());
         // Indirectly verified by inspecting the run summary markdown.
-        let mut w = w;
         w.handle(&AgentEvent::RunDone {
             run_id: uuid::Uuid::now_v7(),
             status: RunStatus::Completed,

@@ -46,7 +46,6 @@ pub use writer::EventWriter;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::Path;
 
     #[test]
     fn default_db_path_is_luft_db_filename() {

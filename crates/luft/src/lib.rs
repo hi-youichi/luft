@@ -108,7 +108,7 @@ mod tests {
     // won't build, signalling a regression in the facade surface.
 
     use super::*;
-    use luft_core::contract::ids::{AgentId, PhaseId, RunId, TokenUsage};
+    use luft_core::contract::ids::{AgentId, PhaseId, RunId};
 
     #[test]
     fn prelude_module_is_public() {

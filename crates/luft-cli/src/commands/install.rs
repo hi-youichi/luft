@@ -30,24 +30,39 @@ fn print_installation_summary(summary: &crate::install::InstallSummary) {
     eprintln!();
     eprintln!("检测到的 Agent:");
     for agent in &summary.detected_agents {
-        let status = if agent.needs_external_installation() { "✅" } else { "🔧" };
+        let status = if agent.needs_external_installation() {
+            "✅"
+        } else {
+            "🔧"
+        };
         eprintln!("  {} {}", status, agent.display_name());
     }
-    
+
     eprintln!();
     eprintln!("安装摘要:");
     eprintln!("- 桥接安装: {} 个", summary.bridges_installed.len());
-    eprintln!("- MCP 配置: {}", if summary.mcp_configured { "完成" } else { "不适用" });
+    eprintln!(
+        "- MCP 配置: {}",
+        if summary.mcp_configured {
+            "完成"
+        } else {
+            "不适用"
+        }
+    );
     eprintln!("- 耗时: {:.2} 秒", summary.installation_time.as_secs_f64());
-    
+
     if !summary.bridges_installed.is_empty() {
         eprintln!();
         eprintln!("技能已安装到:");
         for bridge in &summary.bridges_installed {
-            eprintln!("  - {} ({} 个技能)", bridge.target_dir.display(), bridge.skills_count);
+            eprintln!(
+                "  - {} ({} 个技能)",
+                bridge.target_dir.display(),
+                bridge.skills_count
+            );
         }
     }
-    
+
     eprintln!();
     eprintln!("后续步骤:");
     eprintln!("1. 运行 'luft backend list' 查看所有后端");

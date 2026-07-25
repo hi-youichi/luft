@@ -235,9 +235,7 @@ mod tests {
                 idle_timeout_secs: Some(600),
                 emit_raw_events: Some(true),
                 inherit_env: Some(vec!["FOO".into()]),
-                env: Some(BTreeMap::from([
-                    ("BAR".to_string(), "baz".to_string()),
-                ])),
+                env: Some(BTreeMap::from([("BAR".to_string(), "baz".to_string())])),
             },
             ..BackendConfig::default()
         };

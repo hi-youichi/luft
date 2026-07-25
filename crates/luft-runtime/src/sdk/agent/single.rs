@@ -161,9 +161,8 @@ mod tests {
 
         let script = r#"local ok, err = pcall(agent, {}) return { ok = ok, err = tostring(err) }"#;
         let result: mlua::Table = lua.load(script).eval().unwrap();
-        assert_eq!(
-            result.get::<bool>("ok").unwrap(),
-            false,
+        assert!(
+            !result.get::<bool>("ok").unwrap(),
             "agent(table) without prompt must fail"
         );
         let err = result.get::<String>("err").unwrap();

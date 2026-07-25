@@ -74,6 +74,6 @@ pub use mock_backend::{FailKind, MockBackend, MockBehavior};
 #[cfg(feature = "testing")]
 pub use mock_file_backend::{MockFileBackend, MockStats, MockStatsSnapshot};
 pub use testing::{
-    CallRecord, CountingBackend, CrashBackend, SharedBackend,
-    completed_span_names, read_checkpoint, wait_for_calls,
+    completed_span_names, read_checkpoint, wait_for_calls, CallRecord, CountingBackend,
+    CrashBackend, SharedBackend,
 };

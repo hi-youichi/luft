@@ -350,8 +350,8 @@ pub async fn generate_mock_for_script(
             mcp_endpoint: None,
             timeout: None,
             output_schema: None,
-        workdir_override: None,
-        thread_id: None,
+            workdir_override: None,
+            thread_id: None,
         };
 
         let (events, _) = tokio::sync::broadcast::channel(16);

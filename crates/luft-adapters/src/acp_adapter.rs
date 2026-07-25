@@ -501,7 +501,10 @@ fn write_workflow_skill_files(backend_id: &str, working_folder: &Path) {
     }
 }
 
-fn write_skill_to_dir(dir: &Path, skill: &luft_core::contract::skill::Skill) -> std::io::Result<()> {
+fn write_skill_to_dir(
+    dir: &Path,
+    skill: &luft_core::contract::skill::Skill,
+) -> std::io::Result<()> {
     std::fs::create_dir_all(dir)?;
     std::fs::write(dir.join("SKILL.md"), skill.content)?;
     for (rel_path, content) in skill.references {
@@ -590,17 +593,18 @@ fn drive_connection(
                 let model = model.clone();
                 let luft_binary = luft_binary.clone();
                 async move {
-                    run_handshake_and_prompt(
-                        &conn,
-                        &cwd,
-                        schema_file_path.as_deref(),
-                        luft_binary.as_deref(),
-                        model.as_deref(),
-                        &prompt,
-                        &acc_for_prompt,
-                        &stop_holder_for_prompt,
-                    )
-                    .await
+                    run_handshake_and_prompt(HandshakePromptContext {
+                        conn: &conn,
+                        cwd: &cwd,
+                        schema_file_path: schema_file_path.as_deref(),
+                        luft_binary: luft_binary.as_deref(),
+                        model: model.as_deref(),
+                        prompt: &prompt,
+                        acc: &acc_for_prompt,
+                        stop_holder: &stop_holder_for_prompt,
+                    })
+                    .await?;
+                    Ok(())
                 }
             })
             .await
@@ -678,31 +682,42 @@ async fn decide_permission(
 /// schema-MCP server) → `session/set_config_option` (if a model is requested
 /// and the agent advertises one) → `session/prompt`. Records the resulting
 /// `StopReason` and token usage into the shared state.
+struct HandshakePromptContext<'a> {
+    conn: &'a ConnectionTo<Agent>,
+    cwd: &'a std::path::Path,
+    schema_file_path: Option<&'a str>,
+    luft_binary: Option<&'a std::path::Path>,
+    model: Option<&'a str>,
+    prompt: &'a str,
+    acc: &'a Arc<update_mapper::Accumulator>,
+    stop_holder: &'a Arc<Mutex<Option<String>>>,
+}
+
 async fn run_handshake_and_prompt(
-    conn: &ConnectionTo<Agent>,
-    cwd: &std::path::Path,
-    schema_file_path: Option<&str>,
-    luft_binary: Option<&std::path::Path>,
-    model: Option<&str>,
-    prompt: &str,
-    acc: &Arc<update_mapper::Accumulator>,
-    stop_holder: &Arc<Mutex<Option<String>>>,
+    ctx: HandshakePromptContext<'_>,
 ) -> Result<(), agent_client_protocol::Error> {
     tracing::debug!("ACP handshake: initialize");
-    conn.send_request(InitializeRequest::new(ProtocolVersion::V1))
+    ctx.conn
+        .send_request(InitializeRequest::new(ProtocolVersion::V1))
         .block_task()
         .await?;
 
     tracing::debug!("ACP handshake: session/new");
-    let ns = session_new(conn, cwd.to_path_buf(), schema_file_path, luft_binary).await?;
+    let ns = session_new(
+        ctx.conn,
+        ctx.cwd.to_path_buf(),
+        ctx.schema_file_path,
+        ctx.luft_binary,
+    )
+    .await?;
 
-    if let Some(model_name) = model {
-        validate_and_set_model(conn, &ns, model_name).await?;
+    if let Some(model_name) = ctx.model {
+        validate_and_set_model(ctx.conn, &ns, model_name).await?;
     }
 
     tracing::debug!("ACP handshake: session/prompt");
-    let pr = send_prompt(conn, ns.session_id, prompt.to_string()).await?;
-    record_prompt_result(&pr, stop_holder, acc);
+    let pr = send_prompt(ctx.conn, ns.session_id, ctx.prompt.to_string()).await?;
+    record_prompt_result(&pr, ctx.stop_holder, ctx.acc);
     Ok(())
 }
 
@@ -721,9 +736,11 @@ async fn session_new(
     let req = NewSessionRequest::new(cwd);
     let req = match schema_file_path {
         Some(sf) => {
-            let luft_bin = luft_binary.map(std::path::Path::to_path_buf).unwrap_or_else(|| {
-                std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("luft"))
-            });
+            let luft_bin = luft_binary
+                .map(std::path::Path::to_path_buf)
+                .unwrap_or_else(|| {
+                    std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("luft"))
+                });
             let mcp = McpServerStdio::new("luft-structured-output", luft_bin).args(vec![
                 "mcp-structured-output".to_string(),
                 "--schema-file".to_string(),
@@ -1026,13 +1043,12 @@ mod tests {
 
     #[test]
     fn session_new_request_serializes_mcp_server() {
-        let mcp = McpServerStdio::new("luft-structured-output", PathBuf::from("luft.exe")).args(
-            vec![
+        let mcp =
+            McpServerStdio::new("luft-structured-output", PathBuf::from("luft.exe")).args(vec![
                 "mcp-structured-output".to_string(),
                 "--schema-file".to_string(),
                 "/tmp/schema.json".to_string(),
-            ],
-        );
+            ]);
         let req =
             NewSessionRequest::new(PathBuf::from("/work")).mcp_servers(vec![McpServer::Stdio(mcp)]);
 

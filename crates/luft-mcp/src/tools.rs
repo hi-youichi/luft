@@ -444,7 +444,10 @@ fn derive_phases(events: &[AgentEvent]) -> Vec<Value> {
                 acc.last_message = summarize_output(output);
             }
             AgentEvent::PhaseDone {
-                phase_id, ok, failed, ..
+                phase_id,
+                ok,
+                failed,
+                ..
             } => {
                 if let Some(p) = phases.iter_mut().rfind(|p| p.phase_id == *phase_id) {
                     p.ok = *ok;
@@ -790,7 +793,10 @@ mod tests {
 
     #[test]
     fn concurrency_null_is_none() {
-        assert_eq!(parse_concurrency(&json!({"concurrency": null})).unwrap(), None);
+        assert_eq!(
+            parse_concurrency(&json!({"concurrency": null})).unwrap(),
+            None
+        );
     }
 
     #[test]
@@ -803,7 +809,10 @@ mod tests {
 
     #[test]
     fn concurrency_at_bounds() {
-        assert_eq!(parse_concurrency(&json!({"concurrency": 1})).unwrap(), Some(1));
+        assert_eq!(
+            parse_concurrency(&json!({"concurrency": 1})).unwrap(),
+            Some(1)
+        );
         assert_eq!(
             parse_concurrency(&json!({"concurrency": 64})).unwrap(),
             Some(64)

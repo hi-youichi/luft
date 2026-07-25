@@ -3,6 +3,7 @@ use std::time::Duration;
 
 /// Agent 类型枚举
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[allow(dead_code)]
 pub enum AgentType {
     /// Mock - Luft 内建，无需检测
     Mock,
@@ -16,14 +17,17 @@ pub enum AgentType {
     Custom(String),
     /// FutureExtension - 未来的扩展 Agent (预留)
     #[serde(skip)]
+    #[allow(dead_code)]
     FutureExtension,
 }
 
 impl AgentType {
+    #[allow(dead_code)]
     pub fn is_custom(&self) -> bool {
         matches!(self, AgentType::Custom(_))
     }
 
+    #[allow(dead_code)]
     pub fn custom_id(&self) -> Option<&str> {
         match self {
             AgentType::Custom(id) => Some(id),
@@ -65,6 +69,7 @@ pub struct BridgeInstallResult {
 }
 
 /// 技能安装结果
+#[allow(dead_code)]
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SkillInstallResult {
     pub target_dir: PathBuf,
@@ -72,6 +77,7 @@ pub struct SkillInstallResult {
 }
 
 /// Agent 检测结果
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct AgentDetectionResult {
     pub agent_type: AgentType,
@@ -82,6 +88,7 @@ pub struct AgentDetectionResult {
 }
 
 /// MCP 配置结果
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum McpConfigResult {
     Configured,
@@ -91,40 +98,41 @@ pub enum McpConfigResult {
 
 /// 安装错误类型
 #[derive(Debug, thiserror::Error)]
+#[allow(dead_code)]
 pub enum InstallError {
     #[error("未检测到任何外部 Agent")]
     NoExternalAgentsFound,
-    
+
     #[error("Agent 检测失败: {0}")]
     AgentDetection(String),
-    
+
     #[error("桥接安装失败: {0}")]
     BridgeInstallation(String),
-    
+
     #[error("技能复制失败: {0}")]
     SkillCopy(String),
-    
+
     #[error("MCP 配置失败: {0}")]
     McpConfiguration(String),
-    
+
     #[error("无法找到用户主目录")]
     HomeDirNotFound,
-    
+
     #[error("技能源目录不存在: {0}")]
     SkillSourceNotFound(PathBuf),
-    
+
     #[error("安装验证失败: {0}")]
     VerificationFailed(String),
-    
+
     #[error("不支持的 Agent 类型")]
     UnsupportedAgentType,
-    
+
     #[error("IO 错误: {0}")]
     Io(#[from] std::io::Error),
-    
+
     #[error("JSON 错误: {0}")]
     Json(#[from] serde_json::Error),
-    
+
     #[error("其他错误: {0}")]
     Other(String),
 }
