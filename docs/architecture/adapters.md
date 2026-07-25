@@ -125,7 +125,7 @@ message ── extract_findings_from_output ──►
 output = findings 非空 ? findings 的 JSON : { "text": message }
 ```
 
-> v0.1 走的是**消息回退路径**：findings 从 agent 最终文本里解析。结构化的 MCP `report_finding` 集成（让 agent 主动上报）是 P1——见 [mcp.md](./mcp.md)。stop_reason 用 `contains` 松匹配，避免依赖宏生成的精确变体名。
+> v0.1 走的是**消息回退路径**：findings 从 agent 最终文本里解析。stop_reason 用 `contains` 松匹配，避免依赖宏生成的精确变体名。
 
 ---
 

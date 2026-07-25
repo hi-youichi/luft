@@ -4,6 +4,8 @@
 >
 > **目标**：将 [`@agentclientprotocol/codex-acp`](https://github.com/agentclientprotocol/codex-acp) 作为 Luft 的一等 ACP 后端接入，同时保留现有 OpenCode 与 Loom 后端。
 >
+> ⚠️ **前提已变**：本提案写作时 `loom-acp` 是现有后端之一，该支持后来已移除（luft 不再把 loom 当 ACP backend spawn；loom 改为把 `luft` 当库依赖使用）。下文提到 `loom-acp` 的地方按历史记录保留未改写，当前实际后端为 `mock` / `opencode` / `codex`。
+>
 > **相关代码**：`crates/luft-adapters/src/acp_adapter.rs`、`crates/luft-cli/src/backend.rs`、`crates/luft-cli/src/config.rs`
 
 ---

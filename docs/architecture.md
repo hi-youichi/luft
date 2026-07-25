@@ -10,7 +10,6 @@
 | **runtime** | mlua 编排运行时：沙箱 + 10 个 SDK 原语 + pipeline + converge | [architecture/runtime.md](./architecture/runtime.md) |
 | **adapters** | OpenCode ACP 真实后端（`AgentBackend` 实现） | [architecture/adapters.md](./architecture/adapters.md) |
 | **planner** | 自然语言 → Lua 脚本（agent 写脚本 + 校验重试） | [architecture/planner.md](./architecture/planner.md) |
-| **mcp** | MCP 数据面服务器（5 个上报工具，stdio JSON-RPC） | [architecture/mcp.md](./architecture/mcp.md) |
 | **service** | Presentation-free 运行编排 + 查询 API（commands 与库逻辑的接缝） | [architecture/service.md](./architecture/service.md) |
 | **storage** | SQLite 结构化持久化（7 表 + UI-ready 查询 API） | [architecture/storage.md](./architecture/storage.md) |
 | **commands** | CLI 子命令处理器（presentation 层，14 个子模块） | [architecture/commands.md](./architecture/commands.md) |
@@ -33,7 +32,7 @@ luft
 │   ├── pipeline.rs    ← 多阶段处理引擎（当前：逐阶段栅栏 + 内联 handler）
 │   ├── converge.rs    ← 对抗性收敛验证
 │   └── error.rs       ← ExecLimits（已定义未强制）+ ScriptError
-├── adapters/          ← AcpAdapter：opencode / loom-acp ACP 真实后端（client 侧）
+├── adapters/          ← AcpAdapter：opencode / codex ACP 真实后端（client 侧）
 │   ├── acp_adapter.rs ← AcpConfig + 一次性会话：spawn → init → session → prompt
 │   ├── update_mapper.rs← ACP SessionUpdate → ProgressDelta + message/token 累积
 │   ├── permission.rs  ← 非交互 request_permission 自动决策（纯逻辑 + 单测）
@@ -149,7 +148,6 @@ producer 生成 findings → adversary 投票 → 存活 finding 进入下一轮
 - **checkpoint 非原子写入**（`fs::write` 全量重写，非 temp+rename）——见 core.md §5.1。
 - **ExecLimits 已定义未强制**——见 [runtime.md §5](./architecture/runtime.md)。
 - **pipeline 非真流式**——见 [runtime.md §6](./architecture/runtime.md)。
-- **MCP 数据面已建未联**：agent 尚未连接 MCP server，findings 走文本回退——见 [mcp.md §6](./architecture/mcp.md)。
 
 ## 另见
 

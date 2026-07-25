@@ -3,6 +3,8 @@
 > **路线图引用**: `roadmap.md` §CLI 增强
 > **状态**: 设计阶段
 > **交叉参考**: `cli.md` — 当前 CLI 架构；`adapters.md` — 后端适配器架构；`p0-acp-backend.md` — ACP 后端实现设计
+>
+> ⚠️ **部分内容已过时**：本文写作时 `loom-acp` 是内置后端之一，该支持后来已移除（luft 不再把 loom 当 ACP backend spawn；loom 改为把 `luft` 当库依赖使用）。下文提到 `loom-acp` 的地方按历史记录保留未改写，当前实际后端为 `mock` / `opencode` / `codex`。
 
 ---
 
