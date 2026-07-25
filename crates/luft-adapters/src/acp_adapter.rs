@@ -17,6 +17,11 @@
 //!  2. (inline) — assemble shared `Arc`s and channels.
 //!  3. [`prepare_schema_mcp`] — write a temp JSON Schema file when an
 //!     `output_schema` is present.
+//!     Alongside this, [`write_workflow_skill_files`] writes the Luft
+//!     workflow-authoring skill (`luft_planner::WORKFLOW_SKILL`) into
+//!     whichever skill-directory convention matches the backend actually
+//!     being spawned (see `skill_dirs_for_backend`) — see
+//!     `docs/design/skill-implementation.md` §4.
 //!  4. [`drive_connection`] — build the `Client` builder and wire up
 //!     notification/permission handlers.
 //!  5. [`run_handshake_and_prompt`] — `initialize` → `session/new` (with
@@ -33,7 +38,7 @@ use luft_core::contract::event::EventSender;
 use luft_core::contract::ids::TokenUsage;
 use luft_core::contract::ids::{AgentId, RunId};
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -146,6 +151,20 @@ pub struct AcpConfig {
     /// with category `model`. If the agent does not support model selection,
     /// this is silently ignored.
     pub model: Option<String>,
+    /// Override for the binary path used to spawn the
+    /// `luft mcp-structured-output` subprocess (see `session_new`).
+    ///
+    /// Defaults to `None`, which falls back to `std::env::current_exe()` —
+    /// correct when this code is actually running as the `luft` CLI binary.
+    /// That assumption breaks in two known cases: integration tests (where
+    /// `current_exe()` resolves to the test harness binary, not `luft.exe`),
+    /// and any host program that embeds `luft`/`luft-adapters` as a library
+    /// rather than running as the `luft` CLI (`current_exe()` would resolve
+    /// to the host's own binary). Set this explicitly in either situation —
+    /// leaving it unset makes the structured-output MCP server silently
+    /// unreachable, which surfaces as plain-text agent output instead of a
+    /// schema-validated result.
+    pub luft_binary: Option<PathBuf>,
 }
 
 impl AcpConfig {
@@ -199,6 +218,7 @@ impl Default for AcpConfig {
                 .collect(),
             env: BTreeMap::new(),
             model: None,
+            luft_binary: None,
         }
     }
 }
@@ -306,6 +326,11 @@ async fn run_acp_session(
         cwd: std::fs::canonicalize(&task.workdir).unwrap_or_else(|_| task.workdir.clone()),
     };
 
+    // Write the workflow-authoring skill into the spawned backend's own
+    // skill-directory convention, if it has one. Best-effort, non-fatal —
+    // see `write_workflow_skill_files`.
+    write_workflow_skill_files(config.id, &state.cwd);
+
     // 3. Optional structured-output MCP server: serialise the JSON Schema to
     //    a temp file so the `luft mcp-structured-output` subprocess can
     //    validate the agent's final payload.
@@ -318,7 +343,13 @@ async fn run_acp_session(
     //    timeout. The watchdog's `submit_signal` is a clone of the one
     //    inside `state` so `notify_one()` from the notification handler
     //    reaches both.
-    let conn_fut = drive_connection(&state, transport, schema_file_path, config.model.clone());
+    let conn_fut = drive_connection(
+        &state,
+        transport,
+        schema_file_path,
+        config.model.clone(),
+        config.luft_binary.clone(),
+    );
     let idle_timeout = task.timeout.unwrap_or(DEFAULT_IDLE_TIMEOUT);
 
     // 5. Race the session against cancellation + idle timeout.
@@ -418,6 +449,71 @@ fn prepare_schema_mcp(
 
 struct SchemaFileGuard(tempfile::NamedTempFile);
 
+// ─── Phase 3b: workflow skill files ─────────────────────────────────────────
+
+/// Maps a backend id to its skill-directory convention, relative to the
+/// spawned process's working directory.
+///
+/// Checked against each backend's actual source (not assumed):
+/// - `codex` / `opencode` — both resolve to `.agents/skills`: codex via
+///   `external_agent_config.rs::home_target_skills_dir()`, opencode via
+///   `skill/index.ts`'s `AGENTS_EXTERNAL_DIR` (opencode additionally reads
+///   `.claude/skills`, which is covered by the `codex`/`opencode` case
+///   sharing `.agents/skills` — no separate branch needed for that overlap).
+/// - `claude` / `claude-code` — not a spawnable backend yet (no ACP bridge
+///   wired up), kept here so the mapping is already correct the day one is
+///   added, without another edit to this function.
+///
+/// Returns `&[]` for any other id — an unrecognized backend just gets no
+/// skill written, which is the same as not having this feature at all.
+/// Programs that embed `luft` as a library and drive their own
+/// `AgentBackend` never reach this code path at all; they consume the skill
+/// through `luft_planner::WORKFLOW_SKILL` directly (the library channel, see
+/// `docs/design/skill-architecture.md` §4.1).
+fn skill_dirs_for_backend(backend_id: &str) -> &'static [&'static str] {
+    match backend_id {
+        "codex" | "opencode" => &[".agents/skills"],
+        "claude" | "claude-code" => &[".claude/skills"],
+        _ => &[],
+    }
+}
+
+/// Writes the Luft workflow-authoring skill into the skill-directory
+/// convention for `backend_id`, relative to `working_folder`.
+///
+/// Every run gets a fresh copy — this is not a persistent install with a
+/// manifest tracking user edits (unlike loom's own `sync.rs` for its
+/// built-in skills). There's nothing to preserve: `working_folder` is
+/// this run's own scratch space, and the same content gets rewritten on
+/// every subsequent run through the same directory. Best-effort: a write
+/// failure is logged and does not fail the run — skill delivery is a
+/// quality-of-life aid for the spawned agent, not a correctness requirement.
+fn write_workflow_skill_files(backend_id: &str, working_folder: &Path) {
+    for base in skill_dirs_for_backend(backend_id) {
+        let skill_dir = working_folder.join(base).join("workflow");
+        if let Err(e) = write_skill_to_dir(&skill_dir, &luft_planner::WORKFLOW_SKILL) {
+            tracing::warn!(
+                dir = %skill_dir.display(),
+                error = %e,
+                "failed to write workflow skill"
+            );
+        }
+    }
+}
+
+fn write_skill_to_dir(dir: &Path, skill: &luft_core::contract::skill::Skill) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)?;
+    std::fs::write(dir.join("SKILL.md"), skill.content)?;
+    for (rel_path, content) in skill.references {
+        let path = dir.join(rel_path);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, content)?;
+    }
+    Ok(())
+}
+
 // ─── Phase 4: drive the connection ──────────────────────────────────────────
 
 /// Build the `Client` connection, attaching notification and permission
@@ -427,6 +523,7 @@ fn drive_connection(
     transport: AcpTransport,
     schema_file_path: Option<String>,
     model: Option<String>,
+    luft_binary: Option<PathBuf>,
 ) -> impl std::future::Future<Output = Result<(), agent_client_protocol::Error>> {
     let acc = state.acc.clone();
     let events = state.events.clone();
@@ -491,11 +588,13 @@ fn drive_connection(
                 let acc_for_prompt = acc_for_prompt.clone();
                 let stop_holder_for_prompt = stop_holder_for_prompt.clone();
                 let model = model.clone();
+                let luft_binary = luft_binary.clone();
                 async move {
                     run_handshake_and_prompt(
                         &conn,
                         &cwd,
                         schema_file_path.as_deref(),
+                        luft_binary.as_deref(),
                         model.as_deref(),
                         &prompt,
                         &acc_for_prompt,
@@ -583,6 +682,7 @@ async fn run_handshake_and_prompt(
     conn: &ConnectionTo<Agent>,
     cwd: &std::path::Path,
     schema_file_path: Option<&str>,
+    luft_binary: Option<&std::path::Path>,
     model: Option<&str>,
     prompt: &str,
     acc: &Arc<update_mapper::Accumulator>,
@@ -594,7 +694,7 @@ async fn run_handshake_and_prompt(
         .await?;
 
     tracing::debug!("ACP handshake: session/new");
-    let ns = session_new(conn, cwd.to_path_buf(), schema_file_path).await?;
+    let ns = session_new(conn, cwd.to_path_buf(), schema_file_path, luft_binary).await?;
 
     if let Some(model_name) = model {
         validate_and_set_model(conn, &ns, model_name).await?;
@@ -608,16 +708,22 @@ async fn run_handshake_and_prompt(
 
 /// Send `session/new`, attaching the structured-output MCP server when a
 /// schema file path is present.
+///
+/// `luft_binary` overrides which binary gets spawned for
+/// `mcp-structured-output`; `None` falls back to `current_exe()` (see
+/// `AcpConfig::luft_binary`'s doc comment for when the override is needed).
 async fn session_new(
     conn: &ConnectionTo<Agent>,
     cwd: PathBuf,
     schema_file_path: Option<&str>,
+    luft_binary: Option<&std::path::Path>,
 ) -> Result<NewSessionResponse, agent_client_protocol::Error> {
     let req = NewSessionRequest::new(cwd);
     let req = match schema_file_path {
         Some(sf) => {
-            let luft_bin =
-                std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("luft"));
+            let luft_bin = luft_binary.map(std::path::Path::to_path_buf).unwrap_or_else(|| {
+                std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("luft"))
+            });
             let mcp = McpServerStdio::new("luft-structured-output", luft_bin).args(vec![
                 "mcp-structured-output".to_string(),
                 "--schema-file".to_string(),
@@ -908,6 +1014,128 @@ async fn idle_watchdog(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── session/new MCP server wiring ────────────────────────────────
+    //
+    // The structured-output MCP server reaches the agent only as JSON on the
+    // wire. These assert the serialized `session/new` params actually carry
+    // it — a silently-empty `mcpServers` array is indistinguishable from
+    // "schema validation is off" from the agent's side, and produces a
+    // plain-text fallback result that looks like a model failure rather than
+    // a wiring bug.
+
+    #[test]
+    fn session_new_request_serializes_mcp_server() {
+        let mcp = McpServerStdio::new("luft-structured-output", PathBuf::from("luft.exe")).args(
+            vec![
+                "mcp-structured-output".to_string(),
+                "--schema-file".to_string(),
+                "/tmp/schema.json".to_string(),
+            ],
+        );
+        let req =
+            NewSessionRequest::new(PathBuf::from("/work")).mcp_servers(vec![McpServer::Stdio(mcp)]);
+
+        let json = serde_json::to_value(&req).expect("request serializes");
+        let servers = json
+            .get("mcpServers")
+            .and_then(|v| v.as_array())
+            .expect("mcpServers must be present as an array");
+        assert_eq!(servers.len(), 1, "serialized as: {json}");
+        assert_eq!(servers[0]["name"], "luft-structured-output");
+        assert_eq!(servers[0]["command"], "luft.exe");
+        assert_eq!(servers[0]["args"][0], "mcp-structured-output");
+        assert_eq!(servers[0]["args"][1], "--schema-file");
+        // Per the ACP schema, the `Stdio` variant of `McpServer` is
+        // `#[serde(untagged)]` — unlike `Http`/`Sse`, a stdio server carries
+        // NO `"type"` discriminator on the wire. Asserted explicitly because
+        // "the tag is missing" looks like a serialization bug otherwise.
+        assert!(
+            servers[0].get("type").is_none(),
+            "stdio MCP servers must serialize untagged (no `type` key): {json}"
+        );
+    }
+
+    #[test]
+    fn session_new_request_without_schema_has_empty_mcp_servers() {
+        // The no-schema path must NOT invent a server entry.
+        let req = NewSessionRequest::new(PathBuf::from("/work"));
+        let json = serde_json::to_value(&req).expect("request serializes");
+        let servers = json.get("mcpServers").and_then(|v| v.as_array());
+        assert!(
+            servers.is_none_or(|s| s.is_empty()),
+            "expected no servers, got: {json}"
+        );
+    }
+
+    // ── skill_dirs_for_backend / write_workflow_skill_files ──────────
+
+    #[test]
+    fn skill_dirs_for_known_backends() {
+        assert_eq!(skill_dirs_for_backend("codex"), &[".agents/skills"]);
+        assert_eq!(skill_dirs_for_backend("opencode"), &[".agents/skills"]);
+        assert_eq!(skill_dirs_for_backend("claude"), &[".claude/skills"]);
+        assert_eq!(skill_dirs_for_backend("claude-code"), &[".claude/skills"]);
+    }
+
+    #[test]
+    fn skill_dirs_for_unknown_backend_is_empty() {
+        let dirs: &[&str] = skill_dirs_for_backend("some-future-backend");
+        assert!(dirs.is_empty());
+    }
+
+    #[test]
+    fn write_skill_to_dir_writes_main_and_references() {
+        let tmp = tempfile::tempdir().unwrap();
+        let skill = luft_core::contract::skill::Skill {
+            name: "sample",
+            description: "d",
+            content: "# main body",
+            references: &[("references/extra.md", "extra content")],
+        };
+        let dir = tmp.path().join("workflow");
+        write_skill_to_dir(&dir, &skill).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(dir.join("SKILL.md")).unwrap(),
+            "# main body"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.join("references/extra.md")).unwrap(),
+            "extra content"
+        );
+    }
+
+    #[test]
+    fn write_workflow_skill_files_only_writes_the_matching_backend_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_workflow_skill_files("codex", tmp.path());
+
+        assert!(tmp.path().join(".agents/skills/workflow/SKILL.md").exists());
+        // Only codex's own convention gets written — not the others.
+        assert!(!tmp.path().join(".claude/skills/workflow/SKILL.md").exists());
+    }
+
+    #[test]
+    fn write_workflow_skill_files_unknown_backend_writes_nothing() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_workflow_skill_files("mock", tmp.path());
+        assert!(!tmp.path().join(".agents").exists());
+        assert!(!tmp.path().join(".claude").exists());
+    }
+
+    #[test]
+    fn write_workflow_skill_files_content_matches_workflow_skill() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_workflow_skill_files("codex", tmp.path());
+        let written =
+            std::fs::read_to_string(tmp.path().join(".agents/skills/workflow/SKILL.md")).unwrap();
+        assert_eq!(written, luft_planner::WORKFLOW_SKILL.content);
+        // A reference file also made it to disk.
+        let ref_dir = tmp.path().join(".agents/skills/workflow/references");
+        assert!(ref_dir.is_dir());
+        assert!(std::fs::read_dir(&ref_dir).unwrap().count() > 0);
+    }
 
     // ── idle_watchdog ──────────────────────────────────────────────
     //

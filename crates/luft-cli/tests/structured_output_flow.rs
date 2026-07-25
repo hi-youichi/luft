@@ -40,6 +40,7 @@ fn fake_acp_backend() -> Arc<dyn AgentBackend> {
         env_passthrough,
         env: Default::default(),
         model: None,
+        luft_binary: None,
     };
     Arc::new(AcpAdapter::new(config))
 }

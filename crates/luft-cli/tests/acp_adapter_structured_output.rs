@@ -70,6 +70,7 @@ async fn acp_adapter_extracts_structured_output_from_tool_call() {
         env_passthrough: fake_acp_env(),
         env: Default::default(),
         model: None,
+        luft_binary: None,
     };
     let adapter = AcpAdapter::new(config);
 
