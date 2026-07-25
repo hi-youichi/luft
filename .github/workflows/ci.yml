@@ -62,6 +62,9 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
       fail-fast: false
 
+    env:
+      CARGO_TARGET_DIR: target-release
+
     steps:
     - uses: actions/checkout@v4
 
@@ -83,10 +86,8 @@ jobs:
     - name: Cache cargo build
       uses: actions/cache@v4
       with:
-        path: target
-        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
-
-    - name: Build release binary
+        path: target-release
+        key: ${{ runner.os }}-cargo-build-target-release-${{ hashFiles('**/Cargo.lock') }}
       run: cargo build --release
 
     - name: Upload Linux binary
@@ -94,18 +95,18 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: linux-binary
-        path: target/release/luft
+        path: target-release/release/luft
 
     - name: Upload Windows binary
       if: matrix.os == 'windows-latest'
       uses: actions/upload-artifact@v4
       with:
         name: windows-binary
-        path: target/release/luft.exe
+        path: target-release/release/luft.exe
 
     - name: Upload macOS binary
       if: matrix.os == 'macos-latest'
       uses: actions/upload-artifact@v4
       with:
         name: macos-binary
-        path: target/release/luft
+        path: target-release/release/luft
