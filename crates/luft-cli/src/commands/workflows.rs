@@ -273,6 +273,7 @@ mod tests {
             let _guard = UnsetHomeGuard {
                 _lock: lock,
                 orig_home: None,
+                orig_xdg: None,
             };
         }
         match &orig {
@@ -530,6 +531,7 @@ mod tests {
             let _guard = UnsetHomeGuard {
                 _lock: lock,
                 orig_home: Some(dir.path().to_string_lossy().into_owned()),
+                orig_xdg: None,
             };
             assert!(std::env::var(key).is_err());
         }
@@ -552,6 +554,7 @@ mod tests {
             let _guard = UnsetHomeGuard {
                 _lock: lock,
                 orig_home: None,
+                orig_xdg: None,
             };
         }
 
