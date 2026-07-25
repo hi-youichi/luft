@@ -5,16 +5,13 @@
 
 use luft::Luft;
 use rmcp::{
-    ErrorData as McpError, RoleServer, ServerHandler, ServiceExt,
-    handler::server::{
-        router::tool::ToolRouter,
-        wrapper::Parameters,
-    },
+    handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::*,
     schemars,
     service::RequestContext,
     tool, tool_handler, tool_router,
     transport::stdio,
+    ErrorData as McpError, RoleServer, ServerHandler, ServiceExt,
 };
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -81,10 +78,7 @@ struct ExecuteWorkflowParams {
 // ── Tools ───────────────────────────────────────────────────────────────
 
 fn legacy_json_to_text(v: serde_json::Value) -> Result<String, String> {
-    let is_error = v
-        .get("isError")
-        .and_then(|x| x.as_bool())
-        .unwrap_or(false);
+    let is_error = v.get("isError").and_then(|x| x.as_bool()).unwrap_or(false);
     let text = v
         .get("content")
         .and_then(|c| c.get(0))
@@ -100,7 +94,9 @@ fn legacy_json_to_text(v: serde_json::Value) -> Result<String, String> {
 
 #[tool_router]
 impl LuftMcpServer {
-    #[tool(description = "Execute a Luft workflow, or resume a prior checkpointed run. Exactly one of `script`, `path`, `resume_from_id` is required. Returns immediately with a run_id — use get_run_status to poll progress.")]
+    #[tool(
+        description = "Execute a Luft workflow, or resume a prior checkpointed run. Exactly one of `script`, `path`, `resume_from_id` is required. Returns immediately with a run_id — use get_run_status to poll progress."
+    )]
     async fn execute_workflow(
         &self,
         Parameters(params): Parameters<ExecuteWorkflowParams>,
@@ -110,28 +106,40 @@ impl LuftMcpServer {
         legacy_json_to_text(result)
     }
 
-    #[tool(description = "List available .lua workflow files from workflows/ and examples/ directories")]
+    #[tool(
+        description = "List available .lua workflow files from workflows/ and examples/ directories"
+    )]
     fn list_files(&self) -> Result<String, String> {
         let result = crate::tools::list_files_tool(&self.search_dirs);
         legacy_json_to_text(result)
     }
 
-    #[tool(description = "List past workflow runs, paginated and optionally filtered by terminal status")]
+    #[tool(
+        description = "List past workflow runs, paginated and optionally filtered by terminal status"
+    )]
     fn list_runs(&self, Parameters(params): Parameters<ListRunsParams>) -> Result<String, String> {
         let args = serde_json::to_value(&params).unwrap_or_default();
         let result = crate::tools::list_runs_tool(&self.luft, &args);
         legacy_json_to_text(result)
     }
 
-    #[tool(description = "Get the current rich status of a workflow run, including per-phase and per-agent detail")]
-    fn get_run_status(&self, Parameters(params): Parameters<RunIdParams>) -> Result<String, String> {
+    #[tool(
+        description = "Get the current rich status of a workflow run, including per-phase and per-agent detail"
+    )]
+    fn get_run_status(
+        &self,
+        Parameters(params): Parameters<RunIdParams>,
+    ) -> Result<String, String> {
         let args = serde_json::to_value(&params).unwrap_or_default();
         let result = crate::tools::get_run_status_tool(&self.luft, &args);
         legacy_json_to_text(result)
     }
 
     #[tool(description = "Get paginated/filtered events for a workflow run")]
-    fn get_run_events(&self, Parameters(params): Parameters<GetRunEventsParams>) -> Result<String, String> {
+    fn get_run_events(
+        &self,
+        Parameters(params): Parameters<GetRunEventsParams>,
+    ) -> Result<String, String> {
         let args = serde_json::to_value(&params).unwrap_or_default();
         let result = crate::tools::get_run_events_tool(&self.luft, &args);
         legacy_json_to_text(result)
@@ -226,10 +234,7 @@ impl ServerHandler for LuftMcpServer {
     ) -> Result<ReadResourceResult, McpError> {
         let uri = &request.uri;
         let parsed = crate::resources::WorkflowUri::parse(uri).ok_or_else(|| {
-            McpError::resource_not_found(
-                "unknown_uri",
-                Some(serde_json::json!({ "uri": uri })),
-            )
+            McpError::resource_not_found("unknown_uri", Some(serde_json::json!({ "uri": uri })))
         })?;
 
         let content = crate::resources::read_resource(&parsed, &self.search_dirs).map_err(|e| {

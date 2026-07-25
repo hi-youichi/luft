@@ -1114,9 +1114,9 @@ mod tests {
                 model: None,
                 description: None,
                 role: None,
-            name: None,
-            agent_seq: 0,
-            ts: Default::default(),
+                name: None,
+                agent_seq: 0,
+                ts: Default::default(),
             },
             AgentEvent::AgentDone {
                 run_id,
