@@ -464,10 +464,7 @@ mod tests {
                 _dir: dir,
                 orig_home: orig.clone(),
             };
-            assert_eq!(
-                std::env::var(key).ok().as_deref(),
-                Some(dir_path.as_str())
-            );
+            assert_eq!(std::env::var(key).ok().as_deref(), Some(dir_path.as_str()));
         }
 
         let _verify = HOME_LOCK.lock().unwrap();
