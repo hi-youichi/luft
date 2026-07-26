@@ -13,12 +13,14 @@ env:
 jobs:
   test:
     name: Test on ${{ matrix.os }}
-    needs: build
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
       fail-fast: false
+
+    env:
+      CARGO_TARGET_DIR: target-test
 
     steps:
     - uses: actions/checkout@v4
@@ -43,8 +45,8 @@ jobs:
     - name: Cache cargo build
       uses: actions/cache@v4
       with:
-        path: target
-        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+        path: target-test
+        key: ${{ runner.os }}-cargo-build-target-test-${{ hashFiles('**/Cargo.lock') }}
 
     - name: Check formatting
       run: cargo fmt -- --check
