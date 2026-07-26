@@ -13,14 +13,12 @@ env:
 jobs:
   test:
     name: Test on ${{ matrix.os }}
+    needs: build
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
       fail-fast: false
-
-    env:
-      CARGO_TARGET_DIR: target-test
 
     steps:
     - uses: actions/checkout@v4
@@ -45,8 +43,8 @@ jobs:
     - name: Cache cargo build
       uses: actions/cache@v4
       with:
-        path: target-test
-        key: ${{ runner.os }}-cargo-build-target-test-${{ hashFiles('**/Cargo.lock') }}
+        path: target
+        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
 
     - name: Check formatting
       run: cargo fmt -- --check
@@ -64,9 +62,6 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
       fail-fast: false
-
-    env:
-      CARGO_TARGET_DIR: target-release
 
     steps:
     - uses: actions/checkout@v4
@@ -89,8 +84,8 @@ jobs:
     - name: Cache cargo build
       uses: actions/cache@v4
       with:
-        path: target-release
-        key: ${{ runner.os }}-cargo-build-target-release-${{ hashFiles('**/Cargo.lock') }}
+        path: target
+        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
 
     - name: Build release binary
       run: cargo build --release
@@ -100,18 +95,72 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: linux-binary
-        path: target-release/release/luft
+        path: target/release/luft
 
     - name: Upload Windows binary
       if: matrix.os == 'windows-latest'
       uses: actions/upload-artifact@v4
       with:
         name: windows-binary
-        path: target-release/release/luft.exe
+        path: target/release/luft.exe
 
     - name: Upload macOS binary
       if: matrix.os == 'macos-latest'
       uses: actions/upload-artifact@v4
       with:
         name: macos-binary
-        path: target-release/release/luft
+        path: target/release/luft
+
+  release:
+    name: Release on ${{ matrix.os }}
+    needs: [build, test]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+      fail-fast: false
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache cargo registry
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Cache cargo index
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/git
+        key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Cache cargo build
+      uses: actions/cache@v4
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Build release binary
+      run: cargo build --release
+
+    - name: Generate checksums
+      run: |
+        sha256sum target/release/luft${{ matrix.os == 'windows-latest' && '.exe' || '' }} > target/release/luft${{ matrix.os == 'windows-latest' && '.exe' || '' }}.sha256
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
+      with:
+        name: ${{ github.ref_name }}
+        tag_name: ${{ github.ref_name }}
+        target_commitish: ${{ github.sha }}
+        body: "See [CHANGELOG](CHANGELOG.md) for details."
+        files: |
+          target/release/luft
+          target/release/luft.sha256
+          target/release/luft.exe
+          target/release/luft.exe.sha256
