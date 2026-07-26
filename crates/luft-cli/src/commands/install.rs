@@ -13,11 +13,6 @@ pub fn run_install() -> Result<()> {
             eprintln!("{}", Installer::get_installation_suggestions());
             Err(anyhow::anyhow!("未检测到任何外部 Agent"))
         }
-        Err(InstallError::SkillSourceNotFound(path)) => {
-            eprintln!("❌ 错误: 技能源目录不存在: {}", path.display());
-            eprintln!("请确保在包含 .loom/skills/auto/ 目录的 Luft 项目根目录运行此命令");
-            Err(anyhow::anyhow!("技能源目录不存在"))
-        }
         Err(err) => {
             eprintln!("❌ 安装过程中发生错误: {}", err);
             Err(anyhow::anyhow!("安装失败: {}", err))

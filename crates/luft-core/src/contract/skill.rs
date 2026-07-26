@@ -4,7 +4,7 @@
 //! A [`Skill`] bundles markdown content (and optional reference files) that a
 //! *consuming* crate embeds via `include_str!` and hands to whatever agent it
 //! drives. `luft-core` only defines the shape; it owns no content itself —
-//! see `luft_planner::WORKFLOW_SKILL` for the first instance. Consumers with
+//! see `luft_skills::WORKFLOW_SKILL` for the first instance. Consumers with
 //! their own skill format (e.g. a `BuiltinSkill` with triggers and tool
 //! requirements) build their richer type from these fields rather than
 //! parsing/duplicating the markdown.

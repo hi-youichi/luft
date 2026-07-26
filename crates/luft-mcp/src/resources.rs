@@ -11,11 +11,9 @@ use std::path::{Path, PathBuf};
 
 /// The embedded Lua DSL reference markdown.
 ///
-/// Re-exported from [`luft_planner::LUA_DSL_REFERENCE`] — no local vendored
-/// copy. `luft-mcp` already depends on `luft-planner`, so there is no
-/// cross-crate `include_str!` problem to work around; the prior vendoring
-/// only existed to avoid that (nonexistent, in this direction) constraint.
-pub const SCHEMA_MARKDOWN: &str = luft_planner::LUA_DSL_REFERENCE;
+/// Re-exported from [`luft_skills::LUA_DSL_REFERENCE`] - no local vendored
+/// copy. The skill content lives in the `luft-skills` crate.
+pub const SCHEMA_MARKDOWN: &str = luft_skills::LUA_DSL_REFERENCE;
 
 /// MIME type for the schema resource.
 pub const SCHEMA_MIME: &str = "text/markdown";

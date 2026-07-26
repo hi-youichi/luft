@@ -1647,7 +1647,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "luft-core",
- "luft-planner",
+ "luft-skills",
  "serde",
  "serde_json",
  "tempfile",
@@ -1675,6 +1675,7 @@ dependencies = [
  "jsonschema",
  "luft",
  "luft-mcp",
+ "luft-skills",
  "mlua",
  "serde",
  "serde_json",
@@ -1723,6 +1724,7 @@ dependencies = [
  "luft-planner",
  "luft-runtime",
  "luft-service",
+ "luft-skills",
  "rmcp",
  "schemars 0.8.22",
  "serde",
@@ -1738,9 +1740,9 @@ name = "luft-planner"
 version = "0.3.3"
 dependencies = [
  "anyhow",
- "const_format",
  "luft-core",
  "luft-runtime",
+ "luft-skills",
  "mlua",
  "serde",
  "serde_json",
@@ -1789,6 +1791,15 @@ dependencies = [
  "tokio-util",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "luft-skills"
+version = "0.3.3"
+dependencies = [
+ "const_format",
+ "luft-core",
+ "tempfile",
 ]
 
 [[package]]

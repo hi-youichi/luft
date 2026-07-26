@@ -150,44 +150,14 @@ mod tests {
     use serial_test::serial;
     use tempfile::TempDir;
 
-    fn setup_test_environment(temp_dir: &TempDir) {
-        // 创建技能源目录
-        let skills_dir = temp_dir.path().join(".loom/skills/auto");
-        std::fs::create_dir_all(&skills_dir).unwrap();
-
-        // 创建测试技能文件
-        std::fs::write(skills_dir.join("test.md"), "# Test").unwrap();
-        std::fs::write(skills_dir.join("workflow.md"), "# Workflow").unwrap();
-    }
-
     #[test]
     #[serial]
-    fn test_install_all_requires_skills_source() {
+    fn test_install_all_no_external_agents() {
         let temp_dir = TempDir::new().unwrap();
-
-        // 不创建技能源目录
-        let original_dir = std::env::current_dir().unwrap();
-        std::env::set_current_dir(temp_dir.path()).unwrap();
-
-        let result = Installer::install_all();
-
-        std::env::set_current_dir(original_dir).unwrap();
-
-        // 应该失败，因为缺少技能源目录
-        assert!(result.is_err());
-    }
-
-    #[test]
-    #[serial]
-    fn test_install_all_with_valid_environment() {
-        let temp_dir = TempDir::new().unwrap();
-        setup_test_environment(&temp_dir);
 
         let original_dir = std::env::current_dir().unwrap();
         std::env::set_current_dir(temp_dir.path()).unwrap();
 
-        // 模拟检测到外部 Agent
-        // 由于实际的 Agent 检测可能失败，我们主要测试结构
         let result = Installer::install_all();
 
         std::env::set_current_dir(original_dir).unwrap();

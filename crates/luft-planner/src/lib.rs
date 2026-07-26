@@ -386,8 +386,8 @@ fn find_fenced_block(text: &str) -> Option<String> {
 
 /// Build the planner prompt: DSL reference + task (+ optional fix-up error).
 fn build_prompt(task: &str, fix_error: Option<&str>, generate_mock: bool) -> String {
-    let mut p = String::with_capacity(LUA_DSL_REFERENCE.len() + task.len() + 1024);
-    p.push_str(LUA_DSL_REFERENCE);
+    let mut p = String::with_capacity(luft_skills::LUA_DSL_REFERENCE.len() + task.len() + 1024);
+    p.push_str(luft_skills::LUA_DSL_REFERENCE);
     p.push_str("\n\n# Task\n\n");
     p.push_str(task);
     p.push('\n');
@@ -473,58 +473,11 @@ Rules:
 /// ## Token cost
 ///
 /// This reference is sent on every planner call (~4K tokens). Keep examples
-/// concise but illustrative. Rules are authoritative — primitives are reference.
-const SKILL_MAIN: &str = include_str!("skill/main.md");
-const REF_ARCHITECTURE_HEADER: &str = include_str!("skill/references/architecture-header.md");
-const REF_PRIMITIVES: &str = include_str!("skill/references/primitives.md");
-const REF_AGENT_PROMPTS: &str = include_str!("skill/references/agent-prompts.md");
-const REF_TASK_DECOMPOSITION: &str = include_str!("skill/references/task-decomposition.md");
-const REF_ADVERSARIAL_VERIFICATION: &str =
-    include_str!("skill/references/adversarial-verification.md");
-const REF_EXAMPLES: &str = include_str!("skill/references/examples.md");
-
-/// Full reference, reassembled from the split `skill/` files in the same
-/// order as the original monolithic `lua_dsl_reference.md`. Splitting the
-/// file must not change what the planner sees — see
-/// `split_content_reassembles_to_the_full_reference` below.
-pub const LUA_DSL_REFERENCE: &str = const_format::concatcp!(
-    SKILL_MAIN,
-    "\n",
-    REF_ARCHITECTURE_HEADER,
-    "\n",
-    REF_PRIMITIVES,
-    "\n",
-    REF_AGENT_PROMPTS,
-    "\n",
-    REF_TASK_DECOMPOSITION,
-    "\n",
-    REF_ADVERSARIAL_VERIFICATION,
-    "\n",
-    REF_EXAMPLES,
-);
-
-/// The Lua DSL reference packaged as a [`luft_core::Skill`] — the library-level
-/// hand-off point for any crate that embeds `luft` and wants to teach its own
-/// agent how to write Luft workflows (e.g. wrapping it into a richer
-/// agent-specific skill format with triggers/tool requirements). `luft-mcp`'s
-/// `workflow://schema` resource reads [`LUA_DSL_REFERENCE`] directly (no
-/// vendored copy), so the two stay in sync by construction.
-pub const WORKFLOW_SKILL: luft_core::Skill = luft_core::Skill {
-    name: "workflow",
-    description: "Lua DSL reference for writing multi-agent Luft workflows",
-    content: SKILL_MAIN,
-    references: &[
-        ("references/architecture-header.md", REF_ARCHITECTURE_HEADER),
-        ("references/primitives.md", REF_PRIMITIVES),
-        ("references/agent-prompts.md", REF_AGENT_PROMPTS),
-        ("references/task-decomposition.md", REF_TASK_DECOMPOSITION),
-        (
-            "references/adversarial-verification.md",
-            REF_ADVERSARIAL_VERIFICATION,
-        ),
-        ("references/examples.md", REF_EXAMPLES),
-    ],
-};
+/// concise but illustrative. Rules are authoritative - primitives are reference.
+//
+// The actual skill content lives in the `luft-skills` crate; we re-export the
+// constants here for backward compatibility.
+pub use luft_skills::{LUA_DSL_REFERENCE, WORKFLOW_SKILL};
 
 #[cfg(test)]
 mod tests {
@@ -536,9 +489,7 @@ mod tests {
     fn workflow_skill_wraps_the_dsl_reference() {
         assert_eq!(WORKFLOW_SKILL.name, "workflow");
         assert!(!WORKFLOW_SKILL.description.is_empty());
-        // content is the short main body, not the full reassembled reference.
-        assert_eq!(WORKFLOW_SKILL.content, SKILL_MAIN);
-        assert!(LUA_DSL_REFERENCE.starts_with(SKILL_MAIN));
+        assert!(LUA_DSL_REFERENCE.starts_with(WORKFLOW_SKILL.content));
         assert_eq!(WORKFLOW_SKILL.references.len(), 6);
     }
 

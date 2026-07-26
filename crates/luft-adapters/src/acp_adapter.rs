@@ -18,7 +18,7 @@
 //!  3. [`prepare_schema_mcp`] — write a temp JSON Schema file when an
 //!     `output_schema` is present.
 //!     Alongside this, [`write_workflow_skill_files`] writes the Luft
-//!     workflow-authoring skill (`luft_planner::WORKFLOW_SKILL`) into
+//!     workflow-authoring skill (`luft_skills::WORKFLOW_SKILL`) into
 //!     whichever skill-directory convention matches the backend actually
 //!     being spawned (see `skill_dirs_for_backend`) — see
 //!     `docs/design/skill-implementation.md` §4.
@@ -468,7 +468,7 @@ struct SchemaFileGuard(tempfile::NamedTempFile);
 /// skill written, which is the same as not having this feature at all.
 /// Programs that embed `luft` as a library and drive their own
 /// `AgentBackend` never reach this code path at all; they consume the skill
-/// through `luft_planner::WORKFLOW_SKILL` directly (the library channel, see
+/// through `luft_skills::WORKFLOW_SKILL` directly (the library channel, see
 /// `docs/design/skill-architecture.md` §4.1).
 fn skill_dirs_for_backend(backend_id: &str) -> &'static [&'static str] {
     match backend_id {
@@ -491,7 +491,7 @@ fn skill_dirs_for_backend(backend_id: &str) -> &'static [&'static str] {
 fn write_workflow_skill_files(backend_id: &str, working_folder: &Path) {
     for base in skill_dirs_for_backend(backend_id) {
         let skill_dir = working_folder.join(base).join("workflow");
-        if let Err(e) = write_skill_to_dir(&skill_dir, &luft_planner::WORKFLOW_SKILL) {
+        if let Err(e) = luft_skills::write_to_dir(&skill_dir, &luft_skills::WORKFLOW_SKILL) {
             tracing::warn!(
                 dir = %skill_dir.display(),
                 error = %e,
@@ -499,22 +499,6 @@ fn write_workflow_skill_files(backend_id: &str, working_folder: &Path) {
             );
         }
     }
-}
-
-fn write_skill_to_dir(
-    dir: &Path,
-    skill: &luft_core::contract::skill::Skill,
-) -> std::io::Result<()> {
-    std::fs::create_dir_all(dir)?;
-    std::fs::write(dir.join("SKILL.md"), skill.content)?;
-    for (rel_path, content) in skill.references {
-        let path = dir.join(rel_path);
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        std::fs::write(path, content)?;
-    }
-    Ok(())
 }
 
 // ─── Phase 4: drive the connection ──────────────────────────────────────────
@@ -1085,7 +1069,6 @@ mod tests {
     }
 
     // ── skill_dirs_for_backend / write_workflow_skill_files ──────────
-
     #[test]
     fn skill_dirs_for_known_backends() {
         assert_eq!(skill_dirs_for_backend("codex"), &[".agents/skills"]);
@@ -1101,7 +1084,7 @@ mod tests {
     }
 
     #[test]
-    fn write_skill_to_dir_writes_main_and_references() {
+    fn write_to_dir_writes_main_and_references() {
         let tmp = tempfile::tempdir().unwrap();
         let skill = luft_core::contract::skill::Skill {
             name: "sample",
@@ -1110,7 +1093,8 @@ mod tests {
             references: &[("references/extra.md", "extra content")],
         };
         let dir = tmp.path().join("workflow");
-        write_skill_to_dir(&dir, &skill).unwrap();
+        let count = luft_skills::write_to_dir(&dir, &skill).unwrap();
+        assert_eq!(count, 2);
 
         assert_eq!(
             std::fs::read_to_string(dir.join("SKILL.md")).unwrap(),
@@ -1146,7 +1130,7 @@ mod tests {
         write_workflow_skill_files("codex", tmp.path());
         let written =
             std::fs::read_to_string(tmp.path().join(".agents/skills/workflow/SKILL.md")).unwrap();
-        assert_eq!(written, luft_planner::WORKFLOW_SKILL.content);
+        assert_eq!(written, luft_skills::WORKFLOW_SKILL.content);
         // A reference file also made it to disk.
         let ref_dir = tmp.path().join(".agents/skills/workflow/references");
         assert!(ref_dir.is_dir());

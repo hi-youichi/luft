@@ -17,7 +17,7 @@ use crate::resources::list_examples;
 #[resource(uri = "workflow://schema", name = "Workflow DSL Reference", description = "Complete Lua DSL syntax for writing Luft workflows")]
 pub fn schema_resource() -> Result<ResourceResponse, ResourceError> {
     Ok(ResourceResponse::text(
-        luft_planner::LUA_DSL_REFERENCE.to_string(),
+        luft_skills::LUA_DSL_REFERENCE.to_string(),
         "text/markdown"
     ))
 }

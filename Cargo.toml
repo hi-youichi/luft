@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/luft-core",
+    "crates/luft-skills",
     "crates/luft-storage",
     "crates/luft-runtime",
     "crates/luft-adapters",

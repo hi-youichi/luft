@@ -1,31 +1,21 @@
 use crate::install::types::{AgentType, BridgeInstallResult, Result};
 use dirs::home_dir;
-use std::fs;
 use std::path::{Path, PathBuf};
 
 /// 技能管理器
-pub struct SkillManager {
-    source_dir: PathBuf,
-}
+///
+/// 从编译内置的 `luft_skills::WORKFLOW_SKILL` 写入技能文件到各 Agent 目录，
+/// 不再依赖运行时 `.loom/skills/auto/` 目录。
+pub struct SkillManager;
 
 impl SkillManager {
     /// 创建技能管理器
     pub fn new() -> Result<Self> {
-        let source_dir = PathBuf::from(".loom/skills/auto");
-
-        if !source_dir.exists() {
-            return Err(crate::install::types::InstallError::SkillSourceNotFound(
-                source_dir,
-            ));
-        }
-
-        Ok(Self { source_dir })
+        Ok(Self)
     }
 
     /// 为指定的 Agent 类型安装技能
     pub fn install_for_agents(&self, agents: &[AgentType]) -> Result<Vec<BridgeInstallResult>> {
-        let _target_dirs = self.get_target_directories(agents)?;
-
         let mut results = vec![];
         let mut processed_codex_opencode = false;
         let mut processed_claude = false;
@@ -40,7 +30,7 @@ impl SkillManager {
                             .ok_or(crate::install::types::InstallError::HomeDirNotFound)?
                             .join(".agents/skills/workflow");
 
-                        let skills_count = self.copy_skills_to(&target_dir)?;
+                        let skills_count = self.write_skills_to(&target_dir)?;
                         results.push(BridgeInstallResult {
                             agent_type: vec![AgentType::Codex, AgentType::Opencode],
                             target_dir: target_dir.clone(),
@@ -56,7 +46,7 @@ impl SkillManager {
                             .ok_or(crate::install::types::InstallError::HomeDirNotFound)?
                             .join(".claude/skills/workflow");
 
-                        let skills_count = self.copy_skills_to(&target_dir)?;
+                        let skills_count = self.write_skills_to(&target_dir)?;
                         results.push(BridgeInstallResult {
                             agent_type: vec![AgentType::Claude],
                             target_dir: target_dir.clone(),
@@ -71,7 +61,7 @@ impl SkillManager {
                         .ok_or(crate::install::types::InstallError::HomeDirNotFound)?
                         .join(format!(".{}/skills/workflow", id));
 
-                    let skills_count = self.copy_skills_to(&target_dir)?;
+                    let skills_count = self.write_skills_to(&target_dir)?;
                     results.push(BridgeInstallResult {
                         agent_type: vec![AgentType::Custom(id.clone())],
                         target_dir: target_dir.clone(),
@@ -88,45 +78,14 @@ impl SkillManager {
         Ok(results)
     }
 
-    /// 复制技能到目标目录（递归复制）
-    pub fn copy_skills_to(&self, target_dir: &Path) -> Result<usize> {
-        // 创建目标目录
-        fs::create_dir_all(target_dir)?;
-
-        // 递归复制技能文件和目录
-        fn copy_recursive(source: &Path, target: &Path) -> std::io::Result<usize> {
-            let mut count = 0;
-
-            if source.is_file() {
-                fs::copy(source, target)?;
-                return Ok(1);
-            }
-
-            if source.is_dir() {
-                if let Ok(entries) = fs::read_dir(source) {
-                    for entry in entries.flatten() {
-                        let source_path = entry.path();
-                        let target_path = target.join(entry.file_name());
-
-                        if source_path.is_dir() {
-                            fs::create_dir_all(&target_path)?;
-                            count += copy_recursive(&source_path, &target_path)?;
-                        } else {
-                            fs::copy(&source_path, &target_path)?;
-                            count += 1;
-                        }
-                    }
-                }
-            }
-
-            Ok(count)
-        }
-
-        let total_count = copy_recursive(&self.source_dir, target_dir)?;
-        Ok(total_count)
+    /// 将编译内置的 workflow 技能写入目标目录
+    pub fn write_skills_to(&self, target_dir: &Path) -> Result<usize> {
+        let count = luft_skills::write_to_dir(target_dir, &luft_skills::WORKFLOW_SKILL)?;
+        Ok(count)
     }
 
     /// 获取目标目录列表
+    #[allow(dead_code)]
     fn get_target_directories(&self, agents: &[AgentType]) -> Result<Vec<PathBuf>> {
         let mut dirs = vec![];
         let home = home_dir().ok_or(crate::install::types::InstallError::HomeDirNotFound)?;
@@ -187,130 +146,86 @@ impl SkillManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serial_test::serial;
     use tempfile::TempDir;
 
-    fn setup_test_skills(temp_dir: &TempDir) {
-        let skills_dir = temp_dir.path().join(".loom/skills/auto");
-        fs::create_dir_all(&skills_dir).unwrap();
-
-        fs::write(skills_dir.join("test.md"), "# Test").unwrap();
-        fs::write(skills_dir.join("workflow.md"), "# Workflow").unwrap();
-        fs::write(skills_dir.join("readme.txt"), "Readme content").unwrap();
-    }
-
     #[test]
-    #[serial]
     fn test_skill_manager_creation() {
-        let temp_dir = TempDir::new().unwrap();
-        setup_test_skills(&temp_dir);
-
-        // 临时改变工作目录
-        let original_dir = std::env::current_dir().unwrap();
-        std::env::set_current_dir(temp_dir.path()).unwrap();
-
         let result = SkillManager::new();
-
-        // 恢复工作目录
-        std::env::set_current_dir(original_dir).unwrap();
-
         assert!(result.is_ok());
     }
 
     #[test]
-    #[serial]
-    fn test_skill_manager_source_not_found() {
+    fn test_write_skills_to_directory() {
         let temp_dir = TempDir::new().unwrap();
-        let original_dir = std::env::current_dir().unwrap();
-        std::env::set_current_dir(temp_dir.path()).unwrap();
-        let result = SkillManager::new();
-        std::env::set_current_dir(original_dir).unwrap();
-        assert!(result.is_err());
-        match result {
-            Err(crate::install::types::InstallError::SkillSourceNotFound(_)) => {}
-            _ => panic!("Expected SkillSourceNotFound error"),
-        }
-    }
-
-    #[test]
-    #[serial]
-    fn test_copy_skills_to_directory() {
-        let temp_dir = TempDir::new().unwrap();
-        setup_test_skills(&temp_dir);
-
-        let original_dir = std::env::current_dir().unwrap();
-        std::env::set_current_dir(temp_dir.path()).unwrap();
-
-        let skill_manager = SkillManager::new().unwrap();
         let target_dir = temp_dir.path().join("target_skills");
 
-        let count = skill_manager.copy_skills_to(&target_dir).unwrap();
-        assert_eq!(count, 3);
+        let skill_manager = SkillManager::new().unwrap();
+        let count = skill_manager.write_skills_to(&target_dir).unwrap();
 
-        assert!(target_dir.join("test.md").exists());
-        assert!(target_dir.join("workflow.md").exists());
-        assert!(target_dir.join("readme.txt").exists());
-
-        std::env::set_current_dir(original_dir).unwrap();
+        // 1 SKILL.md + 6 references
+        assert_eq!(count, 7);
+        assert!(target_dir.join("SKILL.md").exists());
+        assert!(target_dir.join("references/primitives.md").exists());
+        assert!(target_dir.join("references/examples.md").exists());
     }
 
     #[test]
-    #[serial]
     fn test_install_for_codex() {
         let temp_dir = TempDir::new().unwrap();
-        setup_test_skills(&temp_dir);
-
-        let original_dir = std::env::current_dir().unwrap();
-        std::env::set_current_dir(temp_dir.path()).unwrap();
+        let original_home = home_dir();
+        std::env::set_var("HOME", temp_dir.path());
 
         let skill_manager = SkillManager::new().unwrap();
         let results = skill_manager
             .install_for_agents(&[AgentType::Codex])
             .unwrap();
 
-        std::env::set_current_dir(original_dir).unwrap();
+        std::env::remove_var("HOME");
+        if let Some(h) = original_home {
+            std::env::set_var("HOME", h);
+        }
 
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].skills_count, 3);
+        assert_eq!(results[0].skills_count, 7);
         assert!(results[0].agent_type.contains(&AgentType::Codex));
     }
 
     #[test]
-    #[serial]
     fn test_install_for_claude() {
         let temp_dir = TempDir::new().unwrap();
-        setup_test_skills(&temp_dir);
-
-        let original_dir = std::env::current_dir().unwrap();
-        std::env::set_current_dir(temp_dir.path()).unwrap();
+        let original_home = home_dir();
+        std::env::set_var("HOME", temp_dir.path());
 
         let skill_manager = SkillManager::new().unwrap();
         let results = skill_manager
             .install_for_agents(&[AgentType::Claude])
             .unwrap();
 
-        std::env::set_current_dir(original_dir).unwrap();
+        std::env::remove_var("HOME");
+        if let Some(h) = original_home {
+            std::env::set_var("HOME", h);
+        }
 
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].skills_count, 3);
+        assert_eq!(results[0].skills_count, 7);
         assert!(results[0].agent_type.contains(&AgentType::Claude));
     }
 
     #[test]
-    #[serial]
     fn test_install_for_multiple_agents() {
         let temp_dir = TempDir::new().unwrap();
-        setup_test_skills(&temp_dir);
-
-        let original_dir = std::env::current_dir().unwrap();
-        std::env::set_current_dir(temp_dir.path()).unwrap();
+        let original_home = home_dir();
+        std::env::set_var("HOME", temp_dir.path());
 
         let skill_manager = SkillManager::new().unwrap();
         let results = skill_manager
             .install_for_agents(&[AgentType::Codex, AgentType::Claude])
             .unwrap();
 
-        std::env::set_current_dir(original_dir).unwrap();
+        std::env::remove_var("HOME");
+        if let Some(h) = original_home {
+            std::env::set_var("HOME", h);
+        }
 
         assert_eq!(results.len(), 2);
     }
