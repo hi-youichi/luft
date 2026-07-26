@@ -425,20 +425,47 @@ impl crate::scheduler::JournalCallback for JournalStore {
         output: serde_json::Value,
         tokens: TokenUsage,
     ) {
-        // Store into the checkpoint by agent_id directly (no cache_key index needed).
         let ts = current_timestamp();
+
+        // Preserve cache_key_hash and other enriched fields from a prior
+        // cache_agent() / record_result() call.  Without this, the scheduler
+        // callback would overwrite the hash with None, causing the agent to be
+        // re-executed on resume even though it already completed.
+        let existing = {
+            let index = self.cache_index.read().unwrap();
+            index.get(&agent_id.to_string()).cloned()
+        };
+
         let cache = AgentResultCache {
             agent_id,
-            phase_id,
+            phase_id: existing.as_ref().map(|c| c.phase_id).unwrap_or(phase_id),
             status: status.as_str().to_string(),
-            output,
-            findings: vec![], // findings not available from scheduler callback
+            output: existing
+                .as_ref()
+                .filter(|c| !c.output.is_null())
+                .map(|c| c.output.clone())
+                .unwrap_or(output),
+            findings: existing
+                .as_ref()
+                .filter(|c| !c.findings.is_empty())
+                .map(|c| c.findings.clone())
+                .unwrap_or_default(),
             tokens: tokens.total(),
             completed_at: ts,
-            cache_key_hash: None, // not indexed by cache key from this path
-            description: None,
-            role: None,
+            cache_key_hash: existing.as_ref().and_then(|c| c.cache_key_hash.clone()),
+            description: existing.as_ref().and_then(|c| c.description.clone()),
+            role: existing.as_ref().and_then(|c| c.role.clone()),
         };
+
+        // Update in-memory index so subsequent on_agent_done calls also see
+        // the preserved hash.
+        {
+            let mut index = self.cache_index.write().unwrap();
+            index.insert(agent_id.to_string(), cache.clone());
+            if let Some(ref hash) = cache.cache_key_hash {
+                index.insert(hash.clone(), cache.clone());
+            }
+        }
 
         // Persist to checkpoint disk
         if let Err(e) = self.inner.upsert_agent_result(&cache) {
@@ -1052,5 +1079,101 @@ mod tests {
         // cache status string (verified above) is the part that the on-disk
         // contract depends on.
         assert!(matches!(agent_done, AgentStatus::TimedOut));
+    }
+
+    // ------------------------------------------------------------------
+    // Regression: on_agent_done must not clobber cache_key_hash
+    // ------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn on_agent_done_preserves_cache_key_hash_from_record_result() {
+        // Simulate the race: record_result() writes Some(hash), then the
+        // scheduler callback on_agent_done() fires for the same agent.
+        // The hash must survive — otherwise resume re-executes the agent.
+        let dir = tempdir().unwrap();
+        let run_id = uuid::Uuid::now_v7();
+        let journal = std::sync::Arc::new(JournalStore::new(dir.path()).unwrap());
+        journal.init_run(run_id, "hash preservation").unwrap();
+
+        let agent_id = uuid::Uuid::now_v7();
+        let key = AgentCacheKey::new("preserve me", Some("gpt-4"), 1);
+
+        // 1. record_result writes Some(hash)
+        journal.record_result(
+            &key,
+            agent_id,
+            1,
+            AgentStatus::Ok,
+            serde_json::json!({"answer": 42}),
+            vec![],
+            sample_token_usage(10, 5),
+        );
+
+        // 2. scheduler callback fires later — must NOT overwrite hash with None
+        use crate::scheduler::JournalCallback;
+        journal
+            .on_agent_done(
+                agent_id,
+                1,
+                AgentStatus::Ok,
+                serde_json::json!({}),
+                sample_token_usage(10, 5),
+            )
+            .await;
+
+        // 3. In-memory index still has the hash entry
+        assert!(
+            journal.has_completed(&key),
+            "cache_key_hash must survive on_agent_done"
+        );
+
+        // 4. Disk checkpoint also preserves the hash
+        drop(journal);
+        let j2 = JournalStore::new(dir.path()).unwrap();
+        j2.open(run_id).expect("reopen");
+        assert!(
+            j2.has_completed(&key),
+            "cache_key_hash must survive reopen after on_agent_done"
+        );
+    }
+
+    #[tokio::test]
+    async fn on_agent_done_preserves_cache_key_hash_from_cache_agent() {
+        // Same scenario but with cache_agent() as the first writer.
+        let dir = tempdir().unwrap();
+        let run_id = uuid::Uuid::now_v7();
+        let journal = std::sync::Arc::new(JournalStore::new(dir.path()).unwrap());
+        journal.init_run(run_id, "hash preservation 2").unwrap();
+
+        let agent_id = uuid::Uuid::now_v7();
+        let key = AgentCacheKey::new("preserve me 2", None, 0);
+
+        journal
+            .cache_agent(
+                &key,
+                agent_id,
+                0,
+                AgentStatus::Ok,
+                serde_json::json!({"r": 1}),
+                vec![],
+                sample_token_usage(1, 1),
+            )
+            .unwrap();
+
+        use crate::scheduler::JournalCallback;
+        journal
+            .on_agent_done(
+                agent_id,
+                0,
+                AgentStatus::Ok,
+                serde_json::json!({}),
+                sample_token_usage(1, 1),
+            )
+            .await;
+
+        assert!(
+            journal.has_completed(&key),
+            "cache_key_hash must survive on_agent_done after cache_agent"
+        );
     }
 }
