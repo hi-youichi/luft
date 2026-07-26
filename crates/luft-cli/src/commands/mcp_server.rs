@@ -235,6 +235,8 @@ struct JsonRpcMessage {
 mod tests {
     use super::*;
     #[cfg(unix)]
+    use serial_test::serial;
+    #[cfg(unix)]
     use std::sync::Mutex;
 
     /// Serialises fd-redirection tests so parallel runs don't race on fd 0/1.
@@ -335,7 +337,7 @@ mod tests {
         } else {
             input_lines.join("\n") + "\n"
         };
-        let _lock = IO_LOCK.lock().unwrap();
+        let _lock = IO_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let (_, out_lines) = with_redirected_io(&input, || {
             let _ = serve_mcp(schema);
         });
@@ -603,6 +605,7 @@ mod tests {
     // ------------------------------------------------------------------
 
     #[cfg(unix)]
+    #[serial]
     #[test]
     fn serve_mcp_initialize() {
         let schema = serde_json::json!({"type": "object"});
@@ -620,6 +623,7 @@ mod tests {
     }
 
     #[cfg(unix)]
+    #[serial]
     #[test]
     fn serve_mcp_notification_initialized() {
         let schema = serde_json::json!({"type": "object"});
@@ -631,6 +635,7 @@ mod tests {
     }
 
     #[cfg(unix)]
+    #[serial]
     #[test]
     fn serve_mcp_tools_list() {
         let schema = serde_json::json!({"type": "object", "properties": {"x": {"type": "string"}}});
@@ -646,6 +651,7 @@ mod tests {
     }
 
     #[cfg(unix)]
+    #[serial]
     #[test]
     fn serve_mcp_tools_call_valid() {
         let schema = serde_json::json!({
@@ -667,6 +673,7 @@ mod tests {
     }
 
     #[cfg(unix)]
+    #[serial]
     #[test]
     fn serve_mcp_tools_call_invalid() {
         let schema = serde_json::json!({
@@ -691,6 +698,7 @@ mod tests {
     }
 
     #[cfg(unix)]
+    #[serial]
     #[test]
     fn serve_mcp_unknown_method_with_id() {
         let schema = serde_json::json!({"type": "object"});
@@ -706,6 +714,7 @@ mod tests {
     }
 
     #[cfg(unix)]
+    #[serial]
     #[test]
     fn serve_mcp_unknown_method_no_id() {
         let schema = serde_json::json!({"type": "object"});
@@ -714,6 +723,7 @@ mod tests {
     }
 
     #[cfg(unix)]
+    #[serial]
     #[test]
     fn serve_mcp_empty_line_skipped() {
         let schema = serde_json::json!({"type": "object"});
@@ -727,6 +737,7 @@ mod tests {
     }
 
     #[cfg(unix)]
+    #[serial]
     #[test]
     fn serve_mcp_malformed_json_skipped() {
         let schema = serde_json::json!({"type": "object"});
@@ -757,7 +768,7 @@ mod tests {
         )
         .unwrap();
 
-        let _lock = IO_LOCK.lock().unwrap();
+        let _lock = IO_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let (_, out_lines) = with_redirected_io(input, || {
             let args = McpStructuredOutputArgs {
                 schema_file: schema_path,
@@ -779,6 +790,7 @@ mod tests {
     }
 
     #[cfg(unix)]
+    #[serial]
     #[test]
     fn run_with_schema_file_and_initialize() {
         let schema = serde_json::json!({"type": "object"});
@@ -793,6 +805,7 @@ mod tests {
     }
 
     #[cfg(unix)]
+    #[serial]
     #[test]
     fn run_with_env_log_var() {
         let dir = tempfile::tempdir().unwrap();
@@ -803,7 +816,7 @@ mod tests {
 
         std::env::set_var("LUFT_MCP_LOG", log_path.to_str().unwrap());
 
-        let _lock = IO_LOCK.lock().unwrap();
+        let _lock = IO_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let (_, out_lines) =
             with_redirected_io(r#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#, || {
                 let args = McpStructuredOutputArgs {

@@ -13,7 +13,6 @@ env:
 jobs:
   test:
     name: Test on ${{ matrix.os }}
-    needs: [build]
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -54,15 +53,11 @@ jobs:
 
     - name: Run tests
       if: runner.os != 'Windows'
-      run: |
-        rm -f target/.cargo-lock
-        cargo test --workspace
+      run: cargo test --workspace
 
     - name: Run tests (Windows)
       if: runner.os == 'Windows'
-      run: |
-        if (Test-Path target/.cargo-lock) { Remove-Item target/.cargo-lock -Force }
-        cargo test --workspace
+      run: cargo test --workspace
 
   build:
     name: Build on ${{ matrix.os }}
