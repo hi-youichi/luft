@@ -13,6 +13,7 @@ env:
 jobs:
   test:
     name: Test on ${{ matrix.os }}
+    needs: [build]
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
