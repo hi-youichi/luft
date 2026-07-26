@@ -52,7 +52,16 @@ jobs:
       run: cargo clippy --workspace --all-targets -- -D warnings
 
     - name: Run tests
-      run: cargo test --workspace
+      if: runner.os != 'Windows'
+      run: |
+        rm -f target/.cargo-lock
+        cargo test --workspace
+
+    - name: Run tests (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        if (Test-Path target/.cargo-lock) { Remove-Item target/.cargo-lock -Force }
+        cargo test --workspace
 
   build:
     name: Build on ${{ matrix.os }}
