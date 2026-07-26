@@ -1288,9 +1288,28 @@ mod tests {
         let outcome = luft.run_script(script).await.expect("run_script");
         let run_id = outcome.run_dir_name;
 
-        let result = get_run_events_tool(&luft, &json!({"run_id": run_id, "events_limit": 1}));
-        let events_text = result["content"][0]["text"].as_str().unwrap();
-        let parsed: Value = serde_json::from_str(events_text).unwrap();
+        // Events are persisted asynchronously via a broadcast forwarding task.
+        // Retry briefly to avoid a race on fast machines (especially Windows).
+        let parsed: Value = {
+            let mut last = None;
+            for _ in 0..20 {
+                let result =
+                    get_run_events_tool(&luft, &json!({"run_id": run_id, "events_limit": 1}));
+                let text = result["content"][0]["text"].as_str().unwrap();
+                let p: Value = serde_json::from_str(text).unwrap();
+                if p["events"]
+                    .as_array()
+                    .map(|a| !a.is_empty())
+                    .unwrap_or(false)
+                {
+                    last = Some(p);
+                    break;
+                }
+                last = Some(p);
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            }
+            last.unwrap()
+        };
         assert_eq!(parsed["events"].as_array().unwrap().len(), 1);
         assert_eq!(parsed["offset"], 0);
         assert_eq!(parsed["events_limit"], 1);
