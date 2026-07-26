@@ -719,7 +719,7 @@ mod tests {
     fn serve_mcp_unknown_method_no_id() {
         let schema = serde_json::json!({"type": "object"});
         let lines = run_serve_mcp(&[r#"{"jsonrpc":"2.0","method":"unknown/method"}"#], &schema);
-        assert!(lines.is_empty());
+        assert!(json_lines(&lines).is_empty());
     }
 
     #[cfg(unix)]

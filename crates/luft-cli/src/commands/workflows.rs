@@ -189,9 +189,14 @@ mod tests {
     #[test]
     #[serial]
     #[cfg(target_os = "macos")]
-    fn config_dir_returns_none_when_home_unset() {
+    fn config_dir_uses_fallback_when_home_unset() {
         let _guard = UnsetHomeGuard::new();
-        assert!(dirs::config_dir().is_none());
+        // dirs v5 on macOS falls back to getpwuid_r() when HOME is unset,
+        // so config_dir() may still return Some(...).
+        let result = dirs::config_dir();
+        if let Some(path) = &result {
+            assert!(!path.starts_with("/tmp"));
+        }
     }
 
     #[test]
@@ -347,6 +352,7 @@ mod tests {
 
         let lock = lock_home();
         {
+            std::env::remove_var(key);
             let _guard = UnsetHomeGuard {
                 _lock: lock,
                 orig_home: Some(dir.path().to_string_lossy().into_owned()),
