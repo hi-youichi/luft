@@ -9,43 +9,31 @@ permissions:
   contents: write
 
 jobs:
-  create-release:
-    name: Create GitHub Release
-    runs-on: ubuntu-latest
-    outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
-
-    steps:
-    - name: Create Release
-      id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ github.ref }}
-        release_name: Release ${{ github.ref }}
-        draft: false
-        prerelease: false
-
-  build-and-upload:
-    name: Build and upload for ${{ matrix.target }}
-    needs: create-release
+  build:
+    name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             artifact_name: luft
             asset_name: luft-x86_64-linux-gnu
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            artifact_name: luft
+            asset_name: luft-aarch64-linux-gnu
+            cross: true
           - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
             artifact_name: luft
             asset_name: luft-x86_64-linux-musl
+            cross: true
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             artifact_name: luft.exe
-            asset_name: luft-x86_64-windows-msvc.exe
+            asset_name: luft-x86_64-windows-msvc
           - target: x86_64-apple-darwin
             os: macos-latest
             artifact_name: luft
@@ -63,63 +51,83 @@ jobs:
       with:
         targets: ${{ matrix.target }}
 
-    - name: Install cross-compilation tools (Linux)
-      if: matrix.target == 'x86_64-unknown-linux-musl'
+    - name: Install cross
+      if: matrix.cross == true
+      run: cargo install cross
+
+    - name: Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: ${{ matrix.target }}
+
+    - name: Build
       run: |
-        sudo apt-get update
-        sudo apt-get install -y musl-tools musl-dev
+        if [ "${{ matrix.cross }}" = "true" ]; then
+          cross build --release --target ${{ matrix.target }} --bin luft
+        else
+          cargo build --release --target ${{ matrix.target }} --bin luft
+        fi
+      shell: bash
 
-    - name: Cache cargo registry
-      uses: actions/cache@v4
-      with:
-        path: ~/.cargo/registry
-        key: ${{ matrix.target }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-
-    - name: Cache cargo index
-      uses: actions/cache@v4
-      with:
-        path: ~/.cargo/git
-        key: ${{ matrix.target }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-
-    - name: Cache cargo build
-      uses: actions/cache@v4
-      with:
-        path: target
-        key: ${{ matrix.target }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
-
-    - name: Build release binary
-      run: cargo build --release --target ${{ matrix.target }} --bin luft
-
-    - name: Strip binary (Linux/macOS)
+    - name: Strip binary
       if: matrix.os != 'windows-latest'
-      run: strip target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+      run: |
+        STRIP="${{ matrix.target == 'aarch64-unknown-linux-gnu' && 'aarch64-linux-gnu-strip' || 'strip' }}"
+        $STRIP target/${{ matrix.target }}/release/${{ matrix.artifact_name }} || true
+      shell: bash
 
-    - name: Compress binary (Linux/macOS)
+    - name: Package (Unix)
       if: matrix.os != 'windows-latest'
-      run: gzip -c target/${{ matrix.target }}/release/${{ matrix.artifact_name }} > target/${{ matrix.target }}/release/${{ matrix.artifact_name }}.gz
+      run: |
+        cd target/${{ matrix.target }}/release
+        tar czf ../../../${{ matrix.asset_name }}.tar.gz ${{ matrix.artifact_name }}
+        cd ../../..
+        shasum -a 256 ${{ matrix.asset_name }}.tar.gz > ${{ matrix.asset_name }}.tar.gz.sha256
+      shell: bash
 
-    - name: Compress binary (Windows)
+    - name: Package (Windows)
       if: matrix.os == 'windows-latest'
-      run: Compress-Archive -Path target/${{ matrix.target }}/release/${{ matrix.artifact_name }} -DestinationPath target/${{ matrix.target }}/release/${{ matrix.artifact_name }}.zip
+      shell: pwsh
+      run: |
+        Compress-Archive -Path target/${{ matrix.target }}/release/${{ matrix.artifact_name }} -DestinationPath ${{ matrix.asset_name }}.zip
+        $hash = (Get-FileHash ${{ matrix.asset_name }}.zip -Algorithm SHA256).Hash
+        "$hash  ${{ matrix.asset_name }}.zip" | Out-File -Encoding ascii ${{ matrix.asset_name }}.zip.sha256
 
-    - name: Upload Release Asset (Linux/macOS)
-      if: matrix.os != 'windows-latest'
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
       with:
-        upload_url: ${{ needs.create-release.outputs.upload_url }}
-        asset_path: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}.gz
-        asset_name: ${{ matrix.asset_name }}.gz
-        asset_content_type: application/gzip
+        name: ${{ matrix.asset_name }}
+        path: |
+          ${{ matrix.asset_name }}.*
+          !*.sha256
 
-    - name: Upload Release Asset (Windows)
-      if: matrix.os == 'windows-latest'
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Upload checksum
+      uses: actions/upload-artifact@v4
       with:
-        upload_url: ${{ needs.create-release.outputs.upload_url }}
-        asset_path: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}.zip
-        asset_name: ${{ matrix.asset_name }}.zip
-        asset_content_type: application/zip
+        name: ${{ matrix.asset_name }}-checksum
+        path: ${{ matrix.asset_name }}.*.sha256
+
+  release:
+    name: Publish Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: assets
+        merge-multiple: true
+
+    - name: List assets
+      run: ls -la assets/
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        generate_release_notes: true
+        files: |
+          assets/*.tar.gz
+          assets/*.zip
+          assets/*.sha256
