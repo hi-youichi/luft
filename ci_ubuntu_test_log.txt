@@ -1,0 +1,1817 @@
+﻿2026-07-26T04:49:31.5817372Z Current runner version: '2.336.0'
+2026-07-26T04:49:31.5850311Z ##[group]Runner Image Provisioner
+2026-07-26T04:49:31.5851575Z Hosted Compute Agent
+2026-07-26T04:49:31.5852673Z Version: 20260707.563
+2026-07-26T04:49:31.5853723Z Commit: 02667638d2b423fbc733a8e32a88b44996a3ba6e
+2026-07-26T04:49:31.5855004Z Build Date: 2026-07-07T19:33:50Z
+2026-07-26T04:49:31.5856104Z Worker ID: {a02c9d0b-5b2c-4176-ac02-34b4423a137b}
+2026-07-26T04:49:31.5857226Z Azure Region: eastus
+2026-07-26T04:49:31.5858637Z ##[endgroup]
+2026-07-26T04:49:31.5861277Z ##[group]Operating System
+2026-07-26T04:49:31.5862355Z Ubuntu
+2026-07-26T04:49:31.5863184Z 24.04.4
+2026-07-26T04:49:31.5863959Z LTS
+2026-07-26T04:49:31.5865037Z ##[endgroup]
+2026-07-26T04:49:31.5865926Z ##[group]Runner Image
+2026-07-26T04:49:31.5867345Z Image: ubuntu-24.04
+2026-07-26T04:49:31.5868607Z Version: 20260720.247.2
+2026-07-26T04:49:31.5870763Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260720.247/images/ubuntu/Ubuntu2404-Readme.md
+2026-07-26T04:49:31.5873378Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260720.247
+2026-07-26T04:49:31.5875166Z ##[endgroup]
+2026-07-26T04:49:31.5877044Z ##[group]GITHUB_TOKEN Permissions
+2026-07-26T04:49:31.5880181Z Contents: read
+2026-07-26T04:49:31.5881133Z Metadata: read
+2026-07-26T04:49:31.5881986Z Packages: read
+2026-07-26T04:49:31.5883023Z ##[endgroup]
+2026-07-26T04:49:31.5886044Z Secret source: Actions
+2026-07-26T04:49:31.5888060Z Prepare workflow directory
+2026-07-26T04:49:31.6438652Z Prepare all required actions
+2026-07-26T04:49:31.6501100Z Getting action download info
+2026-07-26T04:49:31.8207997Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+2026-07-26T04:49:32.0442081Z Download action repository 'dtolnay/rust-toolchain@stable' (SHA:4cda84d5c5c54efe2404f9d843567869ab1699d4)
+2026-07-26T04:49:32.1102972Z Download action repository 'actions/cache@v4' (SHA:0057852bfaa89a56745cba8c7296529d2fc39830)
+2026-07-26T04:49:32.3520931Z Complete job name: Test on ubuntu-latest
+2026-07-26T04:49:32.4357889Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-26T04:49:32.4366762Z ##[group]Run actions/checkout@v4
+2026-07-26T04:49:32.4367481Z with:
+2026-07-26T04:49:32.4367900Z   repository: hi-youichi/luft
+2026-07-26T04:49:32.4372093Z   token: ***
+2026-07-26T04:49:32.4372522Z   ssh-strict: true
+2026-07-26T04:49:32.4372948Z   ssh-user: git
+2026-07-26T04:49:32.4373397Z   persist-credentials: true
+2026-07-26T04:49:32.4373871Z   clean: true
+2026-07-26T04:49:32.4374301Z   sparse-checkout-cone-mode: true
+2026-07-26T04:49:32.4374818Z   fetch-depth: 1
+2026-07-26T04:49:32.4375234Z   fetch-tags: false
+2026-07-26T04:49:32.4375666Z   show-progress: true
+2026-07-26T04:49:32.4376102Z   lfs: false
+2026-07-26T04:49:32.4376558Z   submodules: false
+2026-07-26T04:49:32.4376994Z   set-safe-directory: true
+2026-07-26T04:49:32.4377490Z   allow-unsafe-pr-checkout: false
+2026-07-26T04:49:32.4378395Z env:
+2026-07-26T04:49:32.4378816Z   CARGO_TERM_COLOR: always
+2026-07-26T04:49:32.4379291Z   RUST_BACKTRACE: 1
+2026-07-26T04:49:32.4379713Z ##[endgroup]
+2026-07-26T04:49:32.5345301Z Syncing repository: hi-youichi/luft
+2026-07-26T04:49:32.5347020Z ##[group]Getting Git version info
+2026-07-26T04:49:32.5347683Z Working directory is '/home/runner/work/luft/luft'
+2026-07-26T04:49:32.5348857Z [command]/usr/bin/git version
+2026-07-26T04:49:32.5442463Z git version 2.54.0
+2026-07-26T04:49:32.5491007Z ##[endgroup]
+2026-07-26T04:49:32.5507672Z Temporarily overriding HOME='/home/runner/work/_temp/753d4076-d092-4d00-8ee4-cfbcfc5529aa' before making global git config changes
+2026-07-26T04:49:32.5510343Z Adding repository directory to the temporary git global config as a safe directory
+2026-07-26T04:49:32.5519067Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/luft/luft
+2026-07-26T04:49:32.5552617Z Deleting the contents of '/home/runner/work/luft/luft'
+2026-07-26T04:49:32.5556662Z ##[group]Initializing the repository
+2026-07-26T04:49:32.5563573Z [command]/usr/bin/git init /home/runner/work/luft/luft
+2026-07-26T04:49:32.5672055Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-07-26T04:49:32.5674165Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-07-26T04:49:32.5676402Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-07-26T04:49:32.5677805Z hint: call:
+2026-07-26T04:49:32.5679038Z hint:
+2026-07-26T04:49:32.5680221Z hint: 	git config --global init.defaultBranch <name>
+2026-07-26T04:49:32.5681749Z hint:
+2026-07-26T04:49:32.5683099Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-07-26T04:49:32.5685140Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-07-26T04:49:32.5686935Z hint:
+2026-07-26T04:49:32.5688309Z hint: 	git branch -m <name>
+2026-07-26T04:49:32.5691154Z hint:
+2026-07-26T04:49:32.5692613Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-07-26T04:49:32.5694562Z Initialized empty Git repository in /home/runner/work/luft/luft/.git/
+2026-07-26T04:49:32.5701602Z [command]/usr/bin/git remote add origin https://github.com/hi-youichi/luft
+2026-07-26T04:49:32.5751733Z ##[endgroup]
+2026-07-26T04:49:32.5753368Z ##[group]Disabling automatic garbage collection
+2026-07-26T04:49:32.5756160Z [command]/usr/bin/git config --local gc.auto 0
+2026-07-26T04:49:32.5791239Z ##[endgroup]
+2026-07-26T04:49:32.5792900Z ##[group]Setting up auth
+2026-07-26T04:49:32.5802577Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-07-26T04:49:32.5852018Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-07-26T04:49:32.6224792Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-07-26T04:49:32.6265776Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-07-26T04:49:32.6554713Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-07-26T04:49:32.6602897Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-07-26T04:49:32.6854901Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-07-26T04:49:32.6894410Z ##[endgroup]
+2026-07-26T04:49:32.6895309Z ##[group]Fetching the repository
+2026-07-26T04:49:32.6905048Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +f7d8f73eab02fa964b4ac1d0ba92b5c096919f3f:refs/remotes/origin/main
+2026-07-26T04:49:33.0063095Z From https://github.com/hi-youichi/luft
+2026-07-26T04:49:33.0064400Z  * [new ref]         f7d8f73eab02fa964b4ac1d0ba92b5c096919f3f -> origin/main
+2026-07-26T04:49:33.0102638Z ##[endgroup]
+2026-07-26T04:49:33.0104118Z ##[group]Determining the checkout info
+2026-07-26T04:49:33.0105911Z ##[endgroup]
+2026-07-26T04:49:33.0111178Z [command]/usr/bin/git sparse-checkout disable
+2026-07-26T04:49:33.0238744Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-07-26T04:49:33.0243610Z ##[group]Checking out the ref
+2026-07-26T04:49:33.0245136Z [command]/usr/bin/git checkout --progress --force -B main refs/remotes/origin/main
+2026-07-26T04:49:33.0460721Z Switched to a new branch 'main'
+2026-07-26T04:49:33.0463958Z branch 'main' set up to track 'origin/main'.
+2026-07-26T04:49:33.0470130Z ##[endgroup]
+2026-07-26T04:49:33.0516104Z [command]/usr/bin/git log -1 --format=%H
+2026-07-26T04:49:33.0543583Z f7d8f73eab02fa964b4ac1d0ba92b5c096919f3f
+2026-07-26T04:49:33.1011390Z ##[group]Run dtolnay/rust-toolchain@stable
+2026-07-26T04:49:33.1012117Z with:
+2026-07-26T04:49:33.1012552Z   components: rustfmt, clippy
+2026-07-26T04:49:33.1013094Z   toolchain: stable
+2026-07-26T04:49:33.1013527Z env:
+2026-07-26T04:49:33.1013927Z   CARGO_TERM_COLOR: always
+2026-07-26T04:49:33.1014433Z   RUST_BACKTRACE: 1
+2026-07-26T04:49:33.1014878Z ##[endgroup]
+2026-07-26T04:49:33.1145361Z ##[group]Run : parse toolchain version
+2026-07-26T04:49:33.1146097Z [36;1m: parse toolchain version[0m
+2026-07-26T04:49:33.1146718Z [36;1mif [[ -z $toolchain ]]; then[0m
+2026-07-26T04:49:33.1147928Z [36;1m  # GitHub does not enforce `required: true` inputs itself. https://github.com/actions/runner/issues/1070[0m
+2026-07-26T04:49:33.1149656Z [36;1m  echo "'toolchain' is a required input" >&2[0m
+2026-07-26T04:49:33.1150349Z [36;1m  exit 1[0m
+2026-07-26T04:49:33.1151098Z [36;1melif [[ $toolchain =~ ^stable' '[0-9]+' '(year|month|week|day)s?' 'ago$ ]]; then[0m
+2026-07-26T04:49:33.1152119Z [36;1m  if [[ Linux == macOS ]]; then[0m
+2026-07-26T04:49:33.1153345Z [36;1m    echo "toolchain=1.$((($(date -v-$(sed 's/stable \([0-9]*\) \(.\).*/\1\2/' <<< $toolchain) +%s)/60/60/24-16569)/7/6))" >> $GITHUB_OUTPUT[0m
+2026-07-26T04:49:33.1154516Z [36;1m  else[0m
+2026-07-26T04:49:33.1155439Z [36;1m    echo "toolchain=1.$((($(date --date "${toolchain#stable }" +%s)/60/60/24-16569)/7/6))" >> $GITHUB_OUTPUT[0m
+2026-07-26T04:49:33.1156508Z [36;1m  fi[0m
+2026-07-26T04:49:33.1157170Z [36;1melif [[ $toolchain =~ ^stable' 'minus' '[0-9]+' 'releases?$ ]]; then[0m
+2026-07-26T04:49:33.1158555Z [36;1m  echo "toolchain=1.$((($(date +%s)/60/60/24-16569)/7/6-${toolchain//[^0-9]/}))" >> $GITHUB_OUTPUT[0m
+2026-07-26T04:49:33.1159630Z [36;1melif [[ $toolchain =~ ^1\.[0-9]+$ ]]; then[0m
+2026-07-26T04:49:33.1160844Z [36;1m  echo "toolchain=1.$((i=${toolchain#1.}, c=($(date +%s)/60/60/24-16569)/7/6, i+9*i*(10*i<=c)+90*i*(100*i<=c)))" >> $GITHUB_OUTPUT[0m
+2026-07-26T04:49:33.1162006Z [36;1melse[0m
+2026-07-26T04:49:33.1162543Z [36;1m  echo "toolchain=$toolchain" >> $GITHUB_OUTPUT[0m
+2026-07-26T04:49:33.1163226Z [36;1mfi[0m
+2026-07-26T04:49:33.1212633Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-07-26T04:49:33.1213414Z env:
+2026-07-26T04:49:33.1213822Z   CARGO_TERM_COLOR: always
+2026-07-26T04:49:33.1214325Z   RUST_BACKTRACE: 1
+2026-07-26T04:49:33.1214773Z   toolchain: stable
+2026-07-26T04:49:33.1215220Z ##[endgroup]
+2026-07-26T04:49:33.1392212Z ##[group]Run : construct rustup command line
+2026-07-26T04:49:33.1392917Z [36;1m: construct rustup command line[0m
+2026-07-26T04:49:33.1393928Z [36;1mecho "targets=$(for t in ${targets//,/ }; do echo -n ' --target' $t; done)" >> $GITHUB_OUTPUT[0m
+2026-07-26T04:49:33.1395392Z [36;1mecho "components=$(for c in ${components//,/ }; do echo -n ' --component' $c; done)" >> $GITHUB_OUTPUT[0m
+2026-07-26T04:49:33.1396506Z [36;1mecho "downgrade=" >> $GITHUB_OUTPUT[0m
+2026-07-26T04:49:33.1437955Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-07-26T04:49:33.1438865Z env:
+2026-07-26T04:49:33.1439274Z   CARGO_TERM_COLOR: always
+2026-07-26T04:49:33.1439790Z   RUST_BACKTRACE: 1
+2026-07-26T04:49:33.1440232Z   targets: 
+2026-07-26T04:49:33.1440652Z   components: rustfmt, clippy
+2026-07-26T04:49:33.1441182Z ##[endgroup]
+2026-07-26T04:49:33.1549826Z ##[group]Run : set $CARGO_HOME
+2026-07-26T04:49:33.1550393Z [36;1m: set $CARGO_HOME[0m
+2026-07-26T04:49:33.1551114Z [36;1mecho CARGO_HOME=${CARGO_HOME:-"$HOME/.cargo"} >> $GITHUB_ENV[0m
+2026-07-26T04:49:33.1592339Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-07-26T04:49:33.1593099Z env:
+2026-07-26T04:49:33.1593509Z   CARGO_TERM_COLOR: always
+2026-07-26T04:49:33.1594024Z   RUST_BACKTRACE: 1
+2026-07-26T04:49:33.1594471Z ##[endgroup]
+2026-07-26T04:49:33.1704159Z ##[group]Run : install rustup if needed
+2026-07-26T04:49:33.1704811Z [36;1m: install rustup if needed[0m
+2026-07-26T04:49:33.1705467Z [36;1mif ! command -v rustup &>/dev/null; then[0m
+2026-07-26T04:49:33.1707484Z [36;1m  curl --proto '=https' --tlsv1.2 --retry 10 --retry-connrefused --location --silent --show-error --fail https://sh.rustup.rs | sh -s -- --default-toolchain none -y[0m
+2026-07-26T04:49:33.1709573Z [36;1m  echo "$CARGO_HOME/bin" >> $GITHUB_PATH[0m
+2026-07-26T04:49:33.1710236Z [36;1mfi[0m
+2026-07-26T04:49:33.1751248Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-07-26T04:49:33.1752017Z env:
+2026-07-26T04:49:33.1752430Z   CARGO_TERM_COLOR: always
+2026-07-26T04:49:33.1752933Z   RUST_BACKTRACE: 1
+2026-07-26T04:49:33.1753485Z   CARGO_HOME: /home/runner/.cargo
+2026-07-26T04:49:33.1754043Z ##[endgroup]
+2026-07-26T04:49:33.1864592Z ##[group]Run rustup toolchain install stable --component rustfmt --component clippy --profile minimal --no-self-update
+2026-07-26T04:49:33.1866459Z [36;1mrustup toolchain install stable --component rustfmt --component clippy --profile minimal --no-self-update[0m
+2026-07-26T04:49:33.1919467Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-07-26T04:49:33.1920513Z env:
+2026-07-26T04:49:33.1921080Z   CARGO_TERM_COLOR: always
+2026-07-26T04:49:33.1921745Z   RUST_BACKTRACE: 1
+2026-07-26T04:49:33.1922550Z   CARGO_HOME: /home/runner/.cargo
+2026-07-26T04:49:33.1923269Z   RUSTUP_PERMIT_COPY_RENAME: 1
+2026-07-26T04:49:33.1924012Z ##[endgroup]
+2026-07-26T04:49:33.3868071Z info: syncing channel updates for stable-x86_64-unknown-linux-gnu
+2026-07-26T04:49:33.5034254Z info: latest update on 2026-07-16 for version 1.97.1 (8bab26f4f 2026-07-14)
+2026-07-26T04:49:33.5154164Z info: component clippy is up to date
+2026-07-26T04:49:33.5156063Z info: component rustfmt is up to date
+2026-07-26T04:49:33.5167616Z 
+2026-07-26T04:49:33.5251808Z   stable-x86_64-unknown-linux-gnu unchanged - rustc 1.97.1 (8bab26f4f 2026-07-14)
+2026-07-26T04:49:33.5253344Z 
+2026-07-26T04:49:33.5329177Z ##[group]Run rustup default stable
+2026-07-26T04:49:33.5330526Z [36;1mrustup default stable[0m
+2026-07-26T04:49:33.5376743Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-07-26T04:49:33.5378488Z env:
+2026-07-26T04:49:33.5379539Z   CARGO_TERM_COLOR: always
+2026-07-26T04:49:33.5380746Z   RUST_BACKTRACE: 1
+2026-07-26T04:49:33.5381901Z   CARGO_HOME: /home/runner/.cargo
+2026-07-26T04:49:33.5383187Z ##[endgroup]
+2026-07-26T04:49:33.5513334Z info: using existing install for stable-x86_64-unknown-linux-gnu
+2026-07-26T04:49:33.5521915Z info: default toolchain set to stable-x86_64-unknown-linux-gnu
+2026-07-26T04:49:33.5523667Z 
+2026-07-26T04:49:33.5611829Z   stable-x86_64-unknown-linux-gnu unchanged - rustc 1.97.1 (8bab26f4f 2026-07-14)
+2026-07-26T04:49:33.5614098Z 
+2026-07-26T04:49:33.5680113Z ##[group]Run : create cachekey
+2026-07-26T04:49:33.5681243Z [36;1m: create cachekey[0m
+2026-07-26T04:49:33.5683263Z [36;1mDATE=$(rustc +stable --version --verbose | sed -ne 's/^commit-date: \(20[0-9][0-9]\)-\([01][0-9]\)-\([0-3][0-9]\)$/\1\2\3/p')[0m
+2026-07-26T04:49:33.5685878Z [36;1mHASH=$(rustc +stable --version --verbose | sed -ne 's/^commit-hash: //p')[0m
+2026-07-26T04:49:33.5687878Z [36;1mecho "cachekey=$(echo $DATE$HASH | head -c12)" >> $GITHUB_OUTPUT[0m
+2026-07-26T04:49:33.5732599Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-07-26T04:49:33.5733952Z env:
+2026-07-26T04:49:33.5734773Z   CARGO_TERM_COLOR: always
+2026-07-26T04:49:33.5735771Z   RUST_BACKTRACE: 1
+2026-07-26T04:49:33.5736704Z   CARGO_HOME: /home/runner/.cargo
+2026-07-26T04:49:33.5737756Z ##[endgroup]
+2026-07-26T04:49:33.6201300Z ##[group]Run : disable incremental compilation
+2026-07-26T04:49:33.6202656Z [36;1m: disable incremental compilation[0m
+2026-07-26T04:49:33.6203972Z [36;1mif [ -z "${CARGO_INCREMENTAL+set}" ]; then[0m
+2026-07-26T04:49:33.6205340Z [36;1m  echo CARGO_INCREMENTAL=0 >> $GITHUB_ENV[0m
+2026-07-26T04:49:33.6206538Z [36;1mfi[0m
+2026-07-26T04:49:33.6252905Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-07-26T04:49:33.6254224Z env:
+2026-07-26T04:49:33.6255040Z   CARGO_TERM_COLOR: always
+2026-07-26T04:49:33.6256228Z   RUST_BACKTRACE: 1
+2026-07-26T04:49:33.6257305Z   CARGO_HOME: /home/runner/.cargo
+2026-07-26T04:49:33.6258636Z ##[endgroup]
+2026-07-26T04:49:33.6392261Z ##[group]Run : enable colors in Cargo output
+2026-07-26T04:49:33.6393511Z [36;1m: enable colors in Cargo output[0m
+2026-07-26T04:49:33.6394748Z [36;1mif [ -z "${CARGO_TERM_COLOR+set}" ]; then[0m
+2026-07-26T04:49:33.6396306Z [36;1m  echo CARGO_TERM_COLOR=always >> $GITHUB_ENV[0m
+2026-07-26T04:49:33.6397542Z [36;1mfi[0m
+2026-07-26T04:49:33.6442341Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-07-26T04:49:33.6443650Z env:
+2026-07-26T04:49:33.6444654Z   CARGO_TERM_COLOR: always
+2026-07-26T04:49:33.6445787Z   RUST_BACKTRACE: 1
+2026-07-26T04:49:33.6446954Z   CARGO_HOME: /home/runner/.cargo
+2026-07-26T04:49:33.6448011Z   CARGO_INCREMENTAL: 0
+2026-07-26T04:49:33.6449247Z ##[endgroup]
+2026-07-26T04:49:33.6574412Z ##[group]Run : enable Cargo sparse registry
+2026-07-26T04:49:33.6575631Z [36;1m: enable Cargo sparse registry[0m
+2026-07-26T04:49:33.6577284Z [36;1m# implemented in 1.66, stabilized in 1.68, made default in 1.70[0m
+2026-07-26T04:49:33.6580042Z [36;1mif [ -z "${CARGO_REGISTRIES_CRATES_IO_PROTOCOL+set}" -o -f "/home/runner/work/_temp"/.implicit_cargo_registries_crates_io_protocol ]; then[0m
+2026-07-26T04:49:33.6582684Z [36;1m  if rustc +stable --version --verbose | grep -q '^release: 1\.6[89]\.'; then[0m
+2026-07-26T04:49:33.6584813Z [36;1m    touch "/home/runner/work/_temp"/.implicit_cargo_registries_crates_io_protocol || true[0m
+2026-07-26T04:49:33.6586867Z [36;1m    echo CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse >> $GITHUB_ENV[0m
+2026-07-26T04:49:33.6589169Z [36;1m  elif rustc +stable --version --verbose | grep -q '^release: 1\.6[67]\.'; then[0m
+2026-07-26T04:49:33.6591328Z [36;1m    touch "/home/runner/work/_temp"/.implicit_cargo_registries_crates_io_protocol || true[0m
+2026-07-26T04:49:33.6593324Z [36;1m    echo CARGO_REGISTRIES_CRATES_IO_PROTOCOL=git >> $GITHUB_ENV[0m
+2026-07-26T04:49:33.6594732Z [36;1m  fi[0m
+2026-07-26T04:49:33.6595540Z [36;1mfi[0m
+2026-07-26T04:49:33.6637852Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-07-26T04:49:33.6639344Z env:
+2026-07-26T04:49:33.6640167Z   CARGO_TERM_COLOR: always
+2026-07-26T04:49:33.6641114Z   RUST_BACKTRACE: 1
+2026-07-26T04:49:33.6642022Z   CARGO_HOME: /home/runner/.cargo
+2026-07-26T04:49:33.6643241Z   CARGO_INCREMENTAL: 0
+2026-07-26T04:49:33.6644142Z ##[endgroup]
+2026-07-26T04:49:33.7104710Z ##[group]Run : work around spurious network errors in curl 8.0
+2026-07-26T04:49:33.7106715Z [36;1m: work around spurious network errors in curl 8.0[0m
+2026-07-26T04:49:33.7117278Z [36;1m# https://rust-lang.zulipchat.com/#narrow/stream/246057-t-cargo/topic/timeout.20investigation[0m
+2026-07-26T04:49:33.7120995Z [36;1mif rustc +stable --version --verbose | grep -q '^release: 1\.7[01]\.'; then[0m
+2026-07-26T04:49:33.7123779Z [36;1m  echo CARGO_HTTP_MULTIPLEXING=false >> $GITHUB_ENV[0m
+2026-07-26T04:49:33.7125795Z [36;1mfi[0m
+2026-07-26T04:49:33.7202171Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-07-26T04:49:33.7203837Z env:
+2026-07-26T04:49:33.7204892Z   CARGO_TERM_COLOR: always
+2026-07-26T04:49:33.7205849Z   RUST_BACKTRACE: 1
+2026-07-26T04:49:33.7206731Z   CARGO_HOME: /home/runner/.cargo
+2026-07-26T04:49:33.7207729Z   CARGO_INCREMENTAL: 0
+2026-07-26T04:49:33.7209067Z ##[endgroup]
+2026-07-26T04:49:33.7527085Z ##[group]Run rustc +stable --version --verbose
+2026-07-26T04:49:33.7528699Z [36;1mrustc +stable --version --verbose[0m
+2026-07-26T04:49:33.7574333Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-07-26T04:49:33.7575524Z env:
+2026-07-26T04:49:33.7576445Z   CARGO_TERM_COLOR: always
+2026-07-26T04:49:33.7577651Z   RUST_BACKTRACE: 1
+2026-07-26T04:49:33.7578756Z   CARGO_HOME: /home/runner/.cargo
+2026-07-26T04:49:33.7579727Z   CARGO_INCREMENTAL: 0
+2026-07-26T04:49:33.7580576Z ##[endgroup]
+2026-07-26T04:49:33.7801662Z rustc 1.97.1 (8bab26f4f 2026-07-14)
+2026-07-26T04:49:33.7803458Z binary: rustc
+2026-07-26T04:49:33.7804954Z commit-hash: 8bab26f4f68e0e26f0bb7960be334d5b520ea452
+2026-07-26T04:49:33.7806314Z commit-date: 2026-07-14
+2026-07-26T04:49:33.7807230Z host: x86_64-unknown-linux-gnu
+2026-07-26T04:49:33.7808435Z release: 1.97.1
+2026-07-26T04:49:33.7809267Z LLVM version: 22.1.6
+2026-07-26T04:49:33.9014152Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-26T04:49:33.9018711Z ##[group]Run actions/cache@v4
+2026-07-26T04:49:33.9019621Z with:
+2026-07-26T04:49:33.9020380Z   path: ~/.cargo/registry
+2026-07-26T04:49:33.9021886Z   key: Linux-cargo-registry-269a62b240227a5b6a0a5ea9aff2788108ef981f2b256199b284509031b17f90
+2026-07-26T04:49:33.9023554Z   enableCrossOsArchive: false
+2026-07-26T04:49:33.9024512Z   fail-on-cache-miss: false
+2026-07-26T04:49:33.9025444Z   lookup-only: false
+2026-07-26T04:49:33.9026279Z   save-always: false
+2026-07-26T04:49:33.9027073Z env:
+2026-07-26T04:49:33.9027820Z   CARGO_TERM_COLOR: always
+2026-07-26T04:49:33.9029012Z   RUST_BACKTRACE: 1
+2026-07-26T04:49:33.9029900Z   CARGO_HOME: /home/runner/.cargo
+2026-07-26T04:49:33.9030846Z   CARGO_INCREMENTAL: 0
+2026-07-26T04:49:33.9031685Z ##[endgroup]
+2026-07-26T04:49:34.0082589Z (node:2342) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-07-26T04:49:34.0086280Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-07-26T04:49:34.0664316Z Cache hit for: Linux-cargo-registry-269a62b240227a5b6a0a5ea9aff2788108ef981f2b256199b284509031b17f90
+2026-07-26T04:49:34.0766149Z (node:2342) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-07-26T04:49:34.5402962Z Received 61770116 of 61770116 (100.0%), 143.7 MBs/sec
+2026-07-26T04:49:34.5405134Z Cache Size: ~59 MB (61770116 B)
+2026-07-26T04:49:34.5438113Z [command]/usr/bin/tar -xf /home/runner/work/_temp/de12f449-79a6-4c05-bf64-2160956a0d9a/cache.tzst -P -C /home/runner/work/luft/luft --use-compress-program unzstd
+2026-07-26T04:49:35.5715409Z Cache restored successfully
+2026-07-26T04:49:35.5822223Z Cache restored from key: Linux-cargo-registry-269a62b240227a5b6a0a5ea9aff2788108ef981f2b256199b284509031b17f90
+2026-07-26T04:49:35.6892350Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-26T04:49:35.6893677Z ##[group]Run actions/cache@v4
+2026-07-26T04:49:35.6893923Z with:
+2026-07-26T04:49:35.6894117Z   path: ~/.cargo/git
+2026-07-26T04:49:35.6894547Z   key: Linux-cargo-index-269a62b240227a5b6a0a5ea9aff2788108ef981f2b256199b284509031b17f90
+2026-07-26T04:49:35.6895017Z   enableCrossOsArchive: false
+2026-07-26T04:49:35.6895277Z   fail-on-cache-miss: false
+2026-07-26T04:49:35.6895511Z   lookup-only: false
+2026-07-26T04:49:35.6895725Z   save-always: false
+2026-07-26T04:49:35.6895925Z env:
+2026-07-26T04:49:35.6896111Z   CARGO_TERM_COLOR: always
+2026-07-26T04:49:35.6896349Z   RUST_BACKTRACE: 1
+2026-07-26T04:49:35.6896599Z   CARGO_HOME: /home/runner/.cargo
+2026-07-26T04:49:35.6896870Z   CARGO_INCREMENTAL: 0
+2026-07-26T04:49:35.6897081Z ##[endgroup]
+2026-07-26T04:49:35.7943123Z (node:2370) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-07-26T04:49:35.7944183Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-07-26T04:49:35.8580529Z Cache not found for input keys: Linux-cargo-index-269a62b240227a5b6a0a5ea9aff2788108ef981f2b256199b284509031b17f90
+2026-07-26T04:49:35.9619173Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-26T04:49:35.9620576Z ##[group]Run actions/cache@v4
+2026-07-26T04:49:35.9620828Z with:
+2026-07-26T04:49:35.9621029Z   path: target
+2026-07-26T04:49:35.9621461Z   key: Linux-cargo-build-target-269a62b240227a5b6a0a5ea9aff2788108ef981f2b256199b284509031b17f90
+2026-07-26T04:49:35.9621985Z   enableCrossOsArchive: false
+2026-07-26T04:49:35.9622261Z   fail-on-cache-miss: false
+2026-07-26T04:49:35.9622504Z   lookup-only: false
+2026-07-26T04:49:35.9622715Z   save-always: false
+2026-07-26T04:49:35.9622940Z env:
+2026-07-26T04:49:35.9623162Z   CARGO_TERM_COLOR: always
+2026-07-26T04:49:35.9623385Z   RUST_BACKTRACE: 1
+2026-07-26T04:49:35.9623651Z   CARGO_HOME: /home/runner/.cargo
+2026-07-26T04:49:35.9623916Z   CARGO_INCREMENTAL: 0
+2026-07-26T04:49:35.9624128Z ##[endgroup]
+2026-07-26T04:49:36.0742190Z (node:2395) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-07-26T04:49:36.0743458Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-07-26T04:49:36.1289319Z Cache hit for: Linux-cargo-build-target-269a62b240227a5b6a0a5ea9aff2788108ef981f2b256199b284509031b17f90
+2026-07-26T04:49:36.1394488Z (node:2395) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-07-26T04:49:37.1809509Z Received 213909504 of 294387322 (72.7%), 204.0 MBs/sec
+2026-07-26T04:49:37.5153754Z Received 294387322 of 294387322 (100.0%), 210.3 MBs/sec
+2026-07-26T04:49:37.5155790Z Cache Size: ~281 MB (294387322 B)
+2026-07-26T04:49:37.5247692Z [command]/usr/bin/tar -xf /home/runner/work/_temp/0525035c-2f44-4e0d-a2de-0d1b61b10b4d/cache.tzst -P -C /home/runner/work/luft/luft --use-compress-program unzstd
+2026-07-26T04:49:39.1294814Z Cache restored successfully
+2026-07-26T04:49:39.1512749Z Cache restored from key: Linux-cargo-build-target-269a62b240227a5b6a0a5ea9aff2788108ef981f2b256199b284509031b17f90
+2026-07-26T04:49:39.1679523Z ##[group]Run cargo fmt -- --check
+2026-07-26T04:49:39.1679869Z [36;1mcargo fmt -- --check[0m
+2026-07-26T04:49:39.1727486Z shell: /usr/bin/bash -e {0}
+2026-07-26T04:49:39.1727773Z env:
+2026-07-26T04:49:39.1727995Z   CARGO_TERM_COLOR: always
+2026-07-26T04:49:39.1728508Z   RUST_BACKTRACE: 1
+2026-07-26T04:49:39.1728762Z   CARGO_HOME: /home/runner/.cargo
+2026-07-26T04:49:39.1729046Z   CARGO_INCREMENTAL: 0
+2026-07-26T04:49:39.1729285Z ##[endgroup]
+2026-07-26T04:49:41.2660502Z ##[group]Run cargo clippy --workspace --all-targets -- -D warnings
+2026-07-26T04:49:41.2661042Z [36;1mcargo clippy --workspace --all-targets -- -D warnings[0m
+2026-07-26T04:49:41.2706235Z shell: /usr/bin/bash -e {0}
+2026-07-26T04:49:41.2706524Z env:
+2026-07-26T04:49:41.2706748Z   CARGO_TERM_COLOR: always
+2026-07-26T04:49:41.2707017Z   RUST_BACKTRACE: 1
+2026-07-26T04:49:41.2707265Z   CARGO_HOME: /home/runner/.cargo
+2026-07-26T04:49:41.2707569Z   CARGO_INCREMENTAL: 0
+2026-07-26T04:49:41.2707819Z ##[endgroup]
+2026-07-26T04:49:41.5268633Z [1m[92m Downloading[0m crates ...
+2026-07-26T04:49:41.5624292Z [1m[92m  Downloaded[0m serial_test_derive v3.5.0
+2026-07-26T04:49:41.5641862Z [1m[92m  Downloaded[0m serial_test v3.5.0
+2026-07-26T04:49:41.7145358Z [1m[92m   Compiling[0m proc-macro2 v1.0.107
+2026-07-26T04:49:41.7146198Z [1m[92m   Compiling[0m quote v1.0.47
+2026-07-26T04:49:41.7149065Z [1m[92m   Compiling[0m unicode-ident v1.0.24
+2026-07-26T04:49:41.7149981Z [1m[92m   Compiling[0m libc v0.2.189
+2026-07-26T04:49:42.0369864Z [1m[92m   Compiling[0m serde_core v1.0.229
+2026-07-26T04:49:42.2669981Z [1m[92m   Compiling[0m autocfg v1.5.1
+2026-07-26T04:49:42.2703494Z [1m[92m   Compiling[0m serde v1.0.229
+2026-07-26T04:49:42.4314555Z [1m[92m    Checking[0m pin-project-lite v0.2.17
+2026-07-26T04:49:42.4565347Z [1m[92m    Checking[0m cfg-if v1.0.4
+2026-07-26T04:49:42.4739299Z [1m[92m    Checking[0m memchr v2.8.3
+2026-07-26T04:49:42.6849098Z [1m[92m    Checking[0m futures-core v0.3.33
+2026-07-26T04:49:42.8109690Z [1m[92m   Compiling[0m parking_lot_core v0.9.12
+2026-07-26T04:49:43.1208908Z [1m[92m   Compiling[0m syn v2.0.119
+2026-07-26T04:49:43.1359323Z [1m[92m   Compiling[0m syn v3.0.3
+2026-07-26T04:49:43.2739512Z [1m[92m    Checking[0m smallvec v1.15.2
+2026-07-26T04:49:43.3989742Z [1m[92m   Compiling[0m num-traits v0.2.19
+2026-07-26T04:49:43.4939495Z [1m[92m   Compiling[0m version_check v0.9.5
+2026-07-26T04:49:43.7366686Z [1m[92m    Checking[0m futures-io v0.3.33
+2026-07-26T04:49:43.8780066Z [1m[92m   Compiling[0m zmij v1.0.23
+2026-07-26T04:49:44.6590083Z [1m[92m   Compiling[0m icu_properties_data v2.2.0
+2026-07-26T04:49:44.6743559Z [1m[92m    Checking[0m scopeguard v1.2.0
+2026-07-26T04:49:44.7150310Z [1m[92m   Compiling[0m icu_normalizer_data v2.2.0
+2026-07-26T04:49:44.7944966Z [1m[92m    Checking[0m lock_api v0.4.14
+2026-07-26T04:49:44.8369222Z [1m[92m    Checking[0m itoa v1.0.18
+2026-07-26T04:49:44.9210303Z [1m[92m   Compiling[0m shlex v2.0.1
+2026-07-26T04:49:45.0086709Z [1m[92m   Compiling[0m find-msvc-tools v0.1.9
+2026-07-26T04:49:45.0459710Z [1m[92m    Checking[0m stable_deref_trait v1.2.1
+2026-07-26T04:49:45.0706246Z [1m[92m    Checking[0m futures-sink v0.3.33
+2026-07-26T04:49:45.1165990Z [1m[92m    Checking[0m once_cell v1.21.4
+2026-07-26T04:49:45.1900434Z [1m[92m   Compiling[0m cc v1.4.0
+2026-07-26T04:49:45.3569700Z [1m[92m    Checking[0m slab v0.4.12
+2026-07-26T04:49:45.4500027Z [1m[92m    Checking[0m errno v0.3.14
+2026-07-26T04:49:45.5039935Z [1m[92m   Compiling[0m crossbeam-utils v0.8.22
+2026-07-26T04:49:45.6730664Z [1m[92m    Checking[0m signal-hook-registry v1.4.8
+2026-07-26T04:49:45.7779702Z [1m[92m    Checking[0m parking_lot v0.12.5
+2026-07-26T04:49:45.9077670Z [1m[92m    Checking[0m futures-channel v0.3.33
+2026-07-26T04:49:46.0721316Z [1m[92m    Checking[0m bytes v1.12.1
+2026-07-26T04:49:46.7629604Z [1m[92m   Compiling[0m synstructure v0.13.2
+2026-07-26T04:49:47.1399767Z [1m[92m   Compiling[0m serde_derive v1.0.229
+2026-07-26T04:49:47.2890053Z [1m[92m    Checking[0m futures-task v0.3.33
+2026-07-26T04:49:47.3883419Z [1m[92m   Compiling[0m serde_json v1.0.151
+2026-07-26T04:49:47.7624890Z [1m[92m    Checking[0m mio v1.2.2
+2026-07-26T04:49:48.0089687Z [1m[92m    Checking[0m socket2 v0.6.5
+2026-07-26T04:49:48.2539934Z [1m[92m    Checking[0m litemap v0.8.2
+2026-07-26T04:49:48.3729510Z [1m[92m    Checking[0m writeable v0.6.3
+2026-07-26T04:49:48.4340443Z [1m[92m   Compiling[0m zerofrom-derive v0.1.7
+2026-07-26T04:49:48.4759804Z [1m[92m   Compiling[0m yoke-derive v0.8.2
+2026-07-26T04:49:48.8869582Z [1m[92m   Compiling[0m zerovec-derive v0.11.3
+2026-07-26T04:49:49.5349449Z [1m[92m   Compiling[0m displaydoc v0.2.6
+2026-07-26T04:49:49.5499309Z [1m[92m    Checking[0m zerofrom v0.1.8
+2026-07-26T04:49:49.6161377Z [1m[92m    Checking[0m yoke v0.8.3
+2026-07-26T04:49:49.7416053Z [1m[92m   Compiling[0m tracing-attributes v0.1.31
+2026-07-26T04:49:49.8494979Z [1m[92m    Checking[0m zerovec v0.11.6
+2026-07-26T04:49:50.1060077Z [1m[92m   Compiling[0m futures-macro v0.3.33
+2026-07-26T04:49:50.3869814Z [1m[92m    Checking[0m tinystr v0.8.3
+2026-07-26T04:49:50.4989805Z [1m[92m   Compiling[0m tokio-macros v2.7.1
+2026-07-26T04:49:50.5089665Z [1m[92m    Checking[0m log v0.4.33
+2026-07-26T04:49:50.6109992Z [1m[92m    Checking[0m icu_locale_core v2.2.0
+2026-07-26T04:49:50.7429679Z [1m[92m    Checking[0m futures-util v0.3.33
+2026-07-26T04:49:50.8620232Z [1m[92m    Checking[0m potential_utf v0.1.5
+2026-07-26T04:49:50.9189645Z [1m[92m    Checking[0m zerotrie v0.2.4
+2026-07-26T04:49:50.9991359Z [1m[92m    Checking[0m tokio v1.53.1
+2026-07-26T04:49:51.3349624Z [1m[92m    Checking[0m tracing-core v0.1.36
+2026-07-26T04:49:51.6180680Z [1m[92m    Checking[0m bitflags v2.13.1
+2026-07-26T04:49:51.7359605Z [1m[92m    Checking[0m utf8_iter v1.0.4
+2026-07-26T04:49:51.8009461Z [1m[92m    Checking[0m icu_collections v2.2.0
+2026-07-26T04:49:51.8045350Z [1m[92m    Checking[0m icu_provider v2.2.0
+2026-07-26T04:49:52.0899809Z [1m[92m   Compiling[0m pkg-config v0.3.33
+2026-07-26T04:49:52.5109584Z [1m[92m    Checking[0m tracing v0.1.44
+2026-07-26T04:49:52.6659637Z [1m[92m   Compiling[0m generic-array v0.14.7
+2026-07-26T04:49:52.7635947Z [1m[92m   Compiling[0m heck v0.5.0
+2026-07-26T04:49:52.7789918Z [1m[92m    Checking[0m percent-encoding v2.3.2
+2026-07-26T04:49:52.9399718Z [1m[92m    Checking[0m icu_properties v2.2.0
+2026-07-26T04:49:52.9968689Z [1m[92m    Checking[0m icu_normalizer v2.2.0
+2026-07-26T04:49:53.0469664Z [1m[92m   Compiling[0m either v1.17.0
+2026-07-26T04:49:53.2539588Z [1m[92m   Compiling[0m getrandom v0.4.3
+2026-07-26T04:49:53.2579309Z [1m[92m    Checking[0m fastrand v2.5.0
+2026-07-26T04:49:53.3829485Z [1m[92m    Checking[0m iana-time-zone v0.1.65
+2026-07-26T04:49:53.3940457Z [1m[92m    Checking[0m form_urlencoded v1.2.2
+2026-07-26T04:49:53.4509901Z [1m[92m    Checking[0m chrono v0.4.45
+2026-07-26T04:49:53.4594136Z [1m[92m    Checking[0m parking v2.2.1
+2026-07-26T04:49:53.5170108Z [1m[92m   Compiling[0m rustix v1.1.4
+2026-07-26T04:49:53.8861738Z [1m[92m    Checking[0m idna_adapter v1.2.2
+2026-07-26T04:49:53.9390189Z [1m[92m    Checking[0m idna v1.1.0
+2026-07-26T04:49:54.1305912Z [1m[92m    Checking[0m http v1.4.2
+2026-07-26T04:49:54.3873455Z [1m[92m    Checking[0m linux-raw-sys v0.12.1
+2026-07-26T04:49:54.4450073Z [1m[92m    Checking[0m atomic-waker v1.1.2
+2026-07-26T04:49:54.4839465Z [1m[92m    Checking[0m base64 v0.22.1
+2026-07-26T04:49:54.6019582Z [1m[92m    Checking[0m url v2.5.8
+2026-07-26T04:49:54.6829787Z [1m[92m    Checking[0m futures-executor v0.3.33
+2026-07-26T04:49:54.7230696Z [1m[92m    Checking[0m http-body v1.1.0
+2026-07-26T04:49:54.7549608Z [1m[92m    Checking[0m concurrent-queue v2.5.0
+2026-07-26T04:49:54.7979634Z [1m[92m    Checking[0m num-integer v0.1.46
+2026-07-26T04:49:54.8771394Z [1m[92m    Checking[0m aho-corasick v1.1.4
+2026-07-26T04:49:54.9756306Z [1m[92m    Checking[0m regex-syntax v0.8.11
+2026-07-26T04:49:54.9949661Z [1m[92m   Compiling[0m httparse v1.10.1
+2026-07-26T04:49:55.2202534Z [1m[92m    Checking[0m uuid v1.24.0
+2026-07-26T04:49:55.5179702Z [1m[92m   Compiling[0m anyhow v1.0.104
+2026-07-26T04:49:55.6750157Z [1m[92m    Checking[0m ryu v1.0.23
+2026-07-26T04:49:55.7553779Z [1m[92m    Checking[0m tower-service v0.3.3
+2026-07-26T04:49:55.7969621Z [1m[92m    Checking[0m utf8parse v0.2.2
+2026-07-26T04:49:55.8390241Z [1m[92m    Checking[0m try-lock v0.2.5
+2026-07-26T04:49:55.8761738Z [1m[92m    Checking[0m want v0.3.1
+2026-07-26T04:49:55.9360008Z [1m[92m    Checking[0m anstyle-parse v1.0.0
+2026-07-26T04:49:55.9977086Z [1m[92m    Checking[0m serde_urlencoded v0.7.1
+2026-07-26T04:49:56.1680022Z [1m[92m    Checking[0m num-bigint v0.4.8
+2026-07-26T04:49:56.3109658Z [1m[92m    Checking[0m regex-automata v0.4.16
+2026-07-26T04:49:56.3656925Z [1m[92m    Checking[0m sync_wrapper v1.0.2
+2026-07-26T04:49:57.2659540Z [1m[92m   Compiling[0m zerocopy v0.8.55
+2026-07-26T04:49:57.4989730Z [1m[92m    Checking[0m anstyle-query v1.1.5
+2026-07-26T04:49:57.5359591Z [1m[92m    Checking[0m anstyle v1.0.14
+2026-07-26T04:49:57.5859626Z [1m[92m   Compiling[0m getrandom v0.3.4
+2026-07-26T04:49:57.7700269Z [1m[92m    Checking[0m lazy_static v1.5.0
+2026-07-26T04:49:57.7879591Z [1m[92m    Checking[0m colorchoice v1.0.5
+2026-07-26T04:49:57.8289568Z [1m[92m    Checking[0m tower-layer v0.3.3
+2026-07-26T04:49:57.9380048Z [1m[92m    Checking[0m is_terminal_polyfill v1.70.2
+2026-07-26T04:49:57.9640198Z [1m[92m    Checking[0m tower v0.5.3
+2026-07-26T04:49:57.9779466Z [1m[92m    Checking[0m anstream v1.0.0
+2026-07-26T04:49:58.4379621Z [1m[92m    Checking[0m num-rational v0.4.2
+2026-07-26T04:49:58.4439490Z [1m[92m    Checking[0m hyper v1.11.0
+2026-07-26T04:49:58.6901399Z [1m[92m    Checking[0m num-iter v0.1.46
+2026-07-26T04:49:58.7459701Z [1m[92m    Checking[0m event-listener v5.4.1
+2026-07-26T04:49:59.0161384Z [1m[92m    Checking[0m num-complex v0.4.6
+2026-07-26T04:49:59.0799999Z [1m[92m   Compiling[0m ahash v0.8.12
+2026-07-26T04:49:59.1042982Z [1m[92m   Compiling[0m thiserror v2.0.19
+2026-07-26T04:49:59.1899788Z [1m[92m   Compiling[0m num-conv v0.2.2
+2026-07-26T04:49:59.2650092Z [1m[92m    Checking[0m bit-vec v0.6.3
+2026-07-26T04:49:59.3200434Z [1m[92m    Checking[0m strsim v0.11.1
+2026-07-26T04:49:59.3799605Z [1m[92m   Compiling[0m time-core v0.1.9
+2026-07-26T04:49:59.3889766Z [1m[92m    Checking[0m ipnet v2.12.0
+2026-07-26T04:49:59.4250099Z [1m[92m    Checking[0m clap_lex v1.1.0
+2026-07-26T04:49:59.5593168Z [1m[92m   Compiling[0m time-macros v0.2.32
+2026-07-26T04:49:59.5739807Z [1m[92m    Checking[0m hyper-util v0.1.20
+2026-07-26T04:49:59.6914029Z [1m[92m    Checking[0m clap_builder v4.6.2
+2026-07-26T04:50:00.6879516Z [1m[92m    Checking[0m bit-set v0.5.3
+2026-07-26T04:50:00.7740174Z [1m[92m    Checking[0m num v0.4.3
+2026-07-26T04:50:01.1280417Z [1m[92m    Checking[0m tower-http v0.6.11
+2026-07-26T04:50:01.3359644Z [1m[92m    Checking[0m http-body-util v0.1.4
+2026-07-26T04:50:01.3692965Z [1m[92m    Checking[0m futures v0.3.33
+2026-07-26T04:50:01.4034449Z [1m[92m   Compiling[0m clap_derive v4.6.4
+2026-07-26T04:50:01.5279875Z [1m[92m   Compiling[0m thiserror-impl v2.0.19
+2026-07-26T04:50:01.6019516Z [1m[92m   Compiling[0m blake3 v1.8.5
+2026-07-26T04:50:01.7939487Z [1m[92m    Checking[0m nom v8.0.0
+2026-07-26T04:50:02.6470377Z [1m[92m   Compiling[0m ident_case v1.0.1
+2026-07-26T04:50:02.8550194Z [1m[92m    Checking[0m tinyvec_macros v0.1.1
+2026-07-26T04:50:02.8829545Z [1m[92m    Checking[0m deranged v0.5.8
+2026-07-26T04:50:03.2009848Z [1m[92m   Compiling[0m env_home v0.1.0
+2026-07-26T04:50:03.8719577Z [1m[92m   Compiling[0m thiserror v1.0.69
+2026-07-26T04:50:03.9080061Z [1m[92m   Compiling[0m typenum v1.20.1
+2026-07-26T04:50:04.2669519Z [1m[92m    Checking[0m powerfmt v0.2.0
+2026-07-26T04:50:04.3609481Z [1m[92m    Checking[0m iso8601 v0.6.5
+2026-07-26T04:50:04.4448589Z [1m[92m    Checking[0m time v0.3.54
+2026-07-26T04:50:04.5929654Z [1m[92m   Compiling[0m which v7.0.3
+2026-07-26T04:50:04.7369873Z [1m[92m    Checking[0m clap v4.6.4
+2026-07-26T04:50:04.7689617Z [1m[92m    Checking[0m tinyvec v1.12.0
+2026-07-26T04:50:05.0556353Z [1m[92m    Checking[0m reqwest v0.12.28
+2026-07-26T04:50:05.0626731Z [1m[92m    Checking[0m fraction v0.15.4
+2026-07-26T04:50:05.4242267Z [1m[92m    Checking[0m fancy-regex v0.13.0
+2026-07-26T04:50:05.6680459Z [1m[92m    Checking[0m regex v1.13.1
+2026-07-26T04:50:05.7161120Z [1m[92m    Checking[0m tokio-util v0.7.19
+2026-07-26T04:50:05.7275965Z [1m[92m   Compiling[0m thiserror-impl v1.0.69
+2026-07-26T04:50:06.0337625Z [1m[92m    Checking[0m hashbrown v0.14.5
+2026-07-26T04:50:06.1063998Z [1m[92m    Checking[0m constant_time_eq v0.4.2
+2026-07-26T04:50:06.1936371Z [1m[92m    Checking[0m arrayvec v0.7.8
+2026-07-26T04:50:06.2901542Z [1m[92m    Checking[0m num-cmp v0.1.0
+2026-07-26T04:50:06.4243152Z [1m[92m    Checking[0m bytecount v0.6.9
+2026-07-26T04:50:06.4839603Z [1m[92m    Checking[0m arrayref v0.3.9
+2026-07-26T04:50:06.4893860Z [1m[92m    Checking[0m cpufeatures v0.3.0
+2026-07-26T04:50:06.5049917Z [1m[92m   Compiling[0m vcpkg v0.2.15
+2026-07-26T04:50:06.6254210Z [1m[92m    Checking[0m jsonschema v0.18.3
+2026-07-26T04:50:06.6454351Z [1m[92m    Checking[0m dashmap v6.2.1
+2026-07-26T04:50:06.9483202Z [1m[92m   Compiling[0m libsqlite3-sys v0.30.1
+2026-07-26T04:50:07.5530212Z [1m[92m    Checking[0m unicode-normalization v0.1.25
+2026-07-26T04:50:07.7714751Z [1m[92m   Compiling[0m luajit-src v210.5.12+a4f56a4
+2026-07-26T04:50:07.8746736Z [1m[92m    Checking[0m tempfile v3.27.0
+2026-07-26T04:50:07.9286949Z [1m[92m   Compiling[0m async-trait v0.1.91
+2026-07-26T04:50:07.9739773Z [1m[92m   Compiling[0m lua-src v547.0.0
+2026-07-26T04:50:08.2476772Z [1m[92m   Compiling[0m typeid v1.0.3
+2026-07-26T04:50:08.4564172Z [1m[92m   Compiling[0m unicode-xid v0.2.6
+2026-07-26T04:50:08.5019658Z [1m[92m    Checking[0m equivalent v1.0.2
+2026-07-26T04:50:08.6128672Z [1m[92m   Compiling[0m mlua-sys v0.6.8
+2026-07-26T04:50:09.4169724Z [1m[92m   Compiling[0m crypto-common v0.1.7
+2026-07-26T04:50:09.4404312Z [1m[92m   Compiling[0m block-buffer v0.10.4
+2026-07-26T04:50:09.9173905Z [1m[92m   Compiling[0m erased-serde v0.4.10
+2026-07-26T04:50:09.9176813Z [1m[92m   Compiling[0m foldhash v0.1.5
+2026-07-26T04:50:10.1213984Z [1m[92m   Compiling[0m rustversion v1.0.23
+2026-07-26T04:50:10.3529641Z [1m[92m   Compiling[0m allocator-api2 v0.2.21
+2026-07-26T04:50:10.5532959Z [1m[92m   Compiling[0m hashbrown v0.15.5
+2026-07-26T04:50:12.9830006Z [1m[92m    Checking[0m luft-core v0.3.2 (/home/runner/work/luft/luft/crates/luft-core)
+2026-07-26T04:50:13.7418377Z [1m[92m   Compiling[0m digest v0.10.7
+2026-07-26T04:50:14.9669739Z [1m[92m   Compiling[0m serde_derive_internals v0.29.1
+2026-07-26T04:50:15.7839768Z [1m[92m    Checking[0m ordered-float v2.10.1
+2026-07-26T04:50:15.9703481Z [1m[92m   Compiling[0m hashbrown v0.17.1
+2026-07-26T04:50:16.4849574Z [1m[92m   Compiling[0m crc-catalog v2.5.0
+2026-07-26T04:50:16.5499694Z [1m[92m   Compiling[0m cpufeatures v0.2.17
+2026-07-26T04:50:16.6790241Z [1m[92m    Checking[0m rustc-hash v2.1.3
+2026-07-26T04:50:16.8539654Z [1m[92m    Checking[0m indexmap v2.14.0
+2026-07-26T04:50:16.9679630Z [1m[92m   Compiling[0m sha2 v0.10.9
+2026-07-26T04:50:17.2910077Z [1m[92m   Compiling[0m crc v3.4.0
+2026-07-26T04:50:18.0369954Z [1m[92m    Checking[0m serde-value v0.7.0
+2026-07-26T04:50:18.5689600Z [1m[92m   Compiling[0m tokio-stream v0.1.19
+2026-07-26T04:50:18.9370103Z [1m[92m   Compiling[0m futures-intrusive v0.5.0
+2026-07-26T04:50:19.1829668Z [1m[92m   Compiling[0m hashlink v0.10.0
+2026-07-26T04:50:19.4167491Z [1m[92m   Compiling[0m crossbeam-queue v0.3.13
+2026-07-26T04:50:19.4339604Z [1m[92m   Compiling[0m spin v0.9.9
+2026-07-26T04:50:19.5330308Z [1m[92m    Checking[0m bstr v1.13.0
+2026-07-26T04:50:19.5593461Z [1m[92m   Compiling[0m ref-cast v1.0.26
+2026-07-26T04:50:20.0870192Z [1m[92m   Compiling[0m sqlx-core v0.8.6
+2026-07-26T04:50:20.3269509Z [1m[92m   Compiling[0m flume v0.11.1
+2026-07-26T04:50:20.6566344Z [1m[92m   Compiling[0m atoi v2.0.0
+2026-07-26T04:50:20.7319886Z [1m[92m   Compiling[0m darling_core v0.23.0
+2026-07-26T04:50:20.8949971Z [1m[92m    Checking[0m futures-lite v2.6.1
+2026-07-26T04:50:21.5250370Z [1m[92m   Compiling[0m ref-cast-impl v1.0.26
+2026-07-26T04:50:21.8992677Z [1m[92m    Checking[0m dyn-clone v1.0.20
+2026-07-26T04:50:21.9989553Z [1m[92m    Checking[0m konst_macro_rules v0.2.19
+2026-07-26T04:50:22.0929636Z [1m[92m    Checking[0m konst v0.2.20
+2026-07-26T04:50:22.5609634Z [1m[92m   Compiling[0m sqlx-sqlite v0.8.6
+2026-07-26T04:50:23.4059525Z [1m[92m   Compiling[0m schemars_derive v1.2.1
+2026-07-26T04:50:23.5039617Z [1m[92m   Compiling[0m darling_macro v0.23.0
+2026-07-26T04:50:23.7350567Z [1m[92m   Compiling[0m const_format_proc_macros v0.2.34
+2026-07-26T04:50:24.3920454Z [1m[92m    Checking[0m event-listener-strategy v0.5.4
+2026-07-26T04:50:24.8806359Z [1m[92m    Checking[0m mlua v0.10.5
+2026-07-26T04:50:25.0160128Z [1m[92m   Compiling[0m async-io v2.6.0
+2026-07-26T04:50:25.1180056Z [1m[92m   Compiling[0m unicode-segmentation v1.13.3
+2026-07-26T04:50:25.1449941Z [1m[92m   Compiling[0m dotenvy v0.15.7
+2026-07-26T04:50:25.3759944Z [1m[92m   Compiling[0m hex v0.4.3
+2026-07-26T04:50:25.4801691Z [1m[92m   Compiling[0m convert_case v0.10.0
+2026-07-26T04:50:25.5939534Z [1m[92m   Compiling[0m sqlx-macros-core v0.8.6
+2026-07-26T04:50:26.3109977Z [1m[92m    Checking[0m schemars v1.2.1
+2026-07-26T04:50:26.7359999Z [1m[92m    Checking[0m luft-runtime v0.3.2 (/home/runner/work/luft/luft/crates/luft-runtime)
+2026-07-26T04:50:26.9199773Z [1m[92m    Checking[0m const_format v0.2.36
+2026-07-26T04:50:27.1039696Z [1m[92m   Compiling[0m darling v0.23.0
+2026-07-26T04:50:27.1469720Z [1m[92m    Checking[0m polling v3.11.0
+2026-07-26T04:50:27.3189580Z [1m[92m   Compiling[0m serde_with_macros v3.21.0
+2026-07-26T04:50:27.5149716Z [1m[92m   Compiling[0m sqlx-macros v0.8.6
+2026-07-26T04:50:28.2239859Z [1m[92m   Compiling[0m derive_more-impl v2.1.1
+2026-07-26T04:50:28.3675689Z [1m[92m    Checking[0m async-channel v2.5.0
+2026-07-26T04:50:28.3970067Z [1m[92m   Compiling[0m strum_macros v0.28.0
+2026-07-26T04:50:28.4740112Z [1m[92m   Compiling[0m pin-project-internal v1.1.13
+2026-07-26T04:50:28.4990148Z [1m[92m    Checking[0m async-task v4.7.1
+2026-07-26T04:50:28.6269534Z [1m[92m    Checking[0m sqlx v0.8.6
+2026-07-26T04:50:28.6929852Z [1m[92m    Checking[0m luft-planner v0.3.2 (/home/runner/work/luft/luft/crates/luft-planner)
+2026-07-26T04:50:29.3459453Z [1m[92m    Checking[0m serde_with v3.21.0
+2026-07-26T04:50:29.4239689Z [1m[92m    Checking[0m pin-project v1.1.13
+2026-07-26T04:50:29.4562749Z [1m[92m    Checking[0m async-signal v0.2.14
+2026-07-26T04:50:29.5509594Z [1m[92m    Checking[0m async-lock v3.4.2
+2026-07-26T04:50:29.9089672Z [1m[92m    Checking[0m piper v0.2.5
+2026-07-26T04:50:29.9491677Z [1m[92m    Checking[0m derive_more v2.1.1
+2026-07-26T04:50:29.9889512Z [1m[92m    Checking[0m fixedbitset v0.5.7
+2026-07-26T04:50:29.9975808Z [1m[92m    Checking[0m blocking v1.6.2
+2026-07-26T04:50:30.1189626Z [1m[92m    Checking[0m async-process v2.5.0
+2026-07-26T04:50:30.1332399Z [1m[92m    Checking[0m futures-concurrency v7.7.1
+2026-07-26T04:50:30.3020041Z [1m[92m    Checking[0m jsonrpcmsg v0.1.2
+2026-07-26T04:50:30.3659562Z [1m[92m    Checking[0m strum v0.28.0
+2026-07-26T04:50:30.4119970Z [1m[92m   Compiling[0m agent-client-protocol-derive v0.14.0
+2026-07-26T04:50:30.4970318Z [1m[92m   Compiling[0m fnv v1.0.7
+2026-07-26T04:50:30.5419659Z [1m[92m    Checking[0m shell-words v1.1.1
+2026-07-26T04:50:30.5949842Z [1m[92m   Compiling[0m darling_core v0.21.3
+2026-07-26T04:50:30.6999997Z [1m[92m    Checking[0m luft-storage v0.3.2 (/home/runner/work/luft/luft/crates/luft-storage)
+2026-07-26T04:50:31.1616694Z [1m[92m    Checking[0m agent-client-protocol-schema v0.13.6
+2026-07-26T04:50:31.5309669Z [1m[92m   Compiling[0m paste v1.0.15
+2026-07-26T04:50:31.6869722Z [1m[92m    Checking[0m luft-service v0.3.2 (/home/runner/work/luft/luft/crates/luft-service)
+2026-07-26T04:50:32.1660238Z [1m[92m   Compiling[0m schemars v0.8.22
+2026-07-26T04:50:32.6539976Z [1m[92m   Compiling[0m schemars_derive v0.8.22
+2026-07-26T04:50:33.3670480Z [1m[92m   Compiling[0m darling_macro v0.21.3
+2026-07-26T04:50:33.5960404Z [1m[92m   Compiling[0m darling v0.21.3
+2026-07-26T04:50:33.6370065Z [1m[92m   Compiling[0m rmcp-macros v0.6.4
+2026-07-26T04:50:33.7757278Z [1m[92m   Compiling[0m rustix v0.38.44
+2026-07-26T04:50:34.0099730Z [1m[92m   Compiling[0m portable-atomic v1.14.0
+2026-07-26T04:50:34.3010100Z [1m[92m    Checking[0m rmcp v0.6.4
+2026-07-26T04:50:34.4619850Z [1m[92m    Checking[0m serde_spanned v0.6.9
+2026-07-26T04:50:34.5299793Z [1m[92m    Checking[0m toml_datetime v0.6.11
+2026-07-26T04:50:34.6569505Z [1m[92m    Checking[0m linux-raw-sys v0.4.15
+2026-07-26T04:50:34.9009732Z [1m[92m    Checking[0m toml_write v0.1.2
+2026-07-26T04:50:35.0069754Z [1m[92m    Checking[0m unicode-width v0.2.2
+2026-07-26T04:50:35.0959791Z [1m[92m    Checking[0m winnow v0.7.15
+2026-07-26T04:50:35.1699543Z [1m[92m    Checking[0m option-ext v0.2.0
+2026-07-26T04:50:35.2029767Z [1m[92m    Checking[0m dirs-sys v0.4.1
+2026-07-26T04:50:35.2609448Z [1m[92m    Checking[0m console v0.15.11
+2026-07-26T04:50:36.1894366Z [1m[92m    Checking[0m agent-client-protocol v0.14.0
+2026-07-26T04:50:36.4833083Z [1m[92m    Checking[0m toml_edit v0.22.27
+2026-07-26T04:50:37.4518078Z [1m[92m    Checking[0m matchers v0.2.0
+2026-07-26T04:50:37.5109253Z [1m[92m    Checking[0m sharded-slab v0.1.7
+2026-07-26T04:50:37.7750061Z [1m[92m    Checking[0m tracing-log v0.2.0
+2026-07-26T04:50:37.8210259Z [1m[92m    Checking[0m thread_local v1.1.10
+2026-07-26T04:50:37.8560635Z [1m[92m    Checking[0m nu-ansi-term v0.50.3
+2026-07-26T04:50:37.9059741Z [1m[92m    Checking[0m number_prefix v0.4.0
+2026-07-26T04:50:37.9194224Z [1m[92m    Checking[0m home v0.5.12
+2026-07-26T04:50:37.9601049Z [1m[92m    Checking[0m which v6.0.3
+2026-07-26T04:50:37.9669472Z [1m[92m    Checking[0m indicatif v0.17.11
+2026-07-26T04:50:38.0190290Z [1m[92m    Checking[0m tracing-subscriber v0.3.23
+2026-07-26T04:50:38.0715292Z [1m[92m    Checking[0m toml v0.8.23
+2026-07-26T04:50:38.2609990Z [1m[92m    Checking[0m dirs v5.0.1
+2026-07-26T04:50:38.2999750Z [1m[92m   Compiling[0m serial_test_derive v3.5.0
+2026-07-26T04:50:38.7729777Z [1m[92m    Checking[0m serial_test v3.5.0
+2026-07-26T04:50:38.9020670Z [1m[92m    Checking[0m luft-adapters v0.3.2 (/home/runner/work/luft/luft/crates/luft-adapters)
+2026-07-26T04:50:39.8279919Z [1m[92m    Checking[0m luft v0.3.2 (/home/runner/work/luft/luft/crates/luft)
+2026-07-26T04:50:40.0430448Z [1m[92m    Checking[0m luft-mcp v0.3.2 (/home/runner/work/luft/luft/crates/luft-mcp)
+2026-07-26T04:50:41.0010369Z [1m[92m    Checking[0m luft-cli v0.3.2 (/home/runner/work/luft/luft/crates/luft-cli)
+2026-07-26T04:50:45.0639844Z [1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 1m 03s
+2026-07-26T04:50:45.1028455Z ##[group]Run cargo test --workspace
+2026-07-26T04:50:45.1029372Z [36;1mcargo test --workspace[0m
+2026-07-26T04:50:45.1072408Z shell: /usr/bin/bash -e {0}
+2026-07-26T04:50:45.1072664Z env:
+2026-07-26T04:50:45.1072874Z   CARGO_TERM_COLOR: always
+2026-07-26T04:50:45.1073119Z   RUST_BACKTRACE: 1
+2026-07-26T04:50:45.1073345Z   CARGO_HOME: /home/runner/.cargo
+2026-07-26T04:50:45.1073617Z   CARGO_INCREMENTAL: 0
+2026-07-26T04:50:45.1073860Z ##[endgroup]
+2026-07-26T04:50:45.4300116Z [1m[92m   Compiling[0m libc v0.2.189
+2026-07-26T04:50:45.4300881Z [1m[92m   Compiling[0m pin-project-lite v0.2.17
+2026-07-26T04:50:45.4339053Z [1m[92m   Compiling[0m cfg-if v1.0.4
+2026-07-26T04:50:45.4378984Z [1m[92m   Compiling[0m futures-core v0.3.33
+2026-07-26T04:50:45.4882518Z [1m[92m   Compiling[0m memchr v2.8.3
+2026-07-26T04:50:45.4932076Z [1m[92m   Compiling[0m serde_core v1.0.229
+2026-07-26T04:50:45.7734246Z [1m[92m   Compiling[0m smallvec v1.15.2
+2026-07-26T04:50:45.9689617Z [1m[92m   Compiling[0m serde v1.0.229
+2026-07-26T04:50:45.9939210Z [1m[92m   Compiling[0m futures-io v0.3.33
+2026-07-26T04:50:46.2694450Z [1m[92m   Compiling[0m num-traits v0.2.19
+2026-07-26T04:50:46.4730909Z [1m[92m   Compiling[0m scopeguard v1.2.0
+2026-07-26T04:50:46.5239670Z [1m[92m   Compiling[0m lock_api v0.4.14
+2026-07-26T04:50:46.8089707Z [1m[92m   Compiling[0m itoa v1.0.18
+2026-07-26T04:50:47.0359737Z [1m[92m   Compiling[0m parking_lot_core v0.9.12
+2026-07-26T04:50:47.0449370Z [1m[92m   Compiling[0m zerofrom v0.1.8
+2026-07-26T04:50:47.1350040Z [1m[92m   Compiling[0m futures-sink v0.3.33
+2026-07-26T04:50:47.1929971Z [1m[92m   Compiling[0m stable_deref_trait v1.2.1
+2026-07-26T04:50:47.2290165Z [1m[92m   Compiling[0m once_cell v1.21.4
+2026-07-26T04:50:47.2459420Z [1m[92m   Compiling[0m yoke v0.8.3
+2026-07-26T04:50:47.3869588Z [1m[92m   Compiling[0m slab v0.4.12
+2026-07-26T04:50:47.4139438Z [1m[92m   Compiling[0m errno v0.3.14
+2026-07-26T04:50:47.5176463Z [1m[92m   Compiling[0m crossbeam-utils v0.8.22
+2026-07-26T04:50:47.5269296Z [1m[92m   Compiling[0m parking_lot v0.12.5
+2026-07-26T04:50:47.5314348Z [1m[92m   Compiling[0m signal-hook-registry v1.4.8
+2026-07-26T04:50:47.6543190Z [1m[92m   Compiling[0m zerovec v0.11.6
+2026-07-26T04:50:47.9910466Z [1m[92m   Compiling[0m futures-channel v0.3.33
+2026-07-26T04:50:48.2030125Z [1m[92m   Compiling[0m bytes v1.12.1
+2026-07-26T04:50:48.6229580Z [1m[92m   Compiling[0m futures-task v0.3.33
+2026-07-26T04:50:48.7350118Z [1m[92m   Compiling[0m futures-util v0.3.33
+2026-07-26T04:50:48.9979548Z [1m[92m   Compiling[0m zmij v1.0.23
+2026-07-26T04:50:49.0239374Z [1m[92m   Compiling[0m serde_json v1.0.151
+2026-07-26T04:50:49.3259973Z [1m[92m   Compiling[0m tinystr v0.8.3
+2026-07-26T04:50:49.4829578Z [1m[92m   Compiling[0m socket2 v0.6.5
+2026-07-26T04:50:49.4959499Z [1m[92m   Compiling[0m mio v1.2.2
+2026-07-26T04:50:50.3569712Z [1m[92m   Compiling[0m litemap v0.8.2
+2026-07-26T04:50:50.5090247Z [1m[92m   Compiling[0m writeable v0.6.3
+2026-07-26T04:50:50.6669566Z [1m[92m   Compiling[0m log v0.4.33
+2026-07-26T04:50:50.6999978Z [1m[92m   Compiling[0m icu_locale_core v2.2.0
+2026-07-26T04:50:50.8679673Z [1m[92m   Compiling[0m tokio v1.53.1
+2026-07-26T04:50:51.7989603Z [1m[92m   Compiling[0m potential_utf v0.1.5
+2026-07-26T04:50:51.9087520Z [1m[92m   Compiling[0m zerotrie v0.2.4
+2026-07-26T04:50:52.3579600Z [1m[92m   Compiling[0m tracing-core v0.1.36
+2026-07-26T04:50:53.4889493Z [1m[92m   Compiling[0m utf8_iter v1.0.4
+2026-07-26T04:50:53.6039567Z [1m[92m   Compiling[0m bitflags v2.13.1
+2026-07-26T04:50:53.9889740Z [1m[92m   Compiling[0m icu_collections v2.2.0
+2026-07-26T04:50:54.2909424Z [1m[92m   Compiling[0m icu_provider v2.2.0
+2026-07-26T04:50:54.3052832Z [1m[92m   Compiling[0m icu_normalizer_data v2.2.0
+2026-07-26T04:50:54.3106177Z [1m[92m   Compiling[0m icu_properties_data v2.2.0
+2026-07-26T04:50:54.8609783Z [1m[92m   Compiling[0m tracing v0.1.44
+2026-07-26T04:50:54.8737057Z [1m[92m   Compiling[0m percent-encoding v2.3.2
+2026-07-26T04:50:54.8950180Z [1m[92m   Compiling[0m icu_normalizer v2.2.0
+2026-07-26T04:50:55.1120156Z [1m[92m   Compiling[0m icu_properties v2.2.0
+2026-07-26T04:50:55.2470166Z [1m[92m   Compiling[0m fastrand v2.5.0
+2026-07-26T04:50:55.4870584Z [1m[92m   Compiling[0m iana-time-zone v0.1.65
+2026-07-26T04:50:56.1059829Z [1m[92m   Compiling[0m getrandom v0.4.3
+2026-07-26T04:50:56.1149252Z [1m[92m   Compiling[0m chrono v0.4.45
+2026-07-26T04:50:56.5369671Z [1m[92m   Compiling[0m idna_adapter v1.2.2
+2026-07-26T04:50:56.6099878Z [1m[92m   Compiling[0m form_urlencoded v1.2.2
+2026-07-26T04:50:56.8590175Z [1m[92m   Compiling[0m either v1.17.0
+2026-07-26T04:50:57.0389645Z [1m[92m   Compiling[0m rustix v1.1.4
+2026-07-26T04:50:57.0800372Z [1m[92m   Compiling[0m idna v1.1.0
+2026-07-26T04:50:57.2839539Z [1m[92m   Compiling[0m http v1.4.2
+2026-07-26T04:50:59.6009662Z [1m[92m   Compiling[0m base64 v0.22.1
+2026-07-26T04:51:00.1120309Z [1m[92m   Compiling[0m atomic-waker v1.1.2
+2026-07-26T04:51:00.1769671Z [1m[92m   Compiling[0m linux-raw-sys v0.12.1
+2026-07-26T04:51:00.5639538Z [1m[92m   Compiling[0m http-body v1.1.0
+2026-07-26T04:51:00.6240005Z [1m[92m   Compiling[0m url v2.5.8
+2026-07-26T04:51:00.6678849Z [1m[92m   Compiling[0m futures-executor v0.3.33
+2026-07-26T04:51:01.1671631Z [1m[92m   Compiling[0m num-integer v0.1.46
+2026-07-26T04:51:01.7479610Z [1m[92m   Compiling[0m aho-corasick v1.1.4
+2026-07-26T04:51:03.7060002Z [1m[92m   Compiling[0m regex-syntax v0.8.11
+2026-07-26T04:51:07.5829632Z [1m[92m   Compiling[0m httparse v1.10.1
+2026-07-26T04:51:07.6029572Z [1m[92m   Compiling[0m regex-automata v0.4.16
+2026-07-26T04:51:09.3885784Z [1m[92m   Compiling[0m uuid v1.24.0
+2026-07-26T04:51:10.2019732Z [1m[92m   Compiling[0m ryu v1.0.23
+2026-07-26T04:51:10.5899417Z [1m[92m   Compiling[0m parking v2.2.1
+2026-07-26T04:51:10.7119657Z [1m[92m   Compiling[0m utf8parse v0.2.2
+2026-07-26T04:51:10.7630063Z [1m[92m   Compiling[0m try-lock v0.2.5
+2026-07-26T04:51:10.8179596Z [1m[92m   Compiling[0m tower-service v0.3.3
+2026-07-26T04:51:10.8519670Z [1m[92m   Compiling[0m anyhow v1.0.104
+2026-07-26T04:51:10.8609580Z [1m[92m   Compiling[0m want v0.3.1
+2026-07-26T04:51:10.8992699Z [1m[92m   Compiling[0m anstyle-parse v1.0.0
+2026-07-26T04:51:10.9779938Z [1m[92m   Compiling[0m serde_urlencoded v0.7.1
+2026-07-26T04:51:11.2249757Z [1m[92m   Compiling[0m num-bigint v0.4.8
+2026-07-26T04:51:11.6009953Z [1m[92m   Compiling[0m sync_wrapper v1.0.2
+2026-07-26T04:51:11.6599719Z [1m[92m   Compiling[0m anstyle-query v1.1.5
+2026-07-26T04:51:11.7250062Z [1m[92m   Compiling[0m is_terminal_polyfill v1.70.2
+2026-07-26T04:51:11.7719609Z [1m[92m   Compiling[0m tower-layer v0.3.3
+2026-07-26T04:51:11.9539641Z [1m[92m   Compiling[0m lazy_static v1.5.0
+2026-07-26T04:51:12.0009539Z [1m[92m   Compiling[0m colorchoice v1.0.5
+2026-07-26T04:51:12.0599724Z [1m[92m   Compiling[0m anstyle v1.0.14
+2026-07-26T04:51:12.2700083Z [1m[92m   Compiling[0m anstream v1.0.0
+2026-07-26T04:51:12.7100166Z [1m[92m   Compiling[0m getrandom v0.3.4
+2026-07-26T04:51:12.7199603Z [1m[92m   Compiling[0m tower v0.5.3
+2026-07-26T04:51:13.2899898Z [1m[92m   Compiling[0m num-rational v0.4.2
+2026-07-26T04:51:13.6029643Z [1m[92m   Compiling[0m zerocopy v0.8.55
+2026-07-26T04:51:13.6229713Z [1m[92m   Compiling[0m hyper v1.11.0
+2026-07-26T04:51:15.7820441Z [1m[92m   Compiling[0m num-iter v0.1.46
+2026-07-26T04:51:15.8462357Z [1m[92m   Compiling[0m concurrent-queue v2.5.0
+2026-07-26T04:51:16.0139486Z [1m[92m   Compiling[0m num-complex v0.4.6
+2026-07-26T04:51:16.5484716Z [1m[92m   Compiling[0m ipnet v2.12.0
+2026-07-26T04:51:17.2089553Z [1m[92m   Compiling[0m bit-vec v0.6.3
+2026-07-26T04:51:17.4570327Z [1m[92m   Compiling[0m strsim v0.11.1
+2026-07-26T04:51:17.5494102Z [1m[92m   Compiling[0m clap_lex v1.1.0
+2026-07-26T04:51:17.8879709Z [1m[92m   Compiling[0m clap_builder v4.6.2
+2026-07-26T04:51:18.1452326Z [1m[92m   Compiling[0m bit-set v0.5.3
+2026-07-26T04:51:18.2701165Z [1m[92m   Compiling[0m hyper-util v0.1.20
+2026-07-26T04:51:18.3179685Z [1m[92m   Compiling[0m ahash v0.8.12
+2026-07-26T04:51:18.3399228Z [1m[92m   Compiling[0m num v0.4.3
+2026-07-26T04:51:21.8350113Z [1m[92m   Compiling[0m tower-http v0.6.11
+2026-07-26T04:51:22.5449980Z [1m[92m   Compiling[0m futures v0.3.33
+2026-07-26T04:51:22.5739638Z [1m[92m   Compiling[0m http-body-util v0.1.4
+2026-07-26T04:51:22.8149597Z [1m[92m   Compiling[0m nom v8.0.0
+2026-07-26T04:51:22.8280170Z [1m[92m   Compiling[0m deranged v0.5.8
+2026-07-26T04:51:24.0689832Z [1m[92m   Compiling[0m tinyvec_macros v0.1.1
+2026-07-26T04:51:24.1040359Z [1m[92m   Compiling[0m powerfmt v0.2.0
+2026-07-26T04:51:24.3269645Z [1m[92m   Compiling[0m num-conv v0.2.2
+2026-07-26T04:51:24.4469620Z [1m[92m   Compiling[0m time-core v0.1.9
+2026-07-26T04:51:24.6139649Z [1m[92m   Compiling[0m time v0.3.54
+2026-07-26T04:51:26.2959963Z [1m[92m   Compiling[0m iso8601 v0.6.5
+2026-07-26T04:51:27.3689507Z [1m[92m   Compiling[0m tinyvec v1.12.0
+2026-07-26T04:51:27.8049722Z [1m[92m   Compiling[0m thiserror v1.0.69
+2026-07-26T04:51:27.8469694Z [1m[92m   Compiling[0m blake3 v1.8.5
+2026-07-26T04:51:28.0849595Z [1m[92m   Compiling[0m reqwest v0.12.28
+2026-07-26T04:51:28.2999899Z [1m[92m   Compiling[0m clap v4.6.4
+2026-07-26T04:51:28.5819093Z [1m[92m   Compiling[0m fraction v0.15.4
+2026-07-26T04:51:29.2649689Z [1m[92m   Compiling[0m fancy-regex v0.13.0
+2026-07-26T04:51:29.7649796Z [1m[92m   Compiling[0m regex v1.13.1
+2026-07-26T04:51:31.6009696Z [1m[92m   Compiling[0m tokio-util v0.7.19
+2026-07-26T04:51:32.6519495Z [1m[92m   Compiling[0m hashbrown v0.14.5
+2026-07-26T04:51:33.3590185Z [1m[92m   Compiling[0m arrayvec v0.7.8
+2026-07-26T04:51:33.5669676Z [1m[92m   Compiling[0m bytecount v0.6.9
+2026-07-26T04:51:33.8469572Z [1m[92m   Compiling[0m num-cmp v0.1.0
+2026-07-26T04:51:34.1334709Z [1m[92m   Compiling[0m cpufeatures v0.3.0
+2026-07-26T04:51:34.1520377Z [1m[92m   Compiling[0m constant_time_eq v0.4.2
+2026-07-26T04:51:34.1670075Z [1m[92m   Compiling[0m arrayref v0.3.9
+2026-07-26T04:51:34.1726056Z [1m[92m   Compiling[0m jsonschema v0.18.3
+2026-07-26T04:51:34.2019535Z [1m[92m   Compiling[0m dashmap v6.2.1
+2026-07-26T04:51:35.3749921Z [1m[92m   Compiling[0m unicode-normalization v0.1.25
+2026-07-26T04:51:35.7899754Z [1m[92m   Compiling[0m event-listener v5.4.1
+2026-07-26T04:51:35.9460111Z [1m[92m   Compiling[0m tempfile v3.27.0
+2026-07-26T04:51:36.0299593Z [1m[92m   Compiling[0m which v7.0.3
+2026-07-26T04:51:36.1756575Z [1m[92m   Compiling[0m luajit-src v210.5.12+a4f56a4
+2026-07-26T04:51:36.3946218Z [1m[92m   Compiling[0m luft-core v0.3.2 (/home/runner/work/luft/luft/crates/luft-core)
+2026-07-26T04:51:37.1349810Z [1m[92m   Compiling[0m generic-array v0.14.7
+2026-07-26T04:51:37.1739581Z [1m[92m   Compiling[0m typeid v1.0.3
+2026-07-26T04:51:37.8759577Z [1m[92m   Compiling[0m mlua-sys v0.6.8
+2026-07-26T04:51:38.0329626Z [1m[92m   Compiling[0m erased-serde v0.4.10
+2026-07-26T04:51:46.7819669Z [1m[92m   Compiling[0m ordered-float v2.10.1
+2026-07-26T04:51:47.0429606Z [1m[92m   Compiling[0m rustc-hash v2.1.3
+2026-07-26T04:51:47.1149542Z [1m[92m   Compiling[0m typenum v1.20.1
+2026-07-26T04:51:47.8659648Z [1m[92m   Compiling[0m equivalent v1.0.2
+2026-07-26T04:51:48.7210155Z [1m[92m   Compiling[0m serde-value v0.7.0
+2026-07-26T04:51:49.5630191Z [1m[92m   Compiling[0m block-buffer v0.10.4
+2026-07-26T04:51:49.6450341Z [1m[92m   Compiling[0m crypto-common v0.1.7
+2026-07-26T04:51:50.5269722Z [1m[92m   Compiling[0m bstr v1.13.0
+2026-07-26T04:51:51.3059559Z [1m[92m   Compiling[0m mlua v0.10.5
+2026-07-26T04:51:55.2709650Z [1m[92m   Compiling[0m digest v0.10.7
+2026-07-26T04:51:55.7739979Z [1m[92m   Compiling[0m thiserror v2.0.19
+2026-07-26T04:51:55.8179796Z [1m[92m   Compiling[0m hashbrown v0.17.1
+2026-07-26T04:51:55.9981868Z [1m[92m   Compiling[0m sha2 v0.10.9
+2026-07-26T04:51:56.5409803Z [1m[92m   Compiling[0m indexmap v2.14.0
+2026-07-26T04:51:57.0599746Z [1m[92m   Compiling[0m futures-intrusive v0.5.0
+2026-07-26T04:51:57.4059611Z [1m[92m   Compiling[0m tokio-stream v0.1.19
+2026-07-26T04:51:57.6469690Z [1m[92m   Compiling[0m libsqlite3-sys v0.30.1
+2026-07-26T04:51:57.8259709Z [1m[92m   Compiling[0m allocator-api2 v0.2.21
+2026-07-26T04:51:58.1769462Z [1m[92m   Compiling[0m foldhash v0.1.5
+2026-07-26T04:51:58.3509598Z [1m[92m   Compiling[0m konst_macro_rules v0.2.19
+2026-07-26T04:51:58.4840067Z [1m[92m   Compiling[0m konst v0.2.20
+2026-07-26T04:51:59.0689799Z [1m[92m   Compiling[0m hashbrown v0.15.5
+2026-07-26T04:51:59.7709666Z [1m[92m   Compiling[0m sqlx-core v0.8.6
+2026-07-26T04:52:01.9020018Z [1m[92m   Compiling[0m luft-runtime v0.3.2 (/home/runner/work/luft/luft/crates/luft-runtime)
+2026-07-26T04:52:02.0057501Z [1m[92m   Compiling[0m crc-catalog v2.5.0
+2026-07-26T04:52:02.0689802Z [1m[92m   Compiling[0m cpufeatures v0.2.17
+2026-07-26T04:52:02.1089925Z [1m[92m   Compiling[0m ref-cast v1.0.26
+2026-07-26T04:52:03.1509610Z [1m[92m   Compiling[0m crc v3.4.0
+2026-07-26T04:52:03.3056767Z [1m[92m   Compiling[0m const_format v0.2.36
+2026-07-26T04:52:03.5109673Z [1m[92m   Compiling[0m hashlink v0.10.0
+2026-07-26T04:52:03.8240018Z [1m[92m   Compiling[0m futures-lite v2.6.1
+2026-07-26T04:52:05.1229670Z [1m[92m   Compiling[0m crossbeam-queue v0.3.13
+2026-07-26T04:52:05.8199602Z [1m[92m   Compiling[0m spin v0.9.9
+2026-07-26T04:52:05.9779731Z [1m[92m   Compiling[0m dyn-clone v1.0.20
+2026-07-26T04:52:06.1078620Z [1m[92m   Compiling[0m flume v0.11.1
+2026-07-26T04:52:06.8629576Z [1m[92m   Compiling[0m sqlx-sqlite v0.8.6
+2026-07-26T04:52:10.3759538Z [1m[92m   Compiling[0m sqlx-macros-core v0.8.6
+2026-07-26T04:52:11.4909817Z [1m[92m   Compiling[0m event-listener-strategy v0.5.4
+2026-07-26T04:52:11.5699608Z [1m[92m   Compiling[0m atoi v2.0.0
+2026-07-26T04:52:11.6599616Z [1m[92m   Compiling[0m async-io v2.6.0
+2026-07-26T04:52:11.6989535Z [1m[92m   Compiling[0m schemars v1.2.1
+2026-07-26T04:52:11.8229583Z [1m[92m   Compiling[0m sqlx-macros v0.8.6
+2026-07-26T04:52:12.6750226Z [1m[92m   Compiling[0m luft-planner v0.3.2 (/home/runner/work/luft/luft/crates/luft-planner)
+2026-07-26T04:52:17.2879479Z [1m[92m   Compiling[0m polling v3.11.0
+2026-07-26T04:52:18.7640103Z [1m[92m   Compiling[0m async-channel v2.5.0
+2026-07-26T04:52:18.9350179Z [1m[92m   Compiling[0m async-task v4.7.1
+2026-07-26T04:52:19.1119666Z [1m[92m   Compiling[0m pin-project v1.1.13
+2026-07-26T04:52:19.1539941Z [1m[92m   Compiling[0m strum v0.28.0
+2026-07-26T04:52:19.2170374Z [1m[92m   Compiling[0m derive_more v2.1.1
+2026-07-26T04:52:19.2589675Z [1m[92m   Compiling[0m serde_with v3.21.0
+2026-07-26T04:52:19.3260106Z [1m[92m   Compiling[0m async-signal v0.2.14
+2026-07-26T04:52:19.6379933Z [1m[92m   Compiling[0m async-lock v3.4.2
+2026-07-26T04:52:19.7729960Z [1m[92m   Compiling[0m piper v0.2.5
+2026-07-26T04:52:20.0460127Z [1m[92m   Compiling[0m fixedbitset v0.5.7
+2026-07-26T04:52:20.3910326Z [1m[92m   Compiling[0m futures-concurrency v7.7.1
+2026-07-26T04:52:20.5629656Z [1m[92m   Compiling[0m async-process v2.5.0
+2026-07-26T04:52:22.9140249Z [1m[92m   Compiling[0m agent-client-protocol-schema v0.13.6
+2026-07-26T04:52:23.0652072Z [1m[92m   Compiling[0m blocking v1.6.2
+2026-07-26T04:52:23.5979625Z [1m[92m   Compiling[0m jsonrpcmsg v0.1.2
+2026-07-26T04:52:26.0379874Z [1m[92m   Compiling[0m shell-words v1.1.1
+2026-07-26T04:52:26.2760063Z [1m[92m   Compiling[0m schemars v0.8.22
+2026-07-26T04:52:26.2819145Z [1m[92m   Compiling[0m rmcp-macros v0.6.4
+2026-07-26T04:52:28.7189712Z [1m[92m   Compiling[0m rmcp v0.6.4
+2026-07-26T04:52:33.3388891Z [1m[92m   Compiling[0m agent-client-protocol v0.14.0
+2026-07-26T04:52:36.0469626Z [1m[92m   Compiling[0m rustix v0.38.44
+2026-07-26T04:52:36.0829545Z [1m[92m   Compiling[0m portable-atomic v1.14.0
+2026-07-26T04:52:36.0969655Z [1m[92m   Compiling[0m toml_datetime v0.6.11
+2026-07-26T04:52:36.4641184Z [1m[92m   Compiling[0m luft-adapters v0.3.2 (/home/runner/work/luft/luft/crates/luft-adapters)
+2026-07-26T04:52:39.1110020Z [1m[92m   Compiling[0m serde_spanned v0.6.9
+2026-07-26T04:52:39.1939292Z [1m[92m   Compiling[0m unicode-width v0.2.2
+2026-07-26T04:52:39.4024598Z [1m[92m   Compiling[0m winnow v0.7.15
+2026-07-26T04:52:41.6789645Z [1m[92m   Compiling[0m linux-raw-sys v0.4.15
+2026-07-26T04:52:41.9633312Z [1m[92m   Compiling[0m toml_write v0.1.2
+2026-07-26T04:52:42.1479484Z [1m[92m   Compiling[0m option-ext v0.2.0
+2026-07-26T04:52:42.1929664Z [1m[92m   Compiling[0m dirs-sys v0.4.1
+2026-07-26T04:52:42.7889783Z [1m[92m   Compiling[0m toml_edit v0.22.27
+2026-07-26T04:52:56.0360024Z [1m[92m   Compiling[0m console v0.15.11
+2026-07-26T04:52:58.7150147Z [1m[92m   Compiling[0m sharded-slab v0.1.7
+2026-07-26T04:52:58.9469932Z [1m[92m   Compiling[0m matchers v0.2.0
+2026-07-26T04:52:59.0339973Z [1m[92m   Compiling[0m tracing-log v0.2.0
+2026-07-26T04:52:59.3180023Z [1m[92m   Compiling[0m thread_local v1.1.10
+2026-07-26T04:52:59.3819811Z [1m[92m   Compiling[0m nu-ansi-term v0.50.3
+2026-07-26T04:52:59.5740297Z [1m[92m   Compiling[0m home v0.5.12
+2026-07-26T04:52:59.6717153Z [1m[92m   Compiling[0m number_prefix v0.4.0
+2026-07-26T04:52:59.7590024Z [1m[92m   Compiling[0m indicatif v0.17.11
+2026-07-26T04:52:59.9400078Z [1m[92m   Compiling[0m which v6.0.3
+2026-07-26T04:53:00.5019588Z [1m[92m   Compiling[0m tracing-subscriber v0.3.23
+2026-07-26T04:53:03.8439681Z [1m[92m   Compiling[0m toml v0.8.23
+2026-07-26T04:53:07.7028757Z [1m[92m   Compiling[0m sqlx v0.8.6
+2026-07-26T04:53:07.7860076Z [1m[92m   Compiling[0m luft-storage v0.3.2 (/home/runner/work/luft/luft/crates/luft-storage)
+2026-07-26T04:53:08.4430179Z [1m[92m   Compiling[0m dirs v5.0.1
+2026-07-26T04:53:08.5599644Z [1m[92m   Compiling[0m serial_test v3.5.0
+2026-07-26T04:53:09.3726448Z [1m[92m   Compiling[0m luft-service v0.3.2 (/home/runner/work/luft/luft/crates/luft-service)
+2026-07-26T04:53:12.8339729Z [1m[92m   Compiling[0m luft v0.3.2 (/home/runner/work/luft/luft/crates/luft)
+2026-07-26T04:53:19.7941612Z [1m[92m   Compiling[0m luft-mcp v0.3.2 (/home/runner/work/luft/luft/crates/luft-mcp)
+2026-07-26T04:53:41.0809737Z [1m[92m   Compiling[0m luft-cli v0.3.2 (/home/runner/work/luft/luft/crates/luft-cli)
+2026-07-26T04:55:16.4841998Z [1m[92m    Finished[0m `test` profile [optimized + debuginfo] target(s) in 4m 31s
+2026-07-26T04:55:16.5153819Z [1m[92m     Running[0m unittests src/lib.rs (target/debug/deps/luft-d8c6d9b97e66b924)
+2026-07-26T04:55:16.5172843Z 
+2026-07-26T04:55:16.5173100Z running 72 tests
+2026-07-26T04:55:16.5185719Z test builder::tests::backend_setter_constructs_a_luft ... ok
+2026-07-26T04:55:16.5186313Z test builder::tests::backend_arc_setter_accepts_an_existing_arc ... ok
+2026-07-26T04:55:16.5186767Z test builder::tests::base_dir_is_idempotently_created ... ok
+2026-07-26T04:55:16.5188751Z test builder::tests::build_returns_io_error_when_base_dir_is_uncreatable ... ok
+2026-07-26T04:55:16.5189637Z test builder::tests::base_dir_setter_overrides_default ... ok
+2026-07-26T04:55:16.5191868Z test builder::tests::builder_clone_is_not_a_concern ... ok
+2026-07-26T04:55:16.5192597Z test builder::tests::default_impl_matches_new ... ok
+2026-07-26T04:55:16.5195534Z test builder::tests::concurrency_setter_is_accepted ... ok
+2026-07-26T04:55:16.5196267Z test builder::tests::exec_limits_setter_is_accepted ... ok
+2026-07-26T04:55:16.5197025Z test builder::tests::luft_factory_returns_a_fresh_builder ... ok
+2026-07-26T04:55:16.5197917Z test builder::tests::mock_backend_satisfies_agent_backend_bound_on_builder ... ok
+2026-07-26T04:55:16.5199068Z test builder::tests::list_is_empty_on_a_fresh_base_dir ... ok
+2026-07-26T04:55:16.5199968Z test builder::tests::new_builder_has_no_backend ... ok
+2026-07-26T04:55:16.5200717Z test builder::tests::own_backend_type_can_replace_mock ... ok
+2026-07-26T04:55:16.5203242Z test builder::tests::planner_config_setter_is_accepted ... ok
+2026-07-26T04:55:16.5212804Z test builder::tests::query_methods_return_typed_results ... ok
+2026-07-26T04:55:16.5347906Z test builder::tests::into_future_consumes_handle_and_returns_outcome ... ok
+2026-07-26T04:55:16.5352800Z test builder::tests::cancel_token_signals_before_run_starts ... ok
+2026-07-26T04:55:16.5358613Z test builder::tests::run_outcome_is_publicly_constructible_for_borrowers ... ok
+2026-07-26T04:55:16.5368852Z test builder::tests::run_handle_run_dir_name_is_non_empty_and_marks_a_directory ... ok
+2026-07-26T04:55:16.5386947Z test builder::tests::run_handle_run_id_is_pinned ... ok
+2026-07-26T04:55:16.5493872Z test builder::tests::run_script_simple_trivial ... ok
+2026-07-26T04:55:16.5497253Z test builder::tests::setter_chain_is_composable ... ok
+2026-07-26T04:55:16.5502049Z test builder::tests::run_script_via_run_handle_works ... ok
+2026-07-26T04:55:16.5528748Z test builder::tests::run_script_with_chained_lua_expressions ... ok
+2026-07-26T04:55:16.5594333Z test builder::tests::start_script_yields_a_handle_with_subscribe ... ok
+2026-07-26T04:55:16.5595404Z test error::tests::display_backend_not_configured ... ok
+2026-07-26T04:55:16.5596225Z test error::tests::display_backend_transparent ... ok
+2026-07-26T04:55:16.5601517Z test builder::tests::run_handle_status_is_unique_per_invocation ... ok
+2026-07-26T04:55:16.5602665Z test error::tests::display_io_transparent ... ok
+2026-07-26T04:55:16.5605703Z test error::tests::display_not_resumable ... ok
+2026-07-26T04:55:16.5606539Z test error::tests::display_run_not_found ... ok
+2026-07-26T04:55:16.5607947Z test error::tests::display_scheduler_transparent ... ok
+2026-07-26T04:55:16.5609540Z test error::tests::display_script_transparent ... ok
+2026-07-26T04:55:16.5617638Z test error::tests::display_storage_transparent ... ok
+2026-07-26T04:55:16.5619000Z test builder::tests::with_concurrency_produces_a_working_independent_luft ... ok
+2026-07-26T04:55:16.5620009Z test error::tests::from_backend_error ... ok
+2026-07-26T04:55:16.5621117Z test error::tests::from_io_error ... ok
+2026-07-26T04:55:16.5621898Z test error::tests::from_scheduler_error ... ok
+2026-07-26T04:55:16.5622664Z test error::tests::from_script_error ... ok
+2026-07-26T04:55:16.5623417Z test error::tests::from_storage_error ... ok
+2026-07-26T04:55:16.5624285Z test error::tests::pattern_match_backend_not_configured ... ok
+2026-07-26T04:55:16.5625476Z test error::tests::pattern_match_run_not_found ... ok
+2026-07-26T04:55:16.6286524Z test error::tests::display_other_transparent ... ok
+2026-07-26T04:55:16.6287103Z test error::tests::debug_format_all_variants ... ok
+2026-07-26T04:55:16.6287786Z test error::tests::from_anyhow_error ... ok
+2026-07-26T04:55:16.6288813Z test error::tests::question_mark_propagates_anyhow ... ok
+2026-07-26T04:55:16.6289589Z test error::tests::question_mark_propagates_io ... ok
+2026-07-26T04:55:16.6290273Z test error::tests::question_mark_propagates_script ... ok
+2026-07-26T04:55:16.6290819Z test prelude::tests::prelude_backend_trait_is_in_scope ... ok
+2026-07-26T04:55:16.6291439Z test prelude::tests::prelude_facade_types_resolve ... ok
+2026-07-26T04:55:16.6292272Z test prelude::tests::prelude_default_constructible_types_resolve ... ok
+2026-07-26T04:55:16.6293089Z test prelude::tests::prelude_contract_ids_are_distinct_newtypes ... ok
+2026-07-26T04:55:16.6293989Z test prelude::tests::prelude_is_usable_via_wildcard_import ... ok
+2026-07-26T04:55:16.6294861Z test prelude::tests::prelude_non_default_types_are_resolvable ... ok
+2026-07-26T04:55:16.6295682Z test prelude::tests::prelude_planner_defaults_are_sane ... ok
+2026-07-26T04:55:16.6296495Z test prelude::tests::prelude_re_exports_match_underlying_crates ... ok
+2026-07-26T04:55:16.6297504Z test tests::adapters_crate_alias_resolves ... ok
+2026-07-26T04:55:16.6298835Z test prelude::tests::prelude_runtime_function_can_via_wildcard ... ok
+2026-07-26T04:55:16.6299572Z test tests::builder_type_is_a_named_struct ... ok
+2026-07-26T04:55:16.6300144Z test tests::core_crate_alias_resolves ... ok
+2026-07-26T04:55:16.6301007Z test tests::prelude_module_is_public ... ok
+2026-07-26T04:55:16.6301673Z test tests::mock_gen_is_reexported_under_testing_feature ... ok
+2026-07-26T04:55:16.6302469Z test prelude::tests::prelude_runtime_function_accepts_and_rejects ... ok
+2026-07-26T04:55:16.6303199Z test tests::planner_crate_alias_resolves ... ok
+2026-07-26T04:55:16.6303783Z test tests::reexported_ids_can_be_constructed ... ok
+2026-07-26T04:55:16.6304390Z test tests::run_outcome_type_is_a_named_struct ... ok
+2026-07-26T04:55:16.6304976Z test tests::reexported_error_is_usable ... ok
+2026-07-26T04:55:16.6305582Z test tests::reexported_top_level_types_are_distinct ... ok
+2026-07-26T04:55:16.6306205Z test tests::runtime_crate_alias_resolves ... ok
+2026-07-26T04:55:16.6306748Z test tests::service_crate_alias_resolves ... ok
+2026-07-26T04:55:16.6307287Z test tests::storage_crate_alias_resolves ... ok
+2026-07-26T04:55:16.6307640Z 
+2026-07-26T04:55:16.6307920Z test result: ok. 72 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+2026-07-26T04:55:16.6308550Z 
+2026-07-26T04:55:16.6363917Z [1m[92m     Running[0m unittests src/lib.rs (target/debug/deps/luft_adapters-a1af8162d8dd9930)
+2026-07-26T04:55:16.6376903Z 
+2026-07-26T04:55:16.6377077Z running 83 tests
+2026-07-26T04:55:16.6385964Z test acp_adapter::tests::handle_watchdog_post_submission_preserves_existing_stop ... ok
+2026-07-26T04:55:16.6389713Z test acp_adapter::tests::handle_watchdog_channel_closed_returns_timeout_error ... ok
+2026-07-26T04:55:16.6390342Z test acp_adapter::tests::handle_watchdog_post_submission_synthesizes_end_turn ... ok
+2026-07-26T04:55:16.6390905Z test acp_adapter::tests::handle_watchdog_pre_idle_returns_timeout_error ... ok
+2026-07-26T04:55:16.6391409Z test acp_adapter::tests::idle_watchdog_fires_after_activity_stops ... ok
+2026-07-26T04:55:16.6901083Z test acp_adapter::tests::idle_watchdog_fires_after_idle_period ... ok
+2026-07-26T04:55:16.7111140Z test acp_adapter::tests::idle_watchdog_enters_post_mode_after_submit_signal ... ok
+2026-07-26T04:55:16.7112430Z test acp_adapter::tests::is_connection_closed_matches_documented_substrings ... ok
+2026-07-26T04:55:16.7113742Z test acp_adapter::tests::session_new_request_serializes_mcp_server ... ok
+2026-07-26T04:55:16.7114915Z test acp_adapter::tests::session_new_request_without_schema_has_empty_mcp_servers ... ok
+2026-07-26T04:55:16.7116208Z test acp_adapter::tests::skill_dirs_for_known_backends ... ok
+2026-07-26T04:55:16.7117217Z test acp_adapter::tests::skill_dirs_for_unknown_backend_is_empty ... ok
+2026-07-26T04:55:16.7119003Z test acp_adapter::tests::stop_reason_as_str_cancelled_contains_cancel ... ok
+2026-07-26T04:55:16.7120177Z test acp_adapter::tests::stop_reason_as_str_end_turn_matches_constant ... ok
+2026-07-26T04:55:16.7121450Z test acp_adapter::tests::stop_reason_as_str_other_variants_stable ... ok
+2026-07-26T04:55:16.7124772Z test acp_adapter::tests::write_skill_to_dir_writes_main_and_references ... ok
+2026-07-26T04:55:16.7132916Z test acp_adapter::tests::write_workflow_skill_files_content_matches_workflow_skill ... ok
+2026-07-26T04:55:16.7140141Z test acp_adapter::tests::write_workflow_skill_files_only_writes_the_matching_backend_dir ... ok
+2026-07-26T04:55:16.7141672Z test acp_adapter::tests::write_workflow_skill_files_unknown_backend_writes_nothing ... ok
+2026-07-26T04:55:16.7142710Z test permission::tests::accept_edits_gate ... ok
+2026-07-26T04:55:16.7143684Z test permission::tests::allow_commands_prefix ... ok
+2026-07-26T04:55:16.7144377Z test permission::tests::deny_list_blocks_command ... ok
+2026-07-26T04:55:16.7145172Z test permission::tests::deny_list_wins_over_file_edit ... ok
+2026-07-26T04:55:16.7146278Z test permission::tests::extract_inputs_command ... ok
+2026-07-26T04:55:16.7147658Z test permission::tests::extract_inputs_command_and_mcp_tool ... ok
+2026-07-26T04:55:16.7148996Z test permission::tests::extract_inputs_file_edit_via_kind ... ok
+2026-07-26T04:55:16.7150108Z test permission::tests::extract_inputs_file_edit_via_write_text_file ... ok
+2026-07-26T04:55:16.7151208Z test permission::tests::extract_inputs_mcp_tool ... ok
+2026-07-26T04:55:16.7152054Z test permission::tests::extract_inputs_mcp_tool_via_name ... ok
+2026-07-26T04:55:16.7153015Z test permission::tests::extract_inputs_no_mcp_without_keyword ... ok
+2026-07-26T04:55:16.7155372Z test permission::tests::find_str_field_in_array ... ok
+2026-07-26T04:55:16.7156139Z test permission::tests::find_str_field_missing_key ... ok
+2026-07-26T04:55:16.7157590Z test permission::tests::find_str_field_nested_object ... ok
+2026-07-26T04:55:16.7158636Z test permission::tests::find_str_field_scalar ... ok
+2026-07-26T04:55:16.7160654Z test permission::tests::mcp_tool_allowed ... ok
+2026-07-26T04:55:16.7161484Z test permission::tests::mcp_tool_denied ... ok
+2026-07-26T04:55:16.7163267Z test permission::tests::no_policy_approves ... ok
+2026-07-26T04:55:16.7163731Z test permission::tests::parse_inputs_from_json_null_fallback ... ok
+2026-07-26T04:55:16.7165124Z test permission::tests::structured_output_approved ... ok
+2026-07-26T04:55:16.7165991Z test permission::tests::unknown_request_with_policy_and_no_rules_denies ... ok
+2026-07-26T04:55:16.7166814Z test permission::tests::unknown_request_with_policy_denies ... ok
+2026-07-26T04:55:16.7167825Z test result_collector::tests::cancelled_stop_reason_maps ... ok
+2026-07-26T04:55:16.7168854Z test result_collector::tests::end_turn_is_ok_text_output ... ok
+2026-07-26T04:55:16.7171057Z test result_collector::tests::findings_become_output ... ok
+2026-07-26T04:55:16.7171942Z test result_collector::tests::json_in_code_block_becomes_output ... ok
+2026-07-26T04:55:16.7172976Z test result_collector::tests::plain_text_still_wraps_as_text ... ok
+2026-07-26T04:55:16.7174631Z test result_collector::tests::raw_json_object_becomes_output ... ok
+2026-07-26T04:55:16.7175468Z test result_collector::tests::structured_output_takes_precedence ... ok
+2026-07-26T04:55:16.7176327Z test tests::register_does_not_add_other_ids ... ok
+2026-07-26T04:55:16.7177063Z test tests::register_overwrites_existing ... ok
+2026-07-26T04:55:16.7178340Z test tests::registers_backend_with_opencode_id ... ok
+2026-07-26T04:55:16.7179190Z test update_mapper::tests::accumulator_accumulates_text ... ok
+2026-07-26T04:55:16.7179970Z test update_mapper::tests::accumulator_is_default ... ok
+2026-07-26T04:55:16.7181738Z test update_mapper::tests::accumulator_tracks_tokens ... ok
+2026-07-26T04:55:16.7182955Z test update_mapper::tests::emit_sends_correct_agent_event ... ok
+2026-07-26T04:55:16.7184377Z test update_mapper::tests::extract_usage_alternative_field_names ... ok
+2026-07-26T04:55:16.7185660Z test update_mapper::tests::extract_usage_from_json_with_tokens ... ok
+2026-07-26T04:55:16.7186540Z test update_mapper::tests::extract_usage_reads_input_output ... ok
+2026-07-26T04:55:16.7187531Z test update_mapper::tests::extract_usage_zero_tokens_returns_none ... ok
+2026-07-26T04:55:16.7190283Z test update_mapper::tests::find_object_nested ... ok
+2026-07-26T04:55:16.7191028Z test update_mapper::tests::find_object_no_match ... ok
+2026-07-26T04:55:16.7191757Z test update_mapper::tests::find_object_top_level ... ok
+2026-07-26T04:55:16.7192441Z test update_mapper::tests::find_str_array_search ... ok
+2026-07-26T04:55:16.7193088Z test update_mapper::tests::find_str_digs_nested ... ok
+2026-07-26T04:55:16.7193742Z test update_mapper::tests::find_str_no_match ... ok
+2026-07-26T04:55:16.7194529Z test update_mapper::tests::find_str_top_level ... ok
+2026-07-26T04:55:16.7196027Z test update_mapper::tests::handle_update_emit_raw_captures_dropped_variant ... ok
+2026-07-26T04:55:16.7196972Z test update_mapper::tests::handle_update_emit_raw_false_emits_no_acp_raw ... ok
+2026-07-26T04:55:16.7197872Z test update_mapper::tests::handle_update_emit_raw_prepends_acp_raw ... ok
+2026-07-26T04:55:16.7199205Z test update_mapper::tests::handle_update_message_chunk_accumulates_and_emits ... ok
+2026-07-26T04:55:16.7202275Z test update_mapper::tests::handle_update_multiple_chunks_accumulate ... ok
+2026-07-26T04:55:16.7203592Z test acp_adapter::tests::idle_watchdog_does_not_fire_with_activity ... ok
+2026-07-26T04:55:16.7205156Z test update_mapper::tests::handle_update_non_structured_tool_call_does_not_capture ... ok
+2026-07-26T04:55:16.7206534Z test update_mapper::tests::handle_update_structured_output_empty_raw_input_not_captured ... ok
+2026-07-26T04:55:16.7207531Z test update_mapper::tests::handle_update_structured_output_tool_call_captures_value ... ok
+2026-07-26T04:55:16.7208762Z test update_mapper::tests::handle_update_structured_output_tool_call_update_captures_value ... ok
+2026-07-26T04:55:16.7209964Z test acp_adapter::tests::idle_watchdog_post_mode_is_not_reset_by_activity ... ok
+2026-07-26T04:55:16.7210824Z test update_mapper::tests::handle_update_thought_chunk_emits_reasoning_no_accumulate ... ok
+2026-07-26T04:55:16.7211401Z test update_mapper::tests::handle_update_tool_call_empty_title_uses_default ... ok
+2026-07-26T04:55:16.7212009Z test update_mapper::tests::handle_update_tool_call_update_with_path ... ok
+2026-07-26T04:55:16.7212975Z test update_mapper::tests::handle_update_tool_call_update_no_path_no_emit ... ok
+2026-07-26T04:55:16.7213949Z test update_mapper::tests::handle_update_tool_call_with_title ... ok
+2026-07-26T04:55:16.8921241Z test acp_adapter::tests::idle_watchdog_pre_mode_resets_on_activity ... ok
+2026-07-26T04:55:16.8922158Z 
+2026-07-26T04:55:16.8922760Z test result: ok. 83 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.25s
+2026-07-26T04:55:16.8923413Z 
+2026-07-26T04:55:16.8925320Z [1m[92m     Running[0m unittests src/bin/fake_acp.rs (target/debug/deps/fake_acp-a528bd54d2cb595c)
+2026-07-26T04:55:16.8937145Z 
+2026-07-26T04:55:16.8937355Z running 10 tests
+2026-07-26T04:55:16.8941500Z test tests::send_flushes_writer ... ok
+2026-07-26T04:55:16.8942445Z test tests::send_handles_array_value ... ok
+2026-07-26T04:55:16.8943129Z test tests::send_handles_nested_object ... ok
+2026-07-26T04:55:16.8943840Z test tests::send_handles_unicode ... ok
+2026-07-26T04:55:16.8944506Z test tests::send_handles_null_value ... ok
+2026-07-26T04:55:16.8945346Z test tests::send_never_panics_on_empty_object ... ok
+2026-07-26T04:55:16.8946243Z test tests::send_with_multiple_calls_appends_lines ... ok
+2026-07-26T04:55:16.8946754Z test tests::send_writes_single_line ... ok
+2026-07-26T04:55:16.8947347Z test tests::send_writes_compact_json ... ok
+2026-07-26T04:55:16.8947970Z test tests::send_writes_valid_json ... ok
+2026-07-26T04:55:16.8948582Z 
+2026-07-26T04:55:16.8949329Z [1m[92m     Running[0m unittests src/main.rs (target/debug/deps/luft-d34999464baf830f)
+2026-07-26T04:55:16.8951131Z test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+2026-07-26T04:55:16.8951772Z 
+2026-07-26T04:55:16.8965386Z 
+2026-07-26T04:55:16.8965559Z running 373 tests
+2026-07-26T04:55:16.8969019Z test backend::tests::create_backend_claude_acp_with_model ... ok
+2026-07-26T04:55:16.8970119Z test backend::tests::create_backend_codex_emit_raw_events ... ok
+2026-07-26T04:55:16.8970879Z test backend::tests::create_backend_codex_returns_codex_id ... ok
+2026-07-26T04:55:16.8971595Z test backend::tests::create_backend_codex_with_model ... ok
+2026-07-26T04:55:16.8972266Z test backend::tests::create_backend_returns_opencode ... ok
+2026-07-26T04:55:16.8973030Z test backend::tests::create_backend_emit_raw_events_true ... ok
+2026-07-26T04:55:16.8973749Z test backend::tests::create_backend_returns_claude_acp ... ok
+2026-07-26T04:55:16.8974356Z test backend::tests::create_backend_returns_mock ... ok
+2026-07-26T04:55:16.8974763Z test backend::tests::create_backend_with_model ... ok
+2026-07-26T04:55:16.8975582Z test backend::tests::default_binary_name_maps_claude_acp_to_npm_package_binary ... ok
+2026-07-26T04:55:16.8976579Z test backend::tests::create_backend_unknown_id ... ok
+2026-07-26T04:55:16.8977613Z test backend::tests::default_binary_name_identity_for_self_named_backends ... ok
+2026-07-26T04:55:16.8979247Z test backend::tests::is_binary_available_absolute_override_missing ... ok
+2026-07-26T04:55:16.8991182Z test backend::tests::is_binary_available_missing_command ... ok
+2026-07-26T04:55:16.8997385Z test backend::tests::is_binary_available_absolute_override_existing ... ok
+2026-07-26T04:55:16.9005327Z test backend::tests::prompt_backend_selection_single ... ok
+2026-07-26T04:55:16.9008490Z test backend::tests::sensitive_env_names_are_rejected_from_file_config ... ok
+2026-07-26T04:55:16.9009552Z test backend::tests::detect_backend_returns_valid_id ... ok
+2026-07-26T04:55:16.9010820Z test backend::tests::is_binary_available_path_command ... ok
+2026-07-26T04:55:16.9024213Z test backend::tests::which_exists_returns_false_for_missing_command ... ok
+2026-07-26T04:55:16.9029922Z test commands::artifact_writer::tests::agent_dir_name_includes_name_when_present ... ok
+2026-07-26T04:55:16.9030942Z test commands::artifact_writer::tests::agent_dir_name_uses_seq_when_name_missing ... ok
+2026-07-26T04:55:16.9031958Z test commands::artifact_writer::tests::agent_dir_name_zero_pads_seq ... ok
+2026-07-26T04:55:16.9054369Z test backend::tests::which_exists_finds_existing_command ... ok
+2026-07-26T04:55:16.9055643Z test commands::artifact_writer::tests::agent_done_handles_missing_name_uses_seq_only ... ok
+2026-07-26T04:55:16.9057041Z test commands::artifact_writer::tests::agent_done_handles_null_output_for_ok_status ... ok
+2026-07-26T04:55:16.9058525Z test backend::tests::detect_available_backends_returns_subset ... ok
+2026-07-26T04:55:16.9059758Z test commands::artifact_writer::tests::agent_done_records_findings_sorted_by_severity ... ok
+2026-07-26T04:55:16.9061067Z test commands::artifact_writer::tests::agent_done_writes_report_with_status_error ... ok
+2026-07-26T04:55:16.9062397Z test commands::artifact_writer::tests::agent_progress_for_unknown_agent_is_noop ... ok
+2026-07-26T04:55:16.9063553Z test backend::tests::which_exists_never_panics ... ok
+2026-07-26T04:55:16.9066423Z test commands::artifact_writer::tests::agent_done_writes_report_with_status_ok ... ok
+2026-07-26T04:55:16.9067587Z test commands::artifact_writer::tests::agent_progress_tokens_is_noop ... ok
+2026-07-26T04:55:16.9069528Z test commands::artifact_writer::tests::agent_progress_file_edit_collected_and_deduped ... ok
+2026-07-26T04:55:16.9070779Z test commands::artifact_writer::tests::agent_progress_tool_call_counts_per_name ... ok
+2026-07-26T04:55:16.9071911Z test commands::artifact_writer::tests::agent_started_does_not_write_file ... ok
+2026-07-26T04:55:16.9072989Z test commands::artifact_writer::tests::agent_report_total_excludes_cache ... ok
+2026-07-26T04:55:16.9074154Z test commands::artifact_writer::tests::agent_report_includes_phase_label_in_metadata ... ok
+2026-07-26T04:55:16.9075734Z test commands::artifact_writer::tests::agent_progress_message_increments_round_count ... ok
+2026-07-26T04:55:16.9076912Z test commands::artifact_writer::tests::new_creates_empty_writer ... ok
+2026-07-26T04:55:16.9078014Z test commands::artifact_writer::tests::parallel_done_without_started_is_noop ... ok
+2026-07-26T04:55:16.9079452Z test commands::artifact_writer::tests::multiple_pipelines_get_distinct_indices ... ok
+2026-07-26T04:55:16.9080499Z test commands::artifact_writer::tests::multiple_agents_get_distinct_seq_directories ... ok
+2026-07-26T04:55:16.9081188Z test commands::artifact_writer::tests::parallel_started_then_done_writes_summary ... ok
+2026-07-26T04:55:16.9081979Z test commands::artifact_writer::tests::pipeline_done_without_started_is_safe ... ok
+2026-07-26T04:55:16.9082951Z test commands::artifact_writer::tests::pipeline_item_done_before_started_is_safe ... ok
+2026-07-26T04:55:16.9083742Z test commands::artifact_writer::tests::phase_started_records_label ... ok
+2026-07-26T04:55:16.9084663Z test commands::artifact_writer::tests::pipeline_handles_unfilled_item_slots ... ok
+2026-07-26T04:55:16.9085713Z test commands::artifact_writer::tests::pipeline_started_writes_summary_on_done ... ok
+2026-07-26T04:55:16.9086785Z test commands::artifact_writer::tests::pipeline_summary_uses_default_label_for_unlabeled_stage ... ok
+2026-07-26T04:55:16.9087846Z test commands::artifact_writer::tests::pipeline_summary_includes_stage_labels ... ok
+2026-07-26T04:55:16.9089329Z test commands::artifact_writer::tests::report_emitted_writes_report_file ... ok
+2026-07-26T04:55:16.9090319Z test commands::artifact_writer::tests::run_done_includes_parallel_count_when_started ... ok
+2026-07-26T04:55:16.9091322Z test commands::artifact_writer::tests::run_done_includes_pipeline_count_when_started ... ok
+2026-07-26T04:55:16.9091904Z test commands::artifact_writer::tests::run_done_truncates_long_task_description ... ok
+2026-07-26T04:55:16.9092913Z test commands::artifact_writer::tests::run_done_uses_existing_final_report_when_present ... ok
+2026-07-26T04:55:16.9094201Z test commands::artifact_writer::tests::run_done_uses_run_report_when_no_report_emitted ... ok
+2026-07-26T04:55:16.9095372Z test commands::artifact_writer::tests::run_done_with_no_agents_skips_agents_section ... ok
+2026-07-26T04:55:16.9096398Z test commands::artifact_writer::tests::run_done_writes_summary_with_status_and_agents ... ok
+2026-07-26T04:55:16.9097374Z test commands::backend::tests::apply_config_update_acp_args_multiple ... ok
+2026-07-26T04:55:16.9098763Z test commands::backend::tests::apply_config_update_acp_args_empty_string_yields_one_empty_arg ... ok
+2026-07-26T04:55:16.9099783Z test commands::artifact_writer::tests::unhandled_events_do_not_panic ... ok
+2026-07-26T04:55:16.9100329Z test commands::artifact_writer::tests::run_started_records_task_description ... ok
+2026-07-26T04:55:16.9100834Z test commands::backend::tests::apply_config_update_acp_args_single ... ok
+2026-07-26T04:55:16.9101301Z test commands::backend::tests::apply_config_update_acp_binary ... ok
+2026-07-26T04:55:16.9101808Z test commands::backend::tests::apply_config_update_acp_args_with_extra_whitespace ... ok
+2026-07-26T04:55:16.9102330Z test commands::backend::tests::apply_config_update_acp_binary_empty ... ok
+2026-07-26T04:55:16.9102849Z test commands::backend::tests::apply_config_update_acp_connect_timeout_secs_invalid ... ok
+2026-07-26T04:55:16.9103454Z test commands::backend::tests::apply_config_update_acp_connect_timeout_secs_negative_rejected ... ok
+2026-07-26T04:55:16.9104062Z test commands::backend::tests::apply_config_update_acp_connect_timeout_secs_valid ... ok
+2026-07-26T04:55:16.9104614Z test commands::backend::tests::apply_config_update_acp_connect_timeout_secs_zero ... ok
+2026-07-26T04:55:16.9105183Z test commands::backend::tests::apply_config_update_acp_emit_raw_events_false_variants ... ok
+2026-07-26T04:55:16.9105748Z test commands::backend::tests::apply_config_update_acp_emit_raw_events_invalid ... ok
+2026-07-26T04:55:16.9106635Z test commands::backend::tests::apply_config_update_acp_emit_raw_events_true_variants ... ok
+2026-07-26T04:55:16.9107642Z test commands::backend::tests::apply_config_update_default_key ... ok
+2026-07-26T04:55:16.9109058Z test commands::backend::tests::apply_config_update_acp_idle_timeout_secs_valid ... ok
+2026-07-26T04:55:16.9110097Z test commands::backend::tests::apply_config_update_acp_idle_timeout_secs_invalid ... ok
+2026-07-26T04:55:16.9111129Z test commands::backend::tests::apply_config_update_default_key_empty_value ... ok
+2026-07-26T04:55:16.9112117Z test commands::backend::tests::apply_config_update_empty_key_is_unknown ... ok
+2026-07-26T04:55:16.9113051Z test commands::backend::tests::apply_config_update_acp_log_level ... ok
+2026-07-26T04:55:16.9113965Z test commands::backend::tests::apply_config_update_full_round_trip_via_save ... ok
+2026-07-26T04:55:16.9114504Z test commands::backend::tests::apply_config_update_preserves_other_fields ... ok
+2026-07-26T04:55:16.9115421Z test commands::backend::tests::backend_subcommand_config_debug ... ok
+2026-07-26T04:55:16.9116263Z test commands::backend::tests::backend_subcommand_check_debug ... ok
+2026-07-26T04:55:16.9117103Z test commands::backend::tests::backend_subcommand_info_debug ... ok
+2026-07-26T04:55:16.9117927Z test commands::backend::tests::apply_config_update_unknown_key ... ok
+2026-07-26T04:55:16.9119077Z test commands::backend::tests::backend_subcommand_list_debug ... ok
+2026-07-26T04:55:16.9119894Z test commands::backend::tests::backend_subcommand_set_debug ... ok
+2026-07-26T04:55:16.9121024Z test commands::backend::tests::bool_mark_returns_static_str ... ok
+2026-07-26T04:55:16.9121785Z test commands::backend::tests::bool_mark_true ... ok
+2026-07-26T04:55:16.9122417Z test commands::clear::tests::clears_completed_runs ... ok
+2026-07-26T04:55:16.9123099Z test commands::backend::tests::bool_mark_false ... ok
+2026-07-26T04:55:16.9123784Z test commands::clear::tests::days_filter_removes_old ... ok
+2026-07-26T04:55:16.9124462Z test commands::clear::tests::days_filter_skips_recent ... ok
+2026-07-26T04:55:16.9124940Z test commands::event_log::tests::event_logger_flush_failure ... ok
+2026-07-26T04:55:16.9125371Z test commands::clear::tests::no_runs_dir_prints_not_found ... ok
+2026-07-26T04:55:16.9127441Z test commands::clear::tests::empty_runs_dir ... ok
+2026-07-26T04:55:16.9129015Z test commands::event_log::tests::event_logger_new_invalid_path ... ok
+2026-07-26T04:55:16.9129655Z run started: test
+2026-07-26T04:55:16.9130185Z test commands::event_log::tests::event_logger_new_stdout_and_pretty ... ok
+2026-07-26T04:55:16.9130998Z test commands::event_log::tests::format_covers_all_variants ... ok
+2026-07-26T04:55:16.9131883Z test commands::event_log::tests::event_logger_write_pretty_flush_buffer ... ok
+2026-07-26T04:55:16.9132734Z test commands::event_log::tests::format_delta_covers_all_variants ... ok
+2026-07-26T04:55:16.9133472Z test commands::event_log::tests::format_delta_truncates_long_message ... ok
+2026-07-26T04:55:16.9133944Z test commands::event_log::tests::event_logger_write_failure ... ok
+2026-07-26T04:55:16.9134414Z test commands::event_log::tests::truncate_caps_and_strips_newlines ... ok
+2026-07-26T04:55:16.9135206Z test commands::event_log::tests::jsonl_matches_serde_to_string ... ok
+2026-07-26T04:55:16.9135923Z test commands::clear::tests::preserves_running_runs ... ok
+2026-07-26T04:55:16.9136502Z test commands::event_log::tests::truncate_multibyte_unicode ... ok
+2026-07-26T04:55:16.9136982Z test commands::event_log::tests::truncate_empty_string ... ok
+2026-07-26T04:55:16.9137752Z test commands::event_log::tests::truncate_zero_max ... ok
+2026-07-26T04:55:16.9138767Z test commands::generate::tests::generate_script_rejects_unknown_backend ... ok
+2026-07-26T04:55:16.9140686Z test commands::generate::tests::generate_script_rejects_mock_detection ... ok
+2026-07-26T04:55:16.9149614Z test commands::generate::tests::generate_script_with_backend_output_to_stdout ... ok
+2026-07-26T04:55:16.9150503Z test commands::generate::tests::generate_script_with_backend_output_to_file ... ok
+2026-07-26T04:55:16.9151795Z test commands::generate::tests::generate_script_with_mock_backend_propagates_planner_error ... ok
+2026-07-26T04:55:16.9152688Z test commands::list::tests::base_dir_does_not_exist ... ok
+2026-07-26T04:55:16.9157538Z test commands::generate::tests::generate_script_with_backend_write_error_propagates ... ok
+2026-07-26T04:55:16.9168791Z test commands::generate::tests::generate_script_with_backend_propagates_planner_error ... ok
+2026-07-26T04:55:16.9181443Z test commands::list::tests::empty_runs_prints_not_found ... ok
+2026-07-26T04:55:16.9182144Z test commands::list::tests::io_error_propagates ... ok
+2026-07-26T04:55:16.9187680Z test commands::list::tests::limit_equal_to_total ... ok
+2026-07-26T04:55:16.9192667Z test commands::list::tests::default_limit_caps_at_twenty ... ok
+2026-07-26T04:55:16.9203856Z test commands::list::tests::limit_fewer_than_total ... ok
+2026-07-26T04:55:16.9208512Z test commands::list::tests::limit_zero ... ok
+2026-07-26T04:55:16.9209266Z test commands::list::tests::single_run ... ok
+2026-07-26T04:55:16.9212756Z test commands::list::tests::runs_without_checkpoint_are_skipped ... ok
+2026-07-26T04:55:16.9223360Z test commands::logs::tests::base_dir_does_not_exist ... ok
+2026-07-26T04:55:16.9224241Z test commands::list::tests::multiple_runs_all_shown_without_limit ... ok
+2026-07-26T04:55:16.9227457Z test commands::logs::tests::limit_exceeds_event_count ... ok
+2026-07-26T04:55:16.9237264Z test commands::logs::tests::limit_zero_shows_nothing ... ok
+2026-07-26T04:55:16.9239273Z test commands::logs::tests::multiple_event_types ... ok
+2026-07-26T04:55:16.9242005Z test commands::logs::tests::no_events ... ok
+2026-07-26T04:55:16.9243188Z test commands::lua_validate::tests::compute_coverage_empty_script_is_full_coverage ... ok
+2026-07-26T04:55:16.9243757Z test commands::logs::tests::run_not_found ... ok
+2026-07-26T04:55:16.9244578Z test commands::lua_validate::tests::compute_coverage_full_match_is_ok ... ok
+2026-07-26T04:55:16.9248481Z test commands::lua_validate::tests::compute_coverage_handles_missing_and_extra ... ok
+2026-07-26T04:55:16.9249440Z test commands::lua_validate::tests::missing_main_fails ... ok
+2026-07-26T04:55:16.9257046Z test commands::lua_validate::tests::missing_meta_fails ... ok
+2026-07-26T04:55:16.9258057Z test commands::lua_validate::tests::mock_check_custom_mock_path ... ok
+2026-07-26T04:55:16.9259359Z test commands::lua_validate::tests::missing_report_fails ... ok
+2026-07-26T04:55:16.9260925Z test commands::lua_validate::tests::mock_check_full_coverage_ok ... ok
+2026-07-26T04:55:16.9261814Z test commands::lua_validate::tests::mock_check_handles_extra_entries ... ok
+2026-07-26T04:55:16.9262631Z test commands::logs::tests::with_events_custom_limit ... ok
+2026-07-26T04:55:16.9265514Z test commands::lua_validate::tests::mock_check_invalid_json_fails ... ok
+2026-07-26T04:55:16.9269260Z test commands::lua_validate::tests::mock_check_missing_without_default_fails ... ok
+2026-07-26T04:55:16.9271352Z test commands::logs::tests::with_events_default_limit ... ok
+2026-07-26T04:55:16.9272187Z test commands::lua_validate::tests::mock_check_missing_with_default_fallback_ok ... ok
+2026-07-26T04:55:16.9273054Z test commands::lua_validate::tests::mock_check_missing_mock_file_fails ... ok
+2026-07-26T04:55:16.9273710Z test commands::lua_validate::tests::non_existent_file_fails ... ok
+2026-07-26T04:55:16.9276418Z test commands::lua_validate::tests::presence_label_false_is_missing ... ok
+2026-07-26T04:55:16.9277261Z test commands::lua_validate::tests::presence_label_true_is_found ... ok
+2026-07-26T04:55:16.9277933Z test commands::lua_validate::tests::valid_script_passes ... ok
+2026-07-26T04:55:16.9278717Z test commands::lua_validate::tests::syntax_error_fails ... ok
+2026-07-26T04:55:16.9279430Z test commands::mcp_server::tests::json_rpc_message_full ... ok
+2026-07-26T04:55:16.9280374Z test commands::mcp_server::tests::json_rpc_message_no_id_no_method ... ok
+2026-07-26T04:55:16.9281391Z test commands::mcp_server::tests::json_rpc_message_notification ... ok
+2026-07-26T04:55:16.9282650Z test commands::lua_validate::tests::verbose_mode_does_not_panic ... ok
+2026-07-26T04:55:16.9283651Z test commands::mcp_server::tests::mcp_args_has_schema_file ... ok
+2026-07-26T04:55:16.9284657Z test commands::mcp_server::tests::serve_mcp_empty_line_skipped ... ok
+2026-07-26T04:55:16.9288664Z ok
+2026-07-26T04:55:16.9289195Z test commands::mcp_server::tests::serve_mcp_malformed_json_skipped ... ok
+2026-07-26T04:55:16.9290474Z test commands::mcp_server::tests::serve_mcp_initialize ... ok
+2026-07-26T04:55:16.9291946Z test commands::mcp_server::tests::serve_mcp_notification_initialized ... ok
+2026-07-26T04:55:16.9306328Z test commands::mcp_server::tests::serve_mcp_tools_call_invalid ... ok
+2026-07-26T04:55:16.9309249Z test commands::mcp_server::tests::serve_mcp_tools_list ... ok
+2026-07-26T04:55:16.9310036Z test commands::mcp_server::tests::tool_call_missing_arguments ... ok
+2026-07-26T04:55:16.9310828Z test commands::mcp_server::tests::tool_call_no_name_field ... ok
+2026-07-26T04:55:16.9311631Z test commands::mcp_server::tests::serve_mcp_unknown_method_no_id ... ok
+2026-07-26T04:55:16.9312577Z test commands::mcp_server::tests::serve_mcp_unknown_method_with_id ... ok
+2026-07-26T04:55:16.9313201Z test commands::mcp_server::tests::tool_call_no_params ... ok
+2026-07-26T04:55:16.9313901Z test commands::mcp_server::tests::tool_call_unknown_tool ... ok
+2026-07-26T04:55:16.9314797Z test commands::mcp_server::tests::tool_call_with_file_kind_summary_schema ... ok
+2026-07-26T04:55:16.9315904Z test commands::mcp_server::tests::tool_call_valid_arguments ... ok
+2026-07-26T04:55:16.9316839Z test commands::mcp_server::tests::validate_missing_required ... ok
+2026-07-26T04:55:16.9317645Z test commands::mcp_server::tests::validate_invalid_type ... ok
+2026-07-26T04:55:16.9318685Z test commands::mcp_server::tests::validate_schema_compile_error ... ok
+2026-07-26T04:55:16.9319583Z test commands::mcp_server::tests::validate_valid_input ... ok
+2026-07-26T04:55:16.9320179Z test commands::mcp_server::tests::write_response_numeric_id ... ok
+2026-07-26T04:55:16.9320809Z test commands::mcp_server::tests::write_error_ok ... ok
+2026-07-26T04:55:16.9321524Z test commands::mcp_server::tests::write_response_string_id ... ok
+2026-07-26T04:55:16.9322246Z test commands::mcp_server::tests::validate_multiple_errors_capped_at_three ... ok
+2026-07-26T04:55:16.9323089Z test commands::mock::tests::mock_add_args_debug ... ok
+2026-07-26T04:55:16.9323774Z test commands::mock::tests::extract_agent_calls_finds_named_and_unnamed ... ok
+2026-07-26T04:55:16.9324289Z test commands::mock::tests::mock_add_args_default_values_when_all_none ... ok
+2026-07-26T04:55:16.9324797Z test commands::mock::tests::extract_agent_calls_returns_empty_for_no_calls ... ok
+2026-07-26T04:55:16.9325665Z test commands::mock::tests::mock_add_bails_when_backend_is_mockfile ... ok
+2026-07-26T04:55:16.9329308Z test commands::mock::tests::mock_add_bails_when_calls_have_no_name ... ok
+2026-07-26T04:55:16.9332313Z test commands::mock::tests::mock_add_bails_when_backend_is_mock ... ok
+2026-07-26T04:55:16.9333308Z test commands::mock::tests::mock_add_bails_when_no_agent_calls ... ok
+2026-07-26T04:55:16.9334215Z test commands::mock::tests::mock_add_errors_when_script_does_not_exist ... ok
+2026-07-26T04:55:16.9334998Z test commands::mock::tests::mock_subcommand_add_variant_debug ... ok
+2026-07-26T04:55:16.9335888Z test commands::phase_renderer::tests::calls_noun_grammar ... ok
+2026-07-26T04:55:16.9339225Z test commands::phase_renderer::tests::fmt_clock_sub_day ... ok
+2026-07-26T04:55:16.9340030Z test commands::mock::tests::unnamed_agent_call_diagnostic_format ... ok
+2026-07-26T04:55:16.9342675Z test commands::phase_renderer::tests::fmt_clock_sub_hour ... ok
+2026-07-26T04:55:16.9343624Z test commands::phase_renderer::tests::format_live_plural_calls_with_tokens ... ok
+2026-07-26T04:55:16.9344628Z test commands::mock::tests::mock_add_reports_line_numbers_for_unnamed_calls ... ok
+2026-07-26T04:55:16.9345529Z test commands::phase_renderer::tests::format_live_uses_b_suffix_for_huge_token_count ... ok
+2026-07-26T04:55:16.9346611Z test commands::phase_renderer::tests::format_live_zero_calls_no_tokens ... ok
+2026-07-26T04:55:16.9347537Z test commands::phase_renderer::tests::fmt_clock_sub_minute ... ok
+2026-07-26T04:55:16.9348743Z test commands::phase_renderer::tests::handle_agent_done_removes_entry_and_does_not_panic ... ok
+2026-07-26T04:55:16.9349753Z test commands::phase_renderer::tests::handle_full_run_smoke ... ok
+2026-07-26T04:55:16.9350673Z test commands::phase_renderer::tests::handle_progress_for_unknown_agent_is_noop ... ok
+2026-07-26T04:55:16.9351632Z test commands::phase_renderer::tests::format_live_singular_call ... ok
+2026-07-26T04:55:16.9352580Z test commands::phase_renderer::tests::handle_mixed_progress_independent_state ... ok
+2026-07-26T04:55:16.9353578Z test commands::phase_renderer::tests::handle_tool_call_increments_counter ... ok
+2026-07-26T04:55:16.9354556Z test commands::phase_renderer::tests::handle_tokens_updates_latest_tokens ... ok
+2026-07-26T04:55:16.9355518Z test commands::phase_renderer::tests::tick_elapsed_after_run_done_clears_timer ... ok
+2026-07-26T04:55:16.9356077Z test commands::phase_renderer::tests::tick_elapsed_before_run_started_is_noop ... ok
+2026-07-26T04:55:16.9356559Z test commands::phases::tests::format_elapsed_variants ... ok
+2026-07-26T04:55:16.9356984Z test commands::phases::tests::empty_run_no_phases_message ... ok
+2026-07-26T04:55:16.9357541Z test commands::phase_renderer::tests::message_delta_updates_spinner_with_char_counts ... ok
+2026-07-26T04:55:16.9358885Z test commands::phases::tests::events_missing_elapsed_question_mark ... ok
+2026-07-26T04:55:16.9360747Z test commands::phases::tests::json_output_structure ... ok
+2026-07-26T04:55:16.9366266Z test commands::phases::tests::meta_full_tree_render ... ok
+2026-07-26T04:55:16.9367617Z test commands::run::tests::drain_counts_lagged_but_still_terminates ... ok
+2026-07-26T04:55:16.9369143Z test commands::run::tests::drain_skips_acp_raw ... ok
+2026-07-26T04:55:16.9371142Z test commands::run::tests::drain_stops_on_run_done_and_ignores_later_events ... ok
+2026-07-26T04:55:16.9377091Z test commands::run::tests::drain_stops_when_channel_closes ... ok
+2026-07-26T04:55:16.9377826Z test commands::phases::tests::no_meta_fallback_events ... ok
+2026-07-26T04:55:16.9381488Z test commands::phases::tests::pending_phase_shows_no_ok_failed ... ok
+2026-07-26T04:55:16.9382247Z test commands::run::tests::extract_array_returns_none ... ok
+2026-07-26T04:55:16.9382952Z test commands::run::tests::extract_markdown_field_verbatim ... ok
+2026-07-26T04:55:16.9383627Z test commands::phases::tests::run_not_found ... ok
+2026-07-26T04:55:16.9384237Z test commands::run::tests::extract_non_string_markdown_returns_none ... ok
+2026-07-26T04:55:16.9384714Z test commands::run::tests::extract_primitive_returns_none ... ok
+2026-07-26T04:55:16.9385974Z test commands::run::tests::extract_null_returns_none ... ok
+2026-07-26T04:55:16.9387030Z test commands::run::tests::extract_string_verbatim ... ok
+2026-07-26T04:55:16.9388410Z test commands::run::tests::extract_object_without_markdown_returns_none ... ok
+2026-07-26T04:55:16.9412457Z test commands::run::tests::run_headless_script_error_returns_err ... ok
+2026-07-26T04:55:16.9414627Z test commands::run::tests::write_report_array ... ok
+2026-07-26T04:55:16.9422832Z test commands::run::tests::run_headless_empty_script_with_output ... ok
+2026-07-26T04:55:16.9427906Z test commands::run::tests::write_report_existing_parent_dir ... ok
+2026-07-26T04:55:16.9436961Z test commands::run::tests::run_headless_empty_script_no_output ... ok
+2026-07-26T04:55:16.9438774Z test commands::run::tests::run_headless_with_event_logger ... ok
+2026-07-26T04:55:16.9439921Z test commands::run::tests::write_report_flat_filename_empty_parent ... ok
+2026-07-26T04:55:16.9442766Z test commands::run::tests::write_report_creates_parent_dir ... ok
+2026-07-26T04:55:16.9443741Z test commands::run::tests::write_report_markdown_field ... ok
+2026-07-26T04:55:16.9444675Z test commands::run::tests::write_report_markdown_not_string ... ok
+2026-07-26T04:55:16.9446303Z test commands::run::tests::write_report_object_without_markdown ... ok
+2026-07-26T04:55:16.9447111Z test commands::save::tests::save_workflow_downcast_ref_to_dyn_error ... ok
+2026-07-26T04:55:16.9447600Z test commands::save::tests::save_workflow_error_is_chain ... ok
+2026-07-26T04:55:16.9448005Z test commands::run::tests::write_report_primitives ... ok
+2026-07-26T04:55:16.9448898Z test commands::save::tests::save_workflow_error_mentions_name ... ok
+2026-07-26T04:55:16.9449766Z test commands::save::tests::save_workflow_error_mentions_output_path ... ok
+2026-07-26T04:55:16.9450669Z test commands::save::tests::save_workflow_error_says_not_implemented ... ok
+2026-07-26T04:55:16.9451501Z test commands::run::tests::write_report_string_verbatim ... ok
+2026-07-26T04:55:16.9452238Z test commands::save::tests::save_workflow_returns_err ... ok
+2026-07-26T04:55:16.9453056Z test commands::save::tests::save_workflow_with_empty_name_still_fails ... ok
+2026-07-26T04:55:16.9454016Z test commands::save::tests::save_workflow_with_relative_path_still_fails ... ok
+2026-07-26T04:55:16.9454518Z test commands::status::tests::dir_exists_but_no_checkpoint ... ok
+2026-07-26T04:55:16.9454920Z test commands::status::tests::empty_checkpoint ... ok
+2026-07-26T04:55:16.9455262Z test commands::status::tests::run_not_found ... ok
+2026-07-26T04:55:16.9457949Z test commands::status::tests::run_dir_is_file_io_error ... ok
+2026-07-26T04:55:16.9463282Z test commands::status::tests::with_agent_results ... ok
+2026-07-26T04:55:16.9468881Z test commands::status::tests::with_all_data ... ok
+2026-07-26T04:55:16.9475367Z test commands::status::tests::with_completed_phases ... ok
+2026-07-26T04:55:16.9481423Z test commands::status::tests::with_findings ... ok
+2026-07-26T04:55:16.9482437Z test commands::tests::all_fifteen_subcommand_modules_are_declared ... ok
+2026-07-26T04:55:16.9483560Z test commands::tests::global_cwd_lock_acquires_and_releases ... ok
+2026-07-26T04:55:16.9484676Z test commands::tests::global_cwd_lock_blocks_concurrent_acquire_via_try_lock ... ok
+2026-07-26T04:55:16.9485834Z test commands::tests::global_cwd_lock_is_shared_across_threads ... ok
+2026-07-26T04:55:16.9486946Z test commands::tests::global_cwd_lock_releases_for_next_caller ... ok
+2026-07-26T04:55:16.9487874Z test commands::tests::runs_base_dir_components_chain_through_dot_then_dot_luft ... ok
+2026-07-26T04:55:16.9489317Z test commands::tests::runs_base_dir_each_call_returns_a_fresh_pathbuf ... ok
+2026-07-26T04:55:16.9490474Z test commands::tests::runs_base_dir_equals_manually_constructed_path ... ok
+2026-07-26T04:55:16.9491630Z test commands::tests::runs_base_dir_immediate_parent_is_dot_luft ... ok
+2026-07-26T04:55:16.9492656Z test commands::tests::global_cwd_lock_is_static_lifetime ... ok
+2026-07-26T04:55:16.9493699Z test commands::tests::runs_base_dir_is_independent_of_cwd ... ok
+2026-07-26T04:55:16.9494671Z test commands::tests::runs_base_dir_is_relative_and_not_rooted ... ok
+2026-07-26T04:55:16.9495275Z test commands::tests::runs_base_dir_last_component_is_runs ... ok
+2026-07-26T04:55:16.9495873Z test commands::tests::runs_base_dir_joined_children_are_distinct ... ok
+2026-07-26T04:55:16.9496494Z test commands::workflows::tests::home_env_drop_handles_originally_unset_home ... ok
+2026-07-26T04:55:16.9497127Z test commands::tests::runs_base_dir_joined_child_path_stays_under_base ... ok
+2026-07-26T04:55:16.9497754Z test commands::workflows::tests::list_workflows_dir_does_not_exist ... ok
+2026-07-26T04:55:17.0909629Z test commands::workflows::tests::home_env_keeps_home_unset_if_originally_unset ... FAILED
+2026-07-26T04:55:17.0910635Z test commands::workflows::tests::home_env_restores_previous_home_value ... FAILED
+2026-07-26T04:55:17.0913968Z test commands::workflows::tests::list_workflows_handles_empty_lua_file ... FAILED
+2026-07-26T04:55:17.0915622Z test commands::workflows::tests::list_workflows_filters_non_lua_files ... FAILED
+2026-07-26T04:55:17.0917238Z test commands::workflows::tests::list_workflows_empty_directory ... FAILED
+2026-07-26T04:55:17.0921421Z test commands::workflows::tests::list_workflows_handles_many_files ... FAILED
+2026-07-26T04:55:17.0922607Z test commands::workflows::tests::list_workflows_skips_files_without_extension ... FAILED
+2026-07-26T04:55:17.0923787Z test commands::workflows::tests::list_workflows_read_dir_error ... FAILED
+2026-07-26T04:55:17.0925004Z test commands::workflows::tests::list_workflows_handles_unicode_filenames ... FAILED
+2026-07-26T04:55:17.0929848Z test config::tests::acp_backend_override_default_is_empty ... ok
+2026-07-26T04:55:17.0930987Z test commands::workflows::tests::list_workflows_with_lua_files ... FAILED
+2026-07-26T04:55:17.0932035Z test config::tests::acp_config_override_default_is_none ... ok
+2026-07-26T04:55:17.0933101Z test commands::workflows::tests::unset_home_guard_keeps_home_unset_if_originally_unset ... FAILED
+2026-07-26T04:55:17.0933938Z test config::tests::backend_acp_args_serialize_as_array ... ok
+2026-07-26T04:55:17.0934393Z test config::tests::backend_acp_connect_timeout_serializes_as_integer ... ok
+2026-07-26T04:55:17.0935136Z test config::tests::backend_config_debug_includes_acp ... ok
+2026-07-26T04:55:17.0935857Z test config::tests::backend_config_debug_includes_codex_acp ... ok
+2026-07-26T04:55:17.0936410Z test config::tests::backend_config_default_is_none ... ok
+2026-07-26T04:55:17.0937172Z test config::tests::backend_default_alias_serializes_as_string ... ok
+2026-07-26T04:55:17.0937992Z test commands::workflows::tests::unset_home_guard_restores_previous_home_value ... FAILED
+2026-07-26T04:55:17.0939000Z test config::tests::codex_acp_default_roundtrip_is_empty ... ok
+2026-07-26T04:55:17.0939407Z test config::tests::config_dir_ends_with_luft ... ok
+2026-07-26T04:55:17.0939884Z test config::tests::load_config_handles_missing_file_gracefully ... ok
+2026-07-26T04:55:17.0940741Z test config::tests::luft_config_debug_includes_backend_and_planner ... ok
+2026-07-26T04:55:17.0941520Z test config::tests::codex_acp_roundtrip_serialization ... ok
+2026-07-26T04:55:17.0942079Z test config::tests::config_path_ends_with_config_toml ... ok
+2026-07-26T04:55:17.0942504Z test config::tests::luft_config_pretty_serialize_is_multiline ... ok
+2026-07-26T04:55:17.0943095Z test config::tests::planner_config_default_is_none ... ok
+2026-07-26T04:55:17.0943737Z test config::tests::luft_config_default_is_empty ... ok
+2026-07-26T04:55:17.0944363Z test config::tests::luft_config_serialize_roundtrip_empty ... ok
+2026-07-26T04:55:17.0944784Z test config::tests::luft_config_serialize_roundtrip_full ... ok
+2026-07-26T04:55:17.0945187Z test config::tests::planner_model_serializes_as_string ... ok
+2026-07-26T04:55:17.0945561Z test config::tests::resolve_model_cli_wins ... ok
+2026-07-26T04:55:17.0945994Z test config::tests::resolve_default_backend_user_specified_takes_precedence ... ok
+2026-07-26T04:55:17.0946462Z test config::tests::resolve_model_falls_back_to_config ... ok
+2026-07-26T04:55:17.0947051Z test config::tests::resolve_model_none_when_both_none ... ok
+2026-07-26T04:55:17.0947901Z test config::tests::resolve_model_none_when_cli_empty_and_no_config ... ok
+2026-07-26T04:55:17.0949121Z test config::tests::resolve_planner_model_cli_model_used_when_no_planner ... ok
+2026-07-26T04:55:17.0949970Z test config::tests::resolve_planner_model_cli_planner_wins ... ok
+2026-07-26T04:55:17.0950739Z test config::tests::resolve_planner_model_config_used_as_last_resort ... ok
+2026-07-26T04:55:17.0951574Z test config::tests::resolve_planner_model_none_when_all_none ... ok
+2026-07-26T04:55:17.0952376Z test config::tests::resolve_planner_model_priority_chain ... ok
+2026-07-26T04:55:17.0953281Z test config::tests::save_config_produces_valid_toml_via_to_string ... ok
+2026-07-26T04:55:17.0954115Z test install::agent_detector::tests::test_detect_claude_code ... ok
+2026-07-26T04:55:17.0954880Z test install::agent_detector::tests::test_detect_opencode ... ok
+2026-07-26T04:55:17.0955676Z test install::agent_detector::tests::test_skill_directories ... ok
+2026-07-26T04:55:17.0978009Z test config::tests::resolve_default_backend_empty_user_input_falls_through ... ok
+2026-07-26T04:55:33.8834135Z test install::agent_detector::tests::test_detect_codex_acp ... ok
+2026-07-26T04:55:33.8835410Z test install::installer::tests::test_installation_suggestions ... ok
+2026-07-26T04:55:33.8839657Z test install::installer::tests::test_verify_installation_with_valid_summary ... ok
+2026-07-26T04:55:33.8845235Z test install::mcp_setup::tests::test_configure_creates_new_file ... ok
+2026-07-26T04:55:33.8846556Z test install::mcp_setup::tests::test_mcp_config_result ... ok
+2026-07-26T04:55:33.8847790Z test install::mcp_setup::tests::test_merge_mcp_config_into_empty ... ok
+2026-07-26T04:55:33.8849241Z test install::mcp_setup::tests::test_merge_mcp_config_no_duplicate ... ok
+2026-07-26T04:55:33.8850458Z test install::mcp_setup::tests::test_merge_mcp_config_preserves_existing ... ok
+2026-07-26T04:55:33.8855792Z test install::mcp_setup::tests::test_write_and_read_config ... ok
+2026-07-26T04:55:33.9676408Z test install::agent_detector::tests::test_detect_all_returns_at_least_mock ... ok
+2026-07-26T04:55:33.9703422Z test install::installer::tests::test_install_all_requires_skills_source ... ok
+2026-07-26T04:55:36.0165843Z test install::installer::tests::test_install_all_with_valid_environment ... ok
+2026-07-26T04:55:36.0173227Z test install::skill_manager::tests::test_copy_skills_to_directory ... ok
+2026-07-26T04:55:36.0180848Z test install::skill_manager::tests::test_install_for_claude ... ok
+2026-07-26T04:55:36.0187260Z test install::skill_manager::tests::test_install_for_codex ... ok
+2026-07-26T04:55:36.0188491Z test logging::tests::default_log_path_uses_home ... ok
+2026-07-26T04:55:36.0191168Z test logging::tests::init_appends_to_existing_file ... ok
+2026-07-26T04:55:36.0196584Z test logging::tests::init_creates_parent_directories ... ok
+2026-07-26T04:55:36.0201241Z test install::skill_manager::tests::test_install_for_multiple_agents ... ok
+2026-07-26T04:55:36.0205386Z test logging::tests::init_default_level ... ok
+2026-07-26T04:55:36.0206322Z test logging::tests::init_empty_level_string ... ok
+2026-07-26T04:55:36.0207056Z test logging::tests::init_explicit_level_debug ... ok
+2026-07-26T04:55:36.0207864Z test install::skill_manager::tests::test_skill_manager_creation ... ok
+2026-07-26T04:55:36.0208903Z test logging::tests::init_explicit_level_off ... ok
+2026-07-26T04:55:36.0209718Z test install::skill_manager::tests::test_skill_manager_source_not_found ... ok
+2026-07-26T04:55:36.0210566Z test logging::tests::init_explicit_level_trace ... ok
+2026-07-26T04:55:36.0211194Z test logging::tests::init_idempotent ... ok
+2026-07-26T04:55:36.0211687Z test logging::tests::init_explicit_level_overrides_rust_log ... ok
+2026-07-26T04:55:36.0212121Z test logging::tests::init_no_rust_log_uses_default ... ok
+2026-07-26T04:55:36.0213459Z test logging::tests::init_returns_err_on_unwritable_path ... ok
+2026-07-26T04:55:36.0214688Z test logging::tests::init_invalid_level_uses_rust_log_fallback ... ok
+2026-07-26T04:55:36.0215754Z test logging::tests::init_with_no_path_falls_back_to_noop ... ok
+2026-07-26T04:55:36.0219768Z test signal::tests::install_sends_signal_info_and_cancels ... ok
+2026-07-26T04:55:36.0220511Z test logging::tests::init_uses_rust_log_env_var ... ok
+2026-07-26T04:55:36.0221571Z test logging::tests::init_invalid_level_falls_back_to_default ... ok
+2026-07-26T04:55:36.0222410Z test logging::tests::tracing_events_land_in_file ... ok
+2026-07-26T04:55:36.0223146Z test signal::tests::signal_info_is_clone ... ok
+2026-07-26T04:55:36.0224121Z test tests::dispatch_generate_mock_backend_planner_exhausted ... ok
+2026-07-26T04:55:36.0225167Z test tests::dispatch_generate_unknown_backend ... ok
+2026-07-26T04:55:36.0226658Z test tests::dispatch_list ... ok
+2026-07-26T04:55:36.0229003Z test tests::dispatch_mcp_no_schema_file ... ok
+2026-07-26T04:55:36.0229629Z test tests::dispatch_run_unknown_backend ... ok
+2026-07-26T04:55:36.0230168Z test tests::dispatch_logs_not_found ... ok
+2026-07-26T04:55:36.0230760Z test tests::dispatch_run_without_nl_or_workflow ... ok
+2026-07-26T04:55:36.0231331Z test tests::dispatch_save ... ok
+2026-07-26T04:55:36.0232105Z test tests::dispatch_status_not_found ... ok
+2026-07-26T04:55:36.0232669Z test tests::dispatch_workflows ... ok
+2026-07-26T04:55:36.0232985Z 
+2026-07-26T04:55:36.0233121Z failures:
+2026-07-26T04:55:36.0233345Z 
+2026-07-26T04:55:36.0233912Z ---- commands::workflows::tests::home_env_keeps_home_unset_if_originally_unset stdout ----
+2026-07-26T04:55:36.0234528Z 
+2026-07-26T04:55:36.0235351Z thread 'commands::workflows::tests::home_env_keeps_home_unset_if_originally_unset' (12046) panicked at crates/luft-cli/src/commands/workflows.rs:316:24:
+2026-07-26T04:55:36.0236467Z assertion `left == right` failed
+2026-07-26T04:55:36.0236881Z   left: None
+2026-07-26T04:55:36.0237228Z  right: Some("/home/runner")
+2026-07-26T04:55:36.0237622Z stack backtrace:
+2026-07-26T04:55:36.0237975Z    0: __rustc::rust_begin_unwind
+2026-07-26T04:55:36.0238914Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/std/src/panicking.rs:689:5
+2026-07-26T04:55:36.0239698Z    1: core::panicking::panic_fmt
+2026-07-26T04:55:36.0240430Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/panicking.rs:80:14
+2026-07-26T04:55:36.0241239Z    2: core::panicking::assert_failed_inner
+2026-07-26T04:55:36.0241708Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/panicking.rs:439:17
+2026-07-26T04:55:36.0242311Z    3: core::panicking::assert_failed::<core::option::Option<&str>, core::option::Option<&str>>
+2026-07-26T04:55:36.0243087Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/panicking.rs:394:5
+2026-07-26T04:55:36.0243682Z    4: luft::commands::workflows::tests::home_env_keeps_home_unset_if_originally_unset
+2026-07-26T04:55:36.0244107Z              at ./src/commands/workflows.rs:316:24
+2026-07-26T04:55:36.0244559Z    5: luft::commands::workflows::tests::home_env_keeps_home_unset_if_originally_unset::{closure#0}
+2026-07-26T04:55:36.0245013Z              at ./src/commands/workflows.rs:297:55
+2026-07-26T04:55:36.0245617Z    6: <luft::commands::workflows::tests::home_env_keeps_home_unset_if_originally_unset::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+2026-07-26T04:55:36.0246381Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/ops/function.rs:250:5
+2026-07-26T04:55:36.0247032Z    7: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+2026-07-26T04:55:36.0247653Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/ops/function.rs:250:5
+2026-07-26T04:55:36.0248852Z note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+2026-07-26T04:55:36.0249430Z 
+2026-07-26T04:55:36.0249713Z ---- commands::workflows::tests::home_env_restores_previous_home_value stdout ----
+2026-07-26T04:55:36.0250045Z 
+2026-07-26T04:55:36.0250479Z thread 'commands::workflows::tests::home_env_restores_previous_home_value' (12047) panicked at crates/luft-cli/src/commands/workflows.rs:288:40:
+2026-07-26T04:55:36.0251175Z called `Result::unwrap()` on an `Err` value: PoisonError { .. }
+2026-07-26T04:55:36.0251543Z stack backtrace:
+2026-07-26T04:55:36.0251756Z    0: __rustc::rust_begin_unwind
+2026-07-26T04:55:36.0252172Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/std/src/panicking.rs:689:5
+2026-07-26T04:55:36.0252624Z    1: core::panicking::panic_fmt
+2026-07-26T04:55:36.0253034Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/panicking.rs:80:14
+2026-07-26T04:55:36.0253482Z    2: core::result::unwrap_failed
+2026-07-26T04:55:36.0253896Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/result.rs:1867:5
+2026-07-26T04:55:36.0254650Z    3: <core::result::Result<std::sync::poison::mutex::MutexGuard<()>, std::sync::poison::PoisonError<std::sync::poison::mutex::MutexGuard<()>>>>::unwrap
+2026-07-26T04:55:36.0255416Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/result.rs:1233:23
+2026-07-26T04:55:36.0256137Z    4: luft::commands::workflows::tests::home_env_restores_previous_home_value
+2026-07-26T04:55:36.0256559Z              at ./src/commands/workflows.rs:288:40
+2026-07-26T04:55:36.0257000Z    5: luft::commands::workflows::tests::home_env_restores_previous_home_value::{closure#0}
+2026-07-26T04:55:36.0257442Z              at ./src/commands/workflows.rs:270:47
+2026-07-26T04:55:36.0258020Z    6: <luft::commands::workflows::tests::home_env_restores_previous_home_value::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+2026-07-26T04:55:36.0259100Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/ops/function.rs:250:5
+2026-07-26T04:55:36.0259745Z    7: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+2026-07-26T04:55:36.0260370Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/ops/function.rs:250:5
+2026-07-26T04:55:36.0260953Z note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+2026-07-26T04:55:36.0261284Z 
+2026-07-26T04:55:36.0261552Z ---- commands::workflows::tests::list_workflows_handles_empty_lua_file stdout ----
+2026-07-26T04:55:36.0261870Z 
+2026-07-26T04:55:36.0262287Z thread 'commands::workflows::tests::list_workflows_handles_empty_lua_file' (12051) panicked at crates/luft-cli/src/commands/workflows.rs:92:42:
+2026-07-26T04:55:36.0262965Z called `Result::unwrap()` on an `Err` value: PoisonError { .. }
+2026-07-26T04:55:36.0263293Z stack backtrace:
+2026-07-26T04:55:36.0263501Z    0: __rustc::rust_begin_unwind
+2026-07-26T04:55:36.0264043Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/std/src/panicking.rs:689:5
+2026-07-26T04:55:36.0264499Z    1: core::panicking::panic_fmt
+2026-07-26T04:55:36.0264910Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/panicking.rs:80:14
+2026-07-26T04:55:36.0265353Z    2: core::result::unwrap_failed
+2026-07-26T04:55:36.0265763Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/result.rs:1867:5
+2026-07-26T04:55:36.0266519Z    3: <core::result::Result<std::sync::poison::mutex::MutexGuard<()>, std::sync::poison::PoisonError<std::sync::poison::mutex::MutexGuard<()>>>>::unwrap
+2026-07-26T04:55:36.0267299Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/result.rs:1233:23
+2026-07-26T04:55:36.0267769Z    4: <luft::commands::workflows::tests::HomeEnv>::new
+2026-07-26T04:55:36.0268522Z              at ./src/commands/workflows.rs:92:42
+2026-07-26T04:55:36.0269004Z    5: luft::commands::workflows::tests::list_workflows_handles_empty_lua_file
+2026-07-26T04:55:36.0269419Z              at ./src/commands/workflows.rs:383:20
+2026-07-26T04:55:36.0269849Z    6: luft::commands::workflows::tests::list_workflows_handles_empty_lua_file::{closure#0}
+2026-07-26T04:55:36.0270279Z              at ./src/commands/workflows.rs:382:47
+2026-07-26T04:55:36.0270854Z    7: <luft::commands::workflows::tests::list_workflows_handles_empty_lua_file::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+2026-07-26T04:55:36.0271619Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/ops/function.rs:250:5
+2026-07-26T04:55:36.0272250Z    8: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+2026-07-26T04:55:36.0272872Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/ops/function.rs:250:5
+2026-07-26T04:55:36.0273460Z note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+2026-07-26T04:55:36.0273785Z 
+2026-07-26T04:55:36.0273995Z ---- commands::workflows::tests::list_workflows_filters_non_lua_files stdout ----
+2026-07-26T04:55:36.0274309Z 
+2026-07-26T04:55:36.0274726Z thread 'commands::workflows::tests::list_workflows_filters_non_lua_files' (12050) panicked at crates/luft-cli/src/commands/workflows.rs:92:42:
+2026-07-26T04:55:36.0275394Z called `Result::unwrap()` on an `Err` value: PoisonError { .. }
+2026-07-26T04:55:36.0275869Z stack backtrace:
+2026-07-26T04:55:36.0276085Z    0: __rustc::rust_begin_unwind
+2026-07-26T04:55:36.0276492Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/std/src/panicking.rs:689:5
+2026-07-26T04:55:36.0276934Z    1: core::panicking::panic_fmt
+2026-07-26T04:55:36.0277356Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/panicking.rs:80:14
+2026-07-26T04:55:36.0277800Z    2: core::result::unwrap_failed
+2026-07-26T04:55:36.0278467Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/result.rs:1867:5
+2026-07-26T04:55:36.0279234Z    3: <core::result::Result<std::sync::poison::mutex::MutexGuard<()>, std::sync::poison::PoisonError<std::sync::poison::mutex::MutexGuard<()>>>>::unwrap
+2026-07-26T04:55:36.0279981Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/result.rs:1233:23
+2026-07-26T04:55:36.0280446Z    4: <luft::commands::workflows::tests::HomeEnv>::new
+2026-07-26T04:55:36.0280770Z              at ./src/commands/workflows.rs:92:42
+2026-07-26T04:55:36.0281154Z    5: luft::commands::workflows::tests::list_workflows_filters_non_lua_files
+2026-07-26T04:55:36.0281542Z              at ./src/commands/workflows.rs:216:20
+2026-07-26T04:55:36.0281978Z    6: luft::commands::workflows::tests::list_workflows_filters_non_lua_files::{closure#0}
+2026-07-26T04:55:36.0289244Z              at ./src/commands/workflows.rs:215:46
+2026-07-26T04:55:36.0290084Z    7: <luft::commands::workflows::tests::list_workflows_filters_non_lua_files::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+2026-07-26T04:55:36.0290873Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/ops/function.rs:250:5
+2026-07-26T04:55:36.0291559Z    8: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+2026-07-26T04:55:36.0292206Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/ops/function.rs:250:5
+2026-07-26T04:55:36.0292815Z note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+2026-07-26T04:55:36.0293155Z 
+2026-07-26T04:55:36.0293375Z ---- commands::workflows::tests::list_workflows_empty_directory stdout ----
+2026-07-26T04:55:36.0293684Z 
+2026-07-26T04:55:36.0294088Z thread 'commands::workflows::tests::list_workflows_empty_directory' (12049) panicked at crates/luft-cli/src/commands/workflows.rs:92:42:
+2026-07-26T04:55:36.0294770Z called `Result::unwrap()` on an `Err` value: PoisonError { .. }
+2026-07-26T04:55:36.0295119Z stack backtrace:
+2026-07-26T04:55:36.0295343Z    0: __rustc::rust_begin_unwind
+2026-07-26T04:55:36.0295811Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/std/src/panicking.rs:689:5
+2026-07-26T04:55:36.0296282Z    1: core::panicking::panic_fmt
+2026-07-26T04:55:36.0296702Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/panicking.rs:80:14
+2026-07-26T04:55:36.0297152Z    2: core::result::unwrap_failed
+2026-07-26T04:55:36.0297571Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/result.rs:1867:5
+2026-07-26T04:55:36.0298635Z    3: <core::result::Result<std::sync::poison::mutex::MutexGuard<()>, std::sync::poison::PoisonError<std::sync::poison::mutex::MutexGuard<()>>>>::unwrap
+2026-07-26T04:55:36.0299399Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/result.rs:1233:23
+2026-07-26T04:55:36.0299881Z    4: <luft::commands::workflows::tests::HomeEnv>::new
+2026-07-26T04:55:36.0300215Z              at ./src/commands/workflows.rs:92:42
+2026-07-26T04:55:36.0300597Z    5: luft::commands::workflows::tests::list_workflows_empty_directory
+2026-07-26T04:55:36.0300979Z              at ./src/commands/workflows.rs:197:20
+2026-07-26T04:55:36.0301384Z    6: luft::commands::workflows::tests::list_workflows_empty_directory::{closure#0}
+2026-07-26T04:55:36.0301797Z              at ./src/commands/workflows.rs:196:40
+2026-07-26T04:55:36.0302359Z    7: <luft::commands::workflows::tests::list_workflows_empty_directory::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+2026-07-26T04:55:36.0303235Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/ops/function.rs:250:5
+2026-07-26T04:55:36.0303873Z    8: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+2026-07-26T04:55:36.0304497Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/ops/function.rs:250:5
+2026-07-26T04:55:36.0305091Z note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+2026-07-26T04:55:36.0305423Z 
+2026-07-26T04:55:36.0305633Z ---- commands::workflows::tests::list_workflows_handles_many_files stdout ----
+2026-07-26T04:55:36.0305938Z 
+2026-07-26T04:55:36.0306351Z thread 'commands::workflows::tests::list_workflows_handles_many_files' (12052) panicked at crates/luft-cli/src/commands/workflows.rs:92:42:
+2026-07-26T04:55:36.0307020Z called `Result::unwrap()` on an `Err` value: PoisonError { .. }
+2026-07-26T04:55:36.0307359Z stack backtrace:
+2026-07-26T04:55:36.0307579Z    0: __rustc::rust_begin_unwind
+2026-07-26T04:55:36.0307986Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/std/src/panicking.rs:689:5
+2026-07-26T04:55:36.0308731Z    1: core::panicking::panic_fmt
+2026-07-26T04:55:36.0309153Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/panicking.rs:80:14
+2026-07-26T04:55:36.0309613Z    2: core::result::unwrap_failed
+2026-07-26T04:55:36.0310153Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/result.rs:1867:5
+2026-07-26T04:55:36.0310933Z    3: <core::result::Result<std::sync::poison::mutex::MutexGuard<()>, std::sync::poison::PoisonError<std::sync::poison::mutex::MutexGuard<()>>>>::unwrap
+2026-07-26T04:55:36.0311684Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/result.rs:1233:23
+2026-07-26T04:55:36.0312160Z    4: <luft::commands::workflows::tests::HomeEnv>::new
+2026-07-26T04:55:36.0312497Z              at ./src/commands/workflows.rs:92:42
+2026-07-26T04:55:36.0312878Z    5: luft::commands::workflows::tests::list_workflows_handles_many_files
+2026-07-26T04:55:36.0313269Z              at ./src/commands/workflows.rs:371:20
+2026-07-26T04:55:36.0313679Z    6: luft::commands::workflows::tests::list_workflows_handles_many_files::{closure#0}
+2026-07-26T04:55:36.0314095Z              at ./src/commands/workflows.rs:370:43
+2026-07-26T04:55:36.0314663Z    7: <luft::commands::workflows::tests::list_workflows_handles_many_files::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+2026-07-26T04:55:36.0315392Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/ops/function.rs:250:5
+2026-07-26T04:55:36.0316026Z    8: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+2026-07-26T04:55:36.0316643Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/ops/function.rs:250:5
+2026-07-26T04:55:36.0317231Z note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+2026-07-26T04:55:36.0317558Z 
+2026-07-26T04:55:36.0317802Z ---- commands::workflows::tests::list_workflows_skips_files_without_extension stdout ----
+2026-07-26T04:55:36.0318448Z 
+2026-07-26T04:55:36.0318933Z thread 'commands::workflows::tests::list_workflows_skips_files_without_extension' (12055) panicked at crates/luft-cli/src/commands/workflows.rs:92:42:
+2026-07-26T04:55:36.0319650Z called `Result::unwrap()` on an `Err` value: PoisonError { .. }
+2026-07-26T04:55:36.0319996Z stack backtrace:
+2026-07-26T04:55:36.0320219Z    0: __rustc::rust_begin_unwind
+2026-07-26T04:55:36.0320647Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/std/src/panicking.rs:689:5
+2026-07-26T04:55:36.0321104Z    1: core::panicking::panic_fmt
+2026-07-26T04:55:36.0321524Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/panicking.rs:80:14
+2026-07-26T04:55:36.0322121Z    2: core::result::unwrap_failed
+2026-07-26T04:55:36.0322529Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/result.rs:1867:5
+2026-07-26T04:55:36.0323494Z    3: <core::result::Result<std::sync::poison::mutex::MutexGuard<()>, std::sync::poison::PoisonError<std::sync::poison::mutex::MutexGuard<()>>>>::unwrap
+2026-07-26T04:55:36.0324785Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/result.rs:1233:23
+2026-07-26T04:55:36.0325569Z    4: <luft::commands::workflows::tests::HomeEnv>::new
+2026-07-26T04:55:36.0326042Z              at ./src/commands/workflows.rs:92:42
+2026-07-26T04:55:36.0326632Z    5: luft::commands::workflows::tests::list_workflows_skips_files_without_extension
+2026-07-26T04:55:36.0327279Z              at ./src/commands/workflows.rs:227:20
+2026-07-26T04:55:36.0328001Z    6: luft::commands::workflows::tests::list_workflows_skips_files_without_extension::{closure#0}
+2026-07-26T04:55:36.0329037Z              at ./src/commands/workflows.rs:226:54
+2026-07-26T04:55:36.0330029Z    7: <luft::commands::workflows::tests::list_workflows_skips_files_without_extension::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+2026-07-26T04:55:36.0331307Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/ops/function.rs:250:5
+2026-07-26T04:55:36.0332336Z    8: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+2026-07-26T04:55:36.0333554Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/ops/function.rs:250:5
+2026-07-26T04:55:36.0334513Z note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+2026-07-26T04:55:36.0335059Z 
+2026-07-26T04:55:36.0335385Z ---- commands::workflows::tests::list_workflows_read_dir_error stdout ----
+2026-07-26T04:55:36.0335855Z 
+2026-07-26T04:55:36.0336535Z thread 'commands::workflows::tests::list_workflows_read_dir_error' (12054) panicked at crates/luft-cli/src/commands/workflows.rs:92:42:
+2026-07-26T04:55:36.0337659Z called `Result::unwrap()` on an `Err` value: PoisonError { .. }
+2026-07-26T04:55:36.0338340Z stack backtrace:
+2026-07-26T04:55:36.0338671Z    0: __rustc::rust_begin_unwind
+2026-07-26T04:55:36.0339395Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/std/src/panicking.rs:689:5
+2026-07-26T04:55:36.0340106Z    1: core::panicking::panic_fmt
+2026-07-26T04:55:36.0340781Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/panicking.rs:80:14
+2026-07-26T04:55:36.0341389Z    2: core::result::unwrap_failed
+2026-07-26T04:55:36.0341795Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/result.rs:1867:5
+2026-07-26T04:55:36.0342547Z    3: <core::result::Result<std::sync::poison::mutex::MutexGuard<()>, std::sync::poison::PoisonError<std::sync::poison::mutex::MutexGuard<()>>>>::unwrap
+2026-07-26T04:55:36.0343307Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/result.rs:1233:23
+2026-07-26T04:55:36.0343778Z    4: <luft::commands::workflows::tests::HomeEnv>::new
+2026-07-26T04:55:36.0344101Z              at ./src/commands/workflows.rs:92:42
+2026-07-26T04:55:36.0344474Z    5: luft::commands::workflows::tests::list_workflows_read_dir_error
+2026-07-26T04:55:36.0344844Z              at ./src/commands/workflows.rs:238:20
+2026-07-26T04:55:36.0345241Z    6: luft::commands::workflows::tests::list_workflows_read_dir_error::{closure#0}
+2026-07-26T04:55:36.0345649Z              at ./src/commands/workflows.rs:237:39
+2026-07-26T04:55:36.0346198Z    7: <luft::commands::workflows::tests::list_workflows_read_dir_error::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+2026-07-26T04:55:36.0346917Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/ops/function.rs:250:5
+2026-07-26T04:55:36.0347551Z    8: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+2026-07-26T04:55:36.0348643Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/ops/function.rs:250:5
+2026-07-26T04:55:36.0349251Z note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+2026-07-26T04:55:36.0349585Z 
+2026-07-26T04:55:36.0349816Z ---- commands::workflows::tests::list_workflows_handles_unicode_filenames stdout ----
+2026-07-26T04:55:36.0350140Z 
+2026-07-26T04:55:36.0350578Z thread 'commands::workflows::tests::list_workflows_handles_unicode_filenames' (12053) panicked at crates/luft-cli/src/commands/workflows.rs:92:42:
+2026-07-26T04:55:36.0351272Z called `Result::unwrap()` on an `Err` value: PoisonError { .. }
+2026-07-26T04:55:36.0351613Z stack backtrace:
+2026-07-26T04:55:36.0351831Z    0: __rustc::rust_begin_unwind
+2026-07-26T04:55:36.0352245Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/std/src/panicking.rs:689:5
+2026-07-26T04:55:36.0352690Z    1: core::panicking::panic_fmt
+2026-07-26T04:55:36.0353096Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/panicking.rs:80:14
+2026-07-26T04:55:36.0353542Z    2: core::result::unwrap_failed
+2026-07-26T04:55:36.0353942Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/result.rs:1867:5
+2026-07-26T04:55:36.0354704Z    3: <core::result::Result<std::sync::poison::mutex::MutexGuard<()>, std::sync::poison::PoisonError<std::sync::poison::mutex::MutexGuard<()>>>>::unwrap
+2026-07-26T04:55:36.0355456Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/result.rs:1233:23
+2026-07-26T04:55:36.0356059Z    4: <luft::commands::workflows::tests::HomeEnv>::new
+2026-07-26T04:55:36.0356387Z              at ./src/commands/workflows.rs:92:42
+2026-07-26T04:55:36.0356787Z    5: luft::commands::workflows::tests::list_workflows_handles_unicode_filenames
+2026-07-26T04:55:36.0357194Z              at ./src/commands/workflows.rs:393:20
+2026-07-26T04:55:36.0357673Z    6: luft::commands::workflows::tests::list_workflows_handles_unicode_filenames::{closure#0}
+2026-07-26T04:55:36.0358396Z              at ./src/commands/workflows.rs:392:50
+2026-07-26T04:55:36.0359006Z    7: <luft::commands::workflows::tests::list_workflows_handles_unicode_filenames::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+2026-07-26T04:55:36.0359773Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/ops/function.rs:250:5
+2026-07-26T04:55:36.0360401Z    8: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+2026-07-26T04:55:36.0361023Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/ops/function.rs:250:5
+2026-07-26T04:55:36.0361610Z note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+2026-07-26T04:55:36.0361934Z 
+2026-07-26T04:55:36.0362127Z ---- commands::workflows::tests::list_workflows_with_lua_files stdout ----
+2026-07-26T04:55:36.0362420Z 
+2026-07-26T04:55:36.0362817Z thread 'commands::workflows::tests::list_workflows_with_lua_files' (12056) panicked at crates/luft-cli/src/commands/workflows.rs:92:42:
+2026-07-26T04:55:36.0363466Z called `Result::unwrap()` on an `Err` value: PoisonError { .. }
+2026-07-26T04:55:36.0363799Z stack backtrace:
+2026-07-26T04:55:36.0364012Z    0: __rustc::rust_begin_unwind
+2026-07-26T04:55:36.0364423Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/std/src/panicking.rs:689:5
+2026-07-26T04:55:36.0364861Z    1: core::panicking::panic_fmt
+2026-07-26T04:55:36.0365278Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/panicking.rs:80:14
+2026-07-26T04:55:36.0365732Z    2: core::result::unwrap_failed
+2026-07-26T04:55:36.0366145Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/result.rs:1867:5
+2026-07-26T04:55:36.0366896Z    3: <core::result::Result<std::sync::poison::mutex::MutexGuard<()>, std::sync::poison::PoisonError<std::sync::poison::mutex::MutexGuard<()>>>>::unwrap
+2026-07-26T04:55:36.0367791Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/result.rs:1233:23
+2026-07-26T04:55:36.0368471Z    4: <luft::commands::workflows::tests::HomeEnv>::new
+2026-07-26T04:55:36.0368791Z              at ./src/commands/workflows.rs:92:42
+2026-07-26T04:55:36.0369163Z    5: luft::commands::workflows::tests::list_workflows_with_lua_files
+2026-07-26T04:55:36.0369526Z              at ./src/commands/workflows.rs:205:20
+2026-07-26T04:55:36.0369919Z    6: luft::commands::workflows::tests::list_workflows_with_lua_files::{closure#0}
+2026-07-26T04:55:36.0370334Z              at ./src/commands/workflows.rs:204:39
+2026-07-26T04:55:36.0370876Z    7: <luft::commands::workflows::tests::list_workflows_with_lua_files::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+2026-07-26T04:55:36.0371595Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/ops/function.rs:250:5
+2026-07-26T04:55:36.0372225Z    8: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+2026-07-26T04:55:36.0372844Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/ops/function.rs:250:5
+2026-07-26T04:55:36.0373432Z note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+2026-07-26T04:55:36.0373765Z 
+2026-07-26T04:55:36.0374038Z ---- commands::workflows::tests::unset_home_guard_keeps_home_unset_if_originally_unset stdout ----
+2026-07-26T04:55:36.0374397Z 
+2026-07-26T04:55:36.0375050Z thread 'commands::workflows::tests::unset_home_guard_keeps_home_unset_if_originally_unset' (12057) panicked at crates/luft-cli/src/commands/workflows.rs:351:37:
+2026-07-26T04:55:36.0375793Z called `Result::unwrap()` on an `Err` value: PoisonError { .. }
+2026-07-26T04:55:36.0376134Z stack backtrace:
+2026-07-26T04:55:36.0376345Z    0: __rustc::rust_begin_unwind
+2026-07-26T04:55:36.0376754Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/std/src/panicking.rs:689:5
+2026-07-26T04:55:36.0377206Z    1: core::panicking::panic_fmt
+2026-07-26T04:55:36.0377615Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/panicking.rs:80:14
+2026-07-26T04:55:36.0378068Z    2: core::result::unwrap_failed
+2026-07-26T04:55:36.0378681Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/result.rs:1867:5
+2026-07-26T04:55:36.0379431Z    3: <core::result::Result<std::sync::poison::mutex::MutexGuard<()>, std::sync::poison::PoisonError<std::sync::poison::mutex::MutexGuard<()>>>>::unwrap
+2026-07-26T04:55:36.0380187Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/result.rs:1233:23
+2026-07-26T04:55:36.0380794Z    4: luft::commands::workflows::tests::unset_home_guard_keeps_home_unset_if_originally_unset
+2026-07-26T04:55:36.0381237Z              at ./src/commands/workflows.rs:351:37
+2026-07-26T04:55:36.0381720Z    5: luft::commands::workflows::tests::unset_home_guard_keeps_home_unset_if_originally_unset::{closure#0}
+2026-07-26T04:55:36.0382212Z              at ./src/commands/workflows.rs:347:63
+2026-07-26T04:55:36.0382835Z    6: <luft::commands::workflows::tests::unset_home_guard_keeps_home_unset_if_originally_unset::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+2026-07-26T04:55:36.0383630Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/ops/function.rs:250:5
+2026-07-26T04:55:36.0384255Z    7: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+2026-07-26T04:55:36.0384874Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/ops/function.rs:250:5
+2026-07-26T04:55:36.0385462Z note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+2026-07-26T04:55:36.0385782Z 
+2026-07-26T04:55:36.0386026Z ---- commands::workflows::tests::unset_home_guard_restores_previous_home_value stdout ----
+2026-07-26T04:55:36.0386372Z 
+2026-07-26T04:55:36.0386818Z thread 'commands::workflows::tests::unset_home_guard_restores_previous_home_value' (12058) panicked at crates/luft-cli/src/commands/workflows.rs:328:37:
+2026-07-26T04:55:36.0387705Z called `Result::unwrap()` on an `Err` value: PoisonError { .. }
+2026-07-26T04:55:36.0388046Z stack backtrace:
+2026-07-26T04:55:36.0388603Z    0: __rustc::rust_begin_unwind
+2026-07-26T04:55:36.0389016Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/std/src/panicking.rs:689:5
+2026-07-26T04:55:36.0389455Z    1: core::panicking::panic_fmt
+2026-07-26T04:55:36.0389866Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/panicking.rs:80:14
+2026-07-26T04:55:36.0390309Z    2: core::result::unwrap_failed
+2026-07-26T04:55:36.0390715Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/result.rs:1867:5
+2026-07-26T04:55:36.0391459Z    3: <core::result::Result<std::sync::poison::mutex::MutexGuard<()>, std::sync::poison::PoisonError<std::sync::poison::mutex::MutexGuard<()>>>>::unwrap
+2026-07-26T04:55:36.0392209Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/result.rs:1233:23
+2026-07-26T04:55:36.0392762Z    4: luft::commands::workflows::tests::unset_home_guard_restores_previous_home_value
+2026-07-26T04:55:36.0393180Z              at ./src/commands/workflows.rs:328:37
+2026-07-26T04:55:36.0393629Z    5: luft::commands::workflows::tests::unset_home_guard_restores_previous_home_value::{closure#0}
+2026-07-26T04:55:36.0394079Z              at ./src/commands/workflows.rs:323:55
+2026-07-26T04:55:36.0394840Z    6: <luft::commands::workflows::tests::unset_home_guard_restores_previous_home_value::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+2026-07-26T04:55:36.0395661Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/ops/function.rs:250:5
+2026-07-26T04:55:36.0396310Z    7: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+2026-07-26T04:55:36.0396936Z              at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/ops/function.rs:250:5
+2026-07-26T04:55:36.0397534Z note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+2026-07-26T04:55:36.0397860Z 
+2026-07-26T04:55:36.0397864Z 
+2026-07-26T04:55:36.0398011Z failures:
+2026-07-26T04:55:36.0398688Z     commands::workflows::tests::home_env_keeps_home_unset_if_originally_unset
+2026-07-26T04:55:36.0399521Z     commands::workflows::tests::home_env_restores_previous_home_value
+2026-07-26T04:55:36.0400231Z     commands::workflows::tests::list_workflows_empty_directory
+2026-07-26T04:55:36.0400963Z     commands::workflows::tests::list_workflows_filters_non_lua_files
+2026-07-26T04:55:36.0401422Z     commands::workflows::tests::list_workflows_handles_empty_lua_file
+2026-07-26T04:55:36.0401845Z     commands::workflows::tests::list_workflows_handles_many_files
+2026-07-26T04:55:36.0402278Z     commands::workflows::tests::list_workflows_handles_unicode_filenames
+2026-07-26T04:55:36.0402707Z     commands::workflows::tests::list_workflows_read_dir_error
+2026-07-26T04:55:36.0403144Z     commands::workflows::tests::list_workflows_skips_files_without_extension
+2026-07-26T04:55:36.0403580Z     commands::workflows::tests::list_workflows_with_lua_files
+2026-07-26T04:55:36.0404043Z     commands::workflows::tests::unset_home_guard_keeps_home_unset_if_originally_unset
+2026-07-26T04:55:36.0404556Z     commands::workflows::tests::unset_home_guard_restores_previous_home_value
+2026-07-26T04:55:36.0404849Z 
+2026-07-26T04:55:36.0405122Z test result: FAILED. 361 passed; 12 failed; 0 ignored; 0 measured; 0 filtered out; finished in 19.13s
+2026-07-26T04:55:36.0405495Z 
+2026-07-26T04:55:36.0405913Z [1m[91merror[0m: test failed, to rerun pass `-p luft-cli --bin luft`
+2026-07-26T04:55:36.0416542Z ##[error]Process completed with exit code 101.
+2026-07-26T04:55:36.0535981Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-26T04:55:36.0537399Z Post job cleanup.
+2026-07-26T04:55:36.1428942Z [command]/usr/bin/git version
+2026-07-26T04:55:36.1443882Z git version 2.54.0
+2026-07-26T04:55:36.1489623Z Temporarily overriding HOME='/home/runner/work/_temp/c9a03fac-7437-45f3-8714-f574370150c1' before making global git config changes
+2026-07-26T04:55:36.1491017Z Adding repository directory to the temporary git global config as a safe directory
+2026-07-26T04:55:36.1496672Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/luft/luft
+2026-07-26T04:55:36.1534818Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-07-26T04:55:36.1571172Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-07-26T04:55:36.1817844Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-07-26T04:55:36.1847608Z http.https://github.com/.extraheader
+2026-07-26T04:55:36.1858730Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-07-26T04:55:36.1895040Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-07-26T04:55:36.2159155Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-07-26T04:55:36.2199307Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-07-26T04:55:36.2612984Z Cleaning up orphan processes
+2026-07-26T04:55:36.3089893Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/cache@v4, actions/checkout@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

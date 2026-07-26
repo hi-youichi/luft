@@ -78,6 +78,11 @@ mod tests {
     }
 
     #[cfg(unix)]
+    fn lock_home() -> std::sync::MutexGuard<'static, ()> {
+        HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    #[cfg(unix)]
     fn config_env_var() -> &'static str {
         if cfg!(windows) {
             "APPDATA"
@@ -89,7 +94,7 @@ mod tests {
     #[cfg(unix)]
     impl HomeEnv {
         fn new() -> Self {
-            let _lock = HOME_LOCK.lock().unwrap();
+            let _lock = lock_home();
             let dir = TempDir::new().unwrap();
             let key = config_env_var();
             let orig_home = std::env::var(key).ok();
@@ -131,7 +136,7 @@ mod tests {
     impl UnsetHomeGuard {
         #[cfg(target_os = "macos")]
         fn new() -> Self {
-            let _lock = HOME_LOCK.lock().unwrap();
+            let _lock = lock_home();
             let key = config_env_var();
             let orig_home = std::env::var(key).ok();
             let orig_xdg = std::env::var("XDG_CONFIG_HOME").ok();
@@ -248,7 +253,7 @@ mod tests {
         let key = config_env_var();
         let orig = std::env::var(key).ok();
         std::env::remove_var(key);
-        let lock = HOME_LOCK.lock().unwrap();
+        let lock = lock_home();
         let dir = TempDir::new().unwrap();
         std::env::set_var(key, dir.path());
         {
@@ -274,7 +279,7 @@ mod tests {
         let dir_path = dir.path().to_str().unwrap().to_string();
         std::env::set_var(key, dir.path());
 
-        let lock = HOME_LOCK.lock().unwrap();
+        let lock = lock_home();
         {
             let _env = HomeEnv {
                 _lock: lock,
@@ -285,7 +290,7 @@ mod tests {
             assert_eq!(std::env::var(key).ok().as_deref(), Some(dir_path.as_str()));
         }
 
-        let _verify = HOME_LOCK.lock().unwrap();
+        let _verify = lock_home();
         match &orig {
             Some(v) => assert_eq!(std::env::var(key).ok().as_deref(), Some(v.as_str())),
             None => assert!(std::env::var(key).is_err()),
@@ -299,7 +304,7 @@ mod tests {
         let orig = std::env::var(key).ok();
         std::env::remove_var(key);
 
-        let lock = HOME_LOCK.lock().unwrap();
+        let lock = lock_home();
         let dir = TempDir::new().unwrap();
         std::env::set_var(key, dir.path());
         {
@@ -311,7 +316,7 @@ mod tests {
             };
         }
 
-        let _verify = HOME_LOCK.lock().unwrap();
+        let _verify = lock_home();
         match &orig {
             Some(v) => assert_eq!(std::env::var(key).ok().as_deref(), Some(v.as_str())),
             None => assert!(std::env::var(key).is_err()),
@@ -325,7 +330,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         std::env::set_var(key, dir.path());
 
-        let lock = HOME_LOCK.lock().unwrap();
+        let lock = lock_home();
         {
             let _guard = UnsetHomeGuard {
                 _lock: lock,
@@ -335,7 +340,7 @@ mod tests {
             assert!(std::env::var(key).is_err());
         }
 
-        let _verify = HOME_LOCK.lock().unwrap();
+        let _verify = lock_home();
         assert_eq!(
             std::env::var(key).ok().as_deref(),
             Some(dir.path().to_str().unwrap())
@@ -348,7 +353,7 @@ mod tests {
         let key = "HOME";
         std::env::remove_var(key);
 
-        let lock = HOME_LOCK.lock().unwrap();
+        let lock = lock_home();
         {
             let _guard = UnsetHomeGuard {
                 _lock: lock,
@@ -357,7 +362,7 @@ mod tests {
             };
         }
 
-        let _verify = HOME_LOCK.lock().unwrap();
+        let _verify = lock_home();
         assert!(std::env::var(key).is_err());
     }
 
