@@ -83,6 +83,9 @@ mod tests {
     }
 
     #[cfg(unix)]
+    use serial_test::serial;
+
+    #[cfg(unix)]
     fn config_env_var() -> &'static str {
         if cfg!(windows) {
             "APPDATA"
@@ -172,6 +175,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     #[cfg(target_os = "macos")]
     fn config_dir_returns_macos_path_when_home_set() {
         let _env = HomeEnv::new();
@@ -183,6 +187,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     #[cfg(target_os = "macos")]
     fn config_dir_returns_none_when_home_unset() {
         let _guard = UnsetHomeGuard::new();
@@ -190,6 +195,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     #[cfg(unix)]
     fn list_workflows_dir_does_not_exist() {
         let _env = HomeEnv::new();
@@ -197,6 +203,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     #[cfg(unix)]
     fn list_workflows_empty_directory() {
         let _env = HomeEnv::new();
@@ -205,6 +212,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     #[cfg(unix)]
     fn list_workflows_with_lua_files() {
         let _env = HomeEnv::new();
@@ -216,6 +224,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     #[cfg(unix)]
     fn list_workflows_filters_non_lua_files() {
         let _env = HomeEnv::new();
@@ -227,6 +236,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     #[cfg(unix)]
     fn list_workflows_skips_files_without_extension() {
         let _env = HomeEnv::new();
@@ -238,6 +248,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     #[cfg(unix)]
     fn list_workflows_read_dir_error() {
         let _env = HomeEnv::new();
@@ -248,6 +259,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     #[cfg(unix)]
     fn home_env_drop_handles_originally_unset_home() {
         let key = config_env_var();
@@ -271,6 +283,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     #[cfg(unix)]
     fn home_env_restores_previous_home_value() {
         let key = "HOME";
@@ -298,6 +311,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     #[cfg(unix)]
     fn home_env_keeps_home_unset_if_originally_unset() {
         let key = "HOME";
@@ -324,6 +338,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     #[cfg(unix)]
     fn unset_home_guard_restores_previous_home_value() {
         let key = "HOME";
@@ -348,6 +363,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     #[cfg(unix)]
     fn unset_home_guard_keeps_home_unset_if_originally_unset() {
         let key = "HOME";
@@ -371,6 +387,7 @@ mod tests {
     // ========================================================================
 
     #[test]
+    #[serial]
     #[cfg(unix)]
     fn list_workflows_handles_many_files() {
         let _env = HomeEnv::new();
@@ -383,6 +400,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     #[cfg(unix)]
     fn list_workflows_handles_empty_lua_file() {
         let _env = HomeEnv::new();
@@ -393,6 +411,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     #[cfg(unix)]
     fn list_workflows_handles_unicode_filenames() {
         let _env = HomeEnv::new();
