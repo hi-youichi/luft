@@ -631,7 +631,7 @@ mod tests {
             &[r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#],
             &schema,
         );
-        assert!(lines.is_empty());
+        assert!(json_lines(&lines).is_empty());
     }
 
     #[cfg(unix)]
