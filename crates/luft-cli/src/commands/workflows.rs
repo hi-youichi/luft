@@ -129,6 +129,7 @@ mod tests {
 
     #[cfg(unix)]
     impl UnsetHomeGuard {
+        #[cfg(target_os = "macos")]
         fn new() -> Self {
             let _lock = HOME_LOCK.lock().unwrap();
             let key = config_env_var();
