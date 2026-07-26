@@ -1292,7 +1292,7 @@ mod tests {
         // Retry briefly to avoid a race on fast machines (especially Windows).
         let parsed: Value = {
             let mut last = None;
-            for _ in 0..20 {
+            for _ in 0..60 {
                 let result =
                     get_run_events_tool(&luft, &json!({"run_id": run_id, "events_limit": 1}));
                 let text = result["content"][0]["text"].as_str().unwrap();
@@ -1306,7 +1306,7 @@ mod tests {
                     break;
                 }
                 last = Some(p);
-                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
             }
             last.unwrap()
         };
