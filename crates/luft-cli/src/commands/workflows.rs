@@ -177,7 +177,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(unix)]
+    #[cfg(target_os = "macos")]
     fn config_dir_returns_none_when_home_unset() {
         let _guard = UnsetHomeGuard::new();
         assert!(dirs::config_dir().is_none());
