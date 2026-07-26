@@ -48,15 +48,11 @@ jobs:
     - name: Check formatting
       run: cargo fmt -- --check
 
-    - name: Clean stale cargo locks, then run clippy
-      run: |
-        rm -f target/.cargo-lock 2>/dev/null || true
-        cargo clippy --workspace --all-targets -- -D warnings
+    - name: Run clippy
+      run: cargo clippy --workspace --all-targets -- -D warnings
 
     - name: Run tests
-      run: |
-        rm -f target/.cargo-lock 2>/dev/null || true
-        cargo test --workspace
+      run: cargo test --workspace
 
   build:
     name: Build on ${{ matrix.os }}
