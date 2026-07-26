@@ -112,7 +112,7 @@ fn serve_mcp(schema: &Value) -> Result<()> {
                 let result = serde_json::json!({
                     "protocolVersion": "2024-11-05",
                     "capabilities": { "tools": {} },
-                    "serverInfo": { "name": "luft-structured-output", "version": "0.1.0" }
+                    "serverInfo": { "name": "luft-structured-output", "version": env!("CARGO_PKG_VERSION") }
                 });
                 write_response(&mut stdout, id, &result)?;
             }

@@ -14,7 +14,7 @@
 | 运行环境 | Lua VM 沙箱（mlua） | 独立 JS 运行时 |
 | 最大并发 agents | 未明确文档化 | 16 |
 | 总 agent 上限/run | 未明确文档化 | 1,000 |
-| Resume / 缓存 | blake3(prompt + model + phase_id) | 同 session 内可恢复 |
+| Resume / 缓存 | blake3(prompt + phase_id) | 同 session 内可恢复 |
 
 ---
 

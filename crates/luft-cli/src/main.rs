@@ -23,8 +23,8 @@ use tokio::sync::broadcast;
 
 #[derive(Parser)]
 #[command(name = "luft")]
-#[command(version = "0.1.0")]
-#[command(about = "Luft — multi-agent orchestration runtime (v0.1)", long_about = None)]
+#[command(version)]
+#[command(about = concat!("Luft — multi-agent orchestration runtime v", env!("CARGO_PKG_VERSION")), long_about = None)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,

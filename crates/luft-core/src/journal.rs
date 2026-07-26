@@ -60,14 +60,13 @@ pub struct AgentCacheKey {
     pub hash: String,
     /// Human-readable for debugging
     pub prompt_preview: String,
-    pub model: Option<String>,
     pub phase_id: PhaseId,
 }
 
 impl AgentCacheKey {
     /// Generate a cache key from agent parameters.
     /// Uses blake3 with null separators to prevent field-concatenation collisions.
-    pub fn new(prompt: &str, model: Option<&str>, phase_id: PhaseId) -> Self {
+    pub fn new(prompt: &str, phase_id: PhaseId) -> Self {
         let normalized = normalize_prompt(prompt);
         let preview = if normalized.chars().count() > 80 {
             format!("{}...", normalized.chars().take(80).collect::<String>())
@@ -78,16 +77,11 @@ impl AgentCacheKey {
         let mut h = Hasher::new();
         h.update(normalized.as_bytes());
         h.update(b"\0");
-        if let Some(m) = model {
-            h.update(m.as_bytes());
-        }
-        h.update(b"\0");
         h.update(&phase_id.to_le_bytes());
 
         Self {
             hash: h.finalize().to_hex().to_string(),
             prompt_preview: preview,
-            model: model.map(|s| s.to_string()),
             phase_id,
         }
     }
@@ -362,7 +356,6 @@ impl JournalStore {
             .map(|k| AgentCacheKey {
                 hash: k.clone(),
                 prompt_preview: String::new(),
-                model: None,
                 phase_id: 0,
             })
             .collect()
@@ -622,7 +615,7 @@ mod tests {
 
         // 2. Cache an agent result
         let agent_id = uuid::Uuid::now_v7();
-        let key = AgentCacheKey::new("test prompt", Some("gpt-4"), 1);
+        let key = AgentCacheKey::new("test prompt", 1);
         journal
             .cache_agent(
                 &key,
@@ -655,20 +648,16 @@ mod tests {
     /// Test that different prompts produce different cache keys
     #[test]
     fn test_cache_key_uniqueness() {
-        let k1 = AgentCacheKey::new("prompt A", Some("gpt-4"), 1);
-        let k2 = AgentCacheKey::new("prompt B", Some("gpt-4"), 1);
+        let k1 = AgentCacheKey::new("prompt A", 1);
+        let k2 = AgentCacheKey::new("prompt B", 1);
         assert_ne!(k1.hash, k2.hash);
 
-        // Same prompt, different model
-        let k3 = AgentCacheKey::new("prompt A", Some("claude"), 1);
-        assert_ne!(k1.hash, k3.hash);
-
         // Same prompt, different phase
-        let k4 = AgentCacheKey::new("prompt A", Some("gpt-4"), 2);
+        let k4 = AgentCacheKey::new("prompt A", 2);
         assert_ne!(k1.hash, k4.hash);
 
         // Whitespace normalization
-        let k5 = AgentCacheKey::new("  prompt  \r\nA  ", Some("gpt-4"), 1);
+        let k5 = AgentCacheKey::new("  prompt  \r\nA  ", 1);
         assert_eq!(k1.hash, k5.hash);
     }
 
@@ -681,9 +670,9 @@ mod tests {
         journal.init_run(run_id, "Three agent test").unwrap();
 
         // Cache agent 1 and 2
-        let k1 = AgentCacheKey::new("task 1", None, 1);
-        let k2 = AgentCacheKey::new("task 2", None, 1);
-        let k3 = AgentCacheKey::new("task 3", None, 1);
+        let k1 = AgentCacheKey::new("task 1", 1);
+        let k2 = AgentCacheKey::new("task 2", 1);
+        let k3 = AgentCacheKey::new("task 3", 1);
 
         journal
             .cache_agent(
@@ -737,7 +726,7 @@ mod tests {
         {
             let j = JournalStore::new(dir.path()).unwrap();
             j.init_run(run_id, "Crash test").unwrap();
-            let key = AgentCacheKey::new("important work", None, 0);
+            let key = AgentCacheKey::new("important work", 0);
             j.cache_agent(
                 &key,
                 uuid::Uuid::now_v7(),
@@ -762,7 +751,7 @@ mod tests {
             assert_eq!(cp.status, crate::state::CheckpointStatus::Running);
             assert!(!cp.agent_results.is_empty());
 
-            let key = AgentCacheKey::new("important work", None, 0);
+            let key = AgentCacheKey::new("important work", 0);
             let cached = j2.get_cached(&key).unwrap();
             assert_eq!(cached.output, serde_json::json!({"survived": true}));
         }
@@ -844,7 +833,7 @@ mod tests {
         ];
         for (status, expected) in &cases {
             let agent_id = uuid::Uuid::now_v7();
-            let key = AgentCacheKey::new("prompt", Some("gpt-4"), 1);
+            let key = AgentCacheKey::new("prompt", 1);
             journal
                 .cache_agent(
                     &key,
@@ -879,7 +868,7 @@ mod tests {
         journal.init_run(run_id, "timed-out guard").unwrap();
 
         let agent_id = uuid::Uuid::now_v7();
-        let key = AgentCacheKey::new("p", None, 0);
+        let key = AgentCacheKey::new("p", 0);
         journal
             .cache_agent(
                 &key,
@@ -920,7 +909,7 @@ mod tests {
         ];
         for (status, expected) in &cases {
             let agent_id = uuid::Uuid::now_v7();
-            let key = AgentCacheKey::new("p", None, 1);
+            let key = AgentCacheKey::new("p", 1);
             journal.record_result(
                 &key,
                 agent_id,
@@ -949,7 +938,7 @@ mod tests {
         journal.init_run(run_id, "record_result timed-out").unwrap();
 
         let agent_id = uuid::Uuid::now_v7();
-        let key = AgentCacheKey::new("p", None, 0);
+        let key = AgentCacheKey::new("p", 0);
         journal.record_result(
             &key,
             agent_id,
@@ -1014,7 +1003,7 @@ mod tests {
         journal.init_run(run_id, "reopen F5").unwrap();
 
         let agent_id = uuid::Uuid::now_v7();
-        let key = AgentCacheKey::new("reopen prompt", Some("gpt-4"), 1);
+        let key = AgentCacheKey::new("reopen prompt", 1);
         journal.record_result(
             &key,
             agent_id,
@@ -1050,7 +1039,7 @@ mod tests {
         journal.init_run(run_id, "event log F5").unwrap();
 
         let agent_id = uuid::Uuid::now_v7();
-        let key = AgentCacheKey::new("p", None, 1);
+        let key = AgentCacheKey::new("p", 1);
         journal
             .cache_agent(
                 &key,
@@ -1099,7 +1088,7 @@ mod tests {
         journal.init_run(run_id, "hash preservation").unwrap();
 
         let agent_id = uuid::Uuid::now_v7();
-        let key = AgentCacheKey::new("preserve me", Some("gpt-4"), 1);
+        let key = AgentCacheKey::new("preserve me", 1);
 
         // 1. record_result writes Some(hash)
         journal.record_result(
@@ -1149,7 +1138,7 @@ mod tests {
         journal.init_run(run_id, "hash preservation 2").unwrap();
 
         let agent_id = uuid::Uuid::now_v7();
-        let key = AgentCacheKey::new("preserve me 2", None, 0);
+        let key = AgentCacheKey::new("preserve me 2", 0);
 
         journal
             .cache_agent(

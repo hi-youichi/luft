@@ -112,7 +112,7 @@ mod tests {
     #[test]
     fn record_without_journal_is_noop() {
         // Must not panic when no journal is configured.
-        let key = AgentCacheKey::new("p", Some("m"), 1);
+        let key = AgentCacheKey::new("p", 1);
         record(&None, &key, uuid::Uuid::now_v7(), 1, &sample_result());
     }
 

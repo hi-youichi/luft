@@ -85,7 +85,7 @@ trait AgentBackend: Send + Sync {
 
 ### AgentCacheKey — `core` ↔ `runtime`（resume）接缝
 
-blake3(prompt + model + phase) 确定性去重键。runtime 的 `agent()` 在提交调度前查 journal，命中则跳过执行。详见 core.md §3.3。
+blake3(prompt + phase) 确定性去重键。runtime 的 `agent()` 在提交调度前查 journal，命中则跳过执行。详见 core.md §3.3。
 
 ## 数据流：一次 Workflow 执行的完整路径
 

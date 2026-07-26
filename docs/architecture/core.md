@@ -88,13 +88,13 @@ pub type EventSender = tokio::sync::broadcast::Sender<AgentEvent>;
 
 **确定性去重键**，用于 `--resume` 时跳过已完成的 agent 调用。
 
-- **函数** `agent_cache_key(backend_id, model, prompt, phase) → blake3 hex`:
+- **函数** `agent_cache_key(prompt, phase) → blake3 hex`:
   - 使用 `\0` 分隔符防止字段拼接冲突
   - prompt 经过 NFC 归一化 + 空白折叠 + 换行统一
 - **结构体** `AgentCacheKey`（定义于 `journal.rs`）:
   - `hash`: blake3 hex digest
   - `prompt_preview`: 前 80 字符（人类可读）
-  - `model` / `phase_id`: 辅助字段
+  - `phase_id`: 辅助字段
 
 > 待补充: 冲突概率分析、缓存粒度选择依据。
 

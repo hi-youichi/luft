@@ -18,6 +18,19 @@
 
 ## 🚀 Quick Start
 
+### Install
+
+```bash
+# Linux / macOS
+curl -fsSL https://raw.githubusercontent.com/hi-youichi/luft/main/install.sh | sh
+
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/hi-youichi/luft/main/install.ps1 | iex
+
+# Install a specific version
+curl -fsSL https://raw.githubusercontent.com/hi-youichi/luft/main/install.sh | sh -s -- --version v0.3.3
+```
+
 ### CLI Usage
 
 ```bash

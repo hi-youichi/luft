@@ -158,7 +158,7 @@ fn extract_meta(script: &str) -> Option<PlanMeta> {
 | `tokens` | `integer` | 消耗的 token 总数 |
 | `findings` | `array` | Agent 报告的 findings 列表 |
 
-**缓存行为**: 当工作流以 `--resume` 恢复时，已完成 Agent 基于 blake3 hash（`prompt + model + phase_id`）跳过重执行，直接返回缓存结果。
+**缓存行为**: 当工作流以 `--resume` 恢复时，已完成 Agent 基于 blake3 hash（`prompt + phase_id`）跳过重执行，直接返回缓存结果。
 
 ```lua
 function main()
@@ -445,7 +445,7 @@ end
 
 ### 5.2 缓存键
 
-缓存键基于 `blake3(prompt + model + phase_id)` 计算。相同缓存键的 Agent 在 `--resume` 模式下跳过执行。
+缓存键基于 `blake3(prompt + phase_id)` 计算。相同缓存键的 Agent 在 `--resume` 模式下跳过执行。
 
 ---
 

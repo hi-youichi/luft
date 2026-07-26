@@ -46,7 +46,7 @@ table，包含：
 
 ### Journal Cache
 
-当 workflow 以 `--resume` 恢复时，已完成的 agent 会被跳过（基于 blake3 cache key = prompt + model + phase_id），直接返回缓存结果。
+当 workflow 以 `--resume` 恢复时，已完成的 agent 会被跳过（基于 blake3 cache key = prompt + phase_id），直接返回缓存结果。
 
 ### 示例
 

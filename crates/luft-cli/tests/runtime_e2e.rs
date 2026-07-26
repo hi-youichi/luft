@@ -271,7 +271,7 @@ async fn resume_skips_cached_agent() {
     let out1 = run_with(backend.clone(), script, Some(journal.clone()), run_id).await;
     assert_eq!(out1["ok"], true);
     assert_eq!(backend.call_count(), 1);
-    assert!(journal.has_completed(&AgentCacheKey::new("expensive", Some("mock"), 0)));
+    assert!(journal.has_completed(&AgentCacheKey::new("expensive", 0)));
 
     // Second run with the same journal must replay from cache, not re-invoke.
     let out2 = run_with(backend.clone(), script, Some(journal.clone()), run_id).await;

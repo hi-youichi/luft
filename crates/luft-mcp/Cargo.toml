@@ -9,12 +9,12 @@ categories = ["api-bindings", "asynchronous"]
 description = "MCP server crate — exposes workflow authoring resources and execution tools to external AI clients"
 
 [dependencies]
-luft        = { path = "../luft", version = "0.3.3", features = ["testing"] }
-luft-service   = { path = "../luft-service", version = "0.3.3" }
-luft-runtime   = { path = "../luft-runtime", version = "0.3.3" }
-luft-skills    = { path = "../luft-skills", version = "0.3.3" }
-luft-planner   = { path = "../luft-planner", version = "0.3.3" }
-luft-core      = { path = "../luft-core", version = "0.3.3" }
+luft        = { path = "../luft", version = "0.3.4", features = ["testing"] }
+luft-service   = { path = "../luft-service", version = "0.3.4" }
+luft-runtime   = { path = "../luft-runtime", version = "0.3.4" }
+luft-skills    = { path = "../luft-skills", version = "0.3.4" }
+luft-planner   = { path = "../luft-planner", version = "0.3.4" }
+luft-core      = { path = "../luft-core", version = "0.3.4" }
 rmcp           = { version = "0.6", features = ["server", "macros", "transport-io"] }
 schemars       = "0.8"
 serde          = { version = "1", features = ["derive"] }

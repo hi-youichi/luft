@@ -9,9 +9,9 @@ pub fn run_install() -> Result<()> {
             Ok(())
         }
         Err(InstallError::NoExternalAgentsFound) => {
-            eprintln!("❌ 错误: 未检测到任何外部 Agent");
+            eprintln!("ℹ️  未检测到任何外部 Agent，跳过桥接安装。");
             eprintln!("{}", Installer::get_installation_suggestions());
-            Err(anyhow::anyhow!("未检测到任何外部 Agent"))
+            Ok(())
         }
         Err(err) => {
             eprintln!("❌ 安装过程中发生错误: {}", err);

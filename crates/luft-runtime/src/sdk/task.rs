@@ -61,7 +61,7 @@ pub(crate) fn build_task(
         .flatten()
         .map(PathBuf::from);
 
-    let cache_key = AgentCacheKey::new(&prompt, model.as_deref(), phase_id);
+    let cache_key = AgentCacheKey::new(&prompt, phase_id);
     let agent_seq = agent_seq_counter.fetch_add(1, Ordering::Relaxed);
     let task = AgentTask {
         agent_id: uuid::Uuid::now_v7(),
@@ -195,7 +195,7 @@ mod tests {
             o.set("model", "m").unwrap();
             build_task(&o, phase, &seq_counter()).unwrap().1.hash
         };
-        // Same prompt+model+phase → same hash; different phase → different hash.
+        // Same prompt+phase → same hash; different phase → different hash.
         assert_eq!(key(3), key(3));
         assert_ne!(key(3), key(4));
     }

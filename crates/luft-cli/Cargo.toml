@@ -21,9 +21,9 @@ testing = ["luft/testing"]
 unstable_end_turn_token_usage = ["luft/unstable_end_turn_token_usage"]
 
 [dependencies]
-luft = { path = "../luft", version = "0.3.3", features = ["testing"] }
-luft-mcp = { path = "../luft-mcp", version = "0.3.3" }
-luft-skills = { path = "../luft-skills", version = "0.3.3" }
+luft = { path = "../luft", version = "0.3.4", features = ["testing"] }
+luft-mcp = { path = "../luft-mcp", version = "0.3.4" }
+luft-skills = { path = "../luft-skills", version = "0.3.4" }
 clap = { version = "4", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
 anyhow = "1"

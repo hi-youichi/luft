@@ -283,14 +283,14 @@ mod tests {
         let id1 = bridge.deposit(PendingTask {
             task: sample_agent_task(),
             backend: None,
-            cache_key: luft_core::journal::AgentCacheKey::new("p", None, 0),
+            cache_key: luft_core::journal::AgentCacheKey::new("p", 0),
             agent_id: luft_core::contract::ids::AgentId::now_v7(),
             phase_id: 0,
         });
         let id2 = bridge.deposit(PendingTask {
             task: sample_agent_task(),
             backend: None,
-            cache_key: luft_core::journal::AgentCacheKey::new("q", None, 0),
+            cache_key: luft_core::journal::AgentCacheKey::new("q", 0),
             agent_id: luft_core::contract::ids::AgentId::now_v7(),
             phase_id: 0,
         });
@@ -306,7 +306,7 @@ mod tests {
         let id = bridge.deposit(PendingTask {
             task: task.clone(),
             backend: Some("acp".into()),
-            cache_key: luft_core::journal::AgentCacheKey::new("p", Some("m"), 1),
+            cache_key: luft_core::journal::AgentCacheKey::new("p", 1),
             agent_id: luft_core::contract::ids::AgentId::now_v7(),
             phase_id: 1,
         });
@@ -322,7 +322,7 @@ mod tests {
         let id = bridge.deposit(PendingTask {
             task: sample_agent_task(),
             backend: None,
-            cache_key: luft_core::journal::AgentCacheKey::new("p", None, 0),
+            cache_key: luft_core::journal::AgentCacheKey::new("p", 0),
             agent_id: luft_core::contract::ids::AgentId::now_v7(),
             phase_id: 0,
         });
@@ -345,7 +345,7 @@ mod tests {
             ids.push(bridge.deposit(PendingTask {
                 task: sample_agent_task(),
                 backend: None,
-                cache_key: luft_core::journal::AgentCacheKey::new("p", None, i),
+                cache_key: luft_core::journal::AgentCacheKey::new("p", i),
                 agent_id: luft_core::contract::ids::AgentId::now_v7(),
                 phase_id: 0,
             }));
@@ -366,7 +366,7 @@ mod tests {
         let real = bridge.deposit(PendingTask {
             task: sample_agent_task(),
             backend: None,
-            cache_key: luft_core::journal::AgentCacheKey::new("p", None, 0),
+            cache_key: luft_core::journal::AgentCacheKey::new("p", 0),
             agent_id: luft_core::contract::ids::AgentId::now_v7(),
             phase_id: 0,
         });
@@ -425,7 +425,7 @@ mod tests {
     #[test]
     fn pending_task_carries_arbitrary_field_values() {
         let task = sample_agent_task();
-        let cache_key = luft_core::journal::AgentCacheKey::new("p", Some("claude"), 7);
+        let cache_key = luft_core::journal::AgentCacheKey::new("p", 7);
         let pending = PendingTask {
             task: task.clone(),
             backend: Some("opencode".into()),
@@ -436,7 +436,6 @@ mod tests {
         assert_eq!(pending.task.prompt, task.prompt);
         assert_eq!(pending.backend.as_deref(), Some("opencode"));
         assert_eq!(pending.cache_key.phase_id, 7);
-        assert_eq!(pending.cache_key.model.as_deref(), Some("claude"));
         assert_eq!(pending.agent_id, task.agent_id);
         assert_eq!(pending.phase_id, 7);
     }
