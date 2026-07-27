@@ -14,6 +14,32 @@ fn get_home_dir() -> Option<PathBuf> {
         .or_else(dirs::home_dir)
 }
 
+/// Resolve the absolute path of the luft binary to embed in agent MCP configs.
+///
+/// Embedding the absolute path (rather than the bare `"luft"` command) means
+/// agents don't depend on PATH resolution at launch time — the binary that
+/// runs `luft install` is the exact binary the agent will spawn.
+///
+/// Resolution priority:
+/// 1. `LUFT_BIN` env var — override for packagers / tests / scenarios where
+///    `current_exe()` doesn't point at the canonical install location.
+/// 2. `std::env::current_exe()` — the absolute path of the currently-running
+///    luft binary.
+/// 3. `"luft"` — bare command fallback (relies on PATH at agent-launch time),
+///    used only if both above fail (extremely rare on any mainstream OS).
+fn luft_command() -> String {
+    if let Ok(path) = std::env::var("LUFT_BIN") {
+        let trimmed = path.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+    }
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| p.to_str().map(String::from))
+        .unwrap_or_else(|| "luft".to_string())
+}
+
 /// MCP 配置器
 ///
 /// 为 Claude、OpenCode、Codex 三种 Agent 配置 `luft mcp serve` MCP 服务器。
@@ -69,7 +95,7 @@ impl McpSetup {
             Value::Object(serde_json::Map::new())
         };
 
-        if let Err(e) = Self::merge_claude_mcp(&mut config) {
+        if let Err(e) = Self::merge_claude_mcp(&mut config, &luft_command()) {
             return McpConfigResult::Failed(e.to_string());
         }
 
@@ -80,9 +106,9 @@ impl McpSetup {
         McpConfigResult::Configured
     }
 
-    fn merge_claude_mcp(config: &mut Value) -> Result<()> {
+    fn merge_claude_mcp(config: &mut Value, luft_cmd: &str) -> Result<()> {
         let luft_entry = json!({
-            "command": "luft",
+            "command": luft_cmd,
             "args": ["mcp", "serve"]
         });
 
@@ -164,9 +190,10 @@ impl McpSetup {
             Value::Object(serde_json::Map::new())
         };
 
+        let luft_cmd = luft_command();
         let luft_entry = json!({
             "type": "local",
-            "command": ["luft", "mcp", "serve"]
+            "command": [luft_cmd, "mcp", "serve"]
         });
 
         if let Some(obj) = config.as_object_mut() {
@@ -229,8 +256,11 @@ impl McpSetup {
         if !new_content.is_empty() {
             new_content.push('\n');
         }
+        let luft_cmd = luft_command();
         new_content.push_str("[mcp_servers.luft]\n");
-        new_content.push_str("command = \"luft\"\n");
+        // TOML literal string (single-quoted) so Windows backslashes in the
+        // path need no escaping. Binary paths never contain single quotes.
+        new_content.push_str(&format!("command = '{}'\n", luft_cmd));
         new_content.push_str("args = [\"mcp\", \"serve\"]\n");
 
         if let Err(e) = fs::write(&config_file, new_content) {
@@ -349,12 +379,37 @@ mod tests {
         }
     }
 
+    /// RAII guard: sets `LUFT_BIN` to a fixed path for deterministic test
+    /// assertions on the `command` value written to agent configs; restores
+    /// (or removes) the previous value on drop. MUST be used inside `#[serial]`
+    /// tests — `luft_command()` reads this env var.
+    struct BinGuard {
+        prev: Option<std::ffi::OsString>,
+    }
+
+    impl BinGuard {
+        fn new(path: &str) -> Self {
+            let prev = std::env::var_os("LUFT_BIN");
+            std::env::set_var("LUFT_BIN", path);
+            BinGuard { prev }
+        }
+    }
+
+    impl Drop for BinGuard {
+        fn drop(&mut self) {
+            match &self.prev {
+                Some(v) => std::env::set_var("LUFT_BIN", v),
+                None => std::env::remove_var("LUFT_BIN"),
+            }
+        }
+    }
+
     // ── Claude merge ────────────────────────────────────────
 
     #[test]
     fn merge_claude_mcp_into_empty() {
         let mut config = json!({});
-        McpSetup::merge_claude_mcp(&mut config).unwrap();
+        McpSetup::merge_claude_mcp(&mut config, "luft").unwrap();
 
         let servers = config["mcpServers"].as_object().unwrap();
         assert!(servers.contains_key("luft"));
@@ -373,7 +428,7 @@ mod tests {
             }
         });
 
-        McpSetup::merge_claude_mcp(&mut config).unwrap();
+        McpSetup::merge_claude_mcp(&mut config, "luft").unwrap();
 
         let servers = config["mcpServers"].as_object().unwrap();
         assert!(servers.contains_key("existing"));
@@ -392,10 +447,23 @@ mod tests {
             }
         });
 
-        McpSetup::merge_claude_mcp(&mut config).unwrap();
+        McpSetup::merge_claude_mcp(&mut config, "luft").unwrap();
 
         assert_eq!(config["mcpServers"]["luft"]["command"], "old-luft");
         assert_eq!(config["mcpServers"]["luft"]["args"], json!(["old-args"]));
+    }
+
+    #[test]
+    fn merge_claude_mcp_uses_absolute_path_argument() {
+        // The command value flows through verbatim — this is what lets
+        // `configure_claude` pass `luft_command()` (an absolute path) and
+        // have it reach disk unchanged.
+        let mut config = json!({});
+        McpSetup::merge_claude_mcp(&mut config, "/custom/path/to/luft").unwrap();
+        assert_eq!(
+            config["mcpServers"]["luft"]["command"],
+            "/custom/path/to/luft"
+        );
     }
 
     // ── OpenCode configure ─────────────────────────────────
@@ -405,6 +473,7 @@ mod tests {
     fn configure_opencode_creates_new_json() {
         let tmp = TempDir::new().unwrap();
         let _guard = HomeGuard::new(tmp.path());
+        let _bin = BinGuard::new("/test/luft");
         let dir = tmp.path().join(".config").join("opencode");
 
         let result = McpSetup::configure_for_agents(&[AgentType::Opencode]);
@@ -416,7 +485,10 @@ mod tests {
         let config: Value =
             serde_json::from_str(&std::fs::read_to_string(&config_file).unwrap()).unwrap();
         assert_eq!(config["mcp"]["luft"]["type"], "local");
-        assert_eq!(config["mcp"]["luft"]["command"], json!(["luft", "mcp", "serve"]));
+        assert_eq!(
+            config["mcp"]["luft"]["command"],
+            json!(["/test/luft", "mcp", "serve"])
+        );
     }
 
     #[test]
@@ -516,6 +588,7 @@ mod tests {
     fn configure_codex_creates_new_toml() {
         let tmp = TempDir::new().unwrap();
         let _guard = HomeGuard::new(tmp.path());
+        let _bin = BinGuard::new("/test/luft");
         let dir = tmp.path().join(".codex");
 
         let result = McpSetup::configure_for_agents(&[AgentType::Codex]);
@@ -526,7 +599,9 @@ mod tests {
 
         let content = std::fs::read_to_string(&config_file).unwrap();
         assert!(content.contains("[mcp_servers.luft]"));
-        assert!(content.contains("command = \"luft\""));
+        // TOML literal string (single-quoted) — the absolute path flows
+        // through verbatim, no backslash escaping.
+        assert!(content.contains("command = '/test/luft'"));
         assert!(content.contains("args = [\"mcp\", \"serve\"]"));
     }
 
@@ -645,13 +720,13 @@ args = ["custom-args"]
     #[test]
     fn merge_claude_mcp_round_trip() {
         let mut config = json!({});
-        McpSetup::merge_claude_mcp(&mut config).unwrap();
+        McpSetup::merge_claude_mcp(&mut config, "luft").unwrap();
         assert!(config["mcpServers"]["luft"].is_object());
         assert_eq!(config["mcpServers"]["luft"]["command"], "luft");
 
         // 二次合并不覆盖
         let original = config.clone();
-        McpSetup::merge_claude_mcp(&mut config).unwrap();
+        McpSetup::merge_claude_mcp(&mut config, "luft").unwrap();
         assert_eq!(config, original);
     }
 
