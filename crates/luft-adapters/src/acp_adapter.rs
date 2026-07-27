@@ -1096,10 +1096,9 @@ mod tests {
         let count = luft_skills::write_to_dir(&dir, &skill).unwrap();
         assert_eq!(count, 2);
 
-        assert_eq!(
-            std::fs::read_to_string(dir.join("SKILL.md")).unwrap(),
-            "# main body"
-        );
+        let written = std::fs::read_to_string(dir.join("SKILL.md")).unwrap();
+        assert!(written.starts_with("---\nname: sample\ndescription: d\n---\n\n"));
+        assert!(written.ends_with("# main body"));
         assert_eq!(
             std::fs::read_to_string(dir.join("references/extra.md")).unwrap(),
             "extra content"
@@ -1130,7 +1129,8 @@ mod tests {
         write_workflow_skill_files("codex", tmp.path());
         let written =
             std::fs::read_to_string(tmp.path().join(".agents/skills/workflow/SKILL.md")).unwrap();
-        assert_eq!(written, luft_skills::WORKFLOW_SKILL.content);
+        assert!(written.starts_with("---\nname: workflow\n"));
+        assert!(written.contains(luft_skills::WORKFLOW_SKILL.content));
         // A reference file also made it to disk.
         let ref_dir = tmp.path().join(".agents/skills/workflow/references");
         assert!(ref_dir.is_dir());

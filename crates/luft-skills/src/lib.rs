@@ -71,7 +71,11 @@ pub const WORKFLOW_SKILL: Skill = Skill {
 /// needed.
 pub fn write_to_dir(dir: &Path, skill: &Skill) -> std::io::Result<usize> {
     std::fs::create_dir_all(dir)?;
-    std::fs::write(dir.join("SKILL.md"), skill.content)?;
+    let skill_md = format!(
+        "---\nname: {}\ndescription: {}\n---\n\n{}",
+        skill.name, skill.description, skill.content
+    );
+    std::fs::write(dir.join("SKILL.md"), skill_md)?;
     let mut count = 1;
     for (rel_path, content) in skill.references {
         let path = dir.join(rel_path);
@@ -143,7 +147,10 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let dir = tmp.path().join("workflow");
         let count = write_to_dir(&dir, &WORKFLOW_SKILL).unwrap();
-        assert!(dir.join("SKILL.md").exists());
+        let written = std::fs::read_to_string(dir.join("SKILL.md")).unwrap();
+        assert!(written.starts_with("---\nname: workflow\n"));
+        assert!(written.contains("description:"));
+        assert!(written.contains(WORKFLOW_SKILL.content));
         assert!(dir.join("references/primitives.md").exists());
         assert_eq!(count, 7); // 1 SKILL.md + 6 references
     }

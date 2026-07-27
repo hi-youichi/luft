@@ -47,25 +47,24 @@ impl Installer {
         }
 
         // 4. 配置 MCP 服务器
-        let mcp_configured = if detected_agents.contains(&AgentType::Claude) {
-            eprintln!("🌐 配置 Claude MCP 服务器...");
-            match crate::install::mcp_setup::McpSetup::configure()? {
+        eprintln!("🌐 配置 MCP 服务器...");
+        let mcp_results =
+            crate::install::mcp_setup::McpSetup::configure_for_agents(&detected_agents);
+        let mcp_configured = mcp_results
+            .iter()
+            .any(|(_, r)| *r == crate::install::types::McpConfigResult::Configured);
+
+        for (agent, result) in &mcp_results {
+            match result {
                 crate::install::types::McpConfigResult::Configured => {
-                    eprintln!("✅ MCP 配置完成");
-                    true
+                    eprintln!("✅ {} MCP 配置完成", agent.display_name());
                 }
-                crate::install::types::McpConfigResult::NotSupported => {
-                    eprintln!("⚠️  MCP 不支持当前 Agent");
-                    false
-                }
+                crate::install::types::McpConfigResult::NotSupported => {}
                 crate::install::types::McpConfigResult::Failed(err) => {
-                    eprintln!("❌ MCP 配置失败: {}", err);
-                    false
+                    eprintln!("❌ {} MCP 配置失败: {}", agent.display_name(), err);
                 }
             }
-        } else {
-            false
-        };
+        }
 
         // 5. 验证安装
         eprintln!("✅ 验证安装...");
@@ -104,29 +103,45 @@ impl Installer {
         // 验证 MCP 配置
         if summary.mcp_configured {
             let home = dirs::home_dir().ok_or(InstallError::HomeDirNotFound)?;
+            let mut any_valid = false;
+
+            // Claude: ~/.claude/settings.json -> mcpServers.luft
             let claude_config = home.join(".claude/settings.json");
-
-            if !claude_config.exists() {
-                return Err(InstallError::VerificationFailed(
-                    "Claude MCP 配置文件不存在".to_string(),
-                ));
-            }
-
-            // 读取配置文件验证 luft MCP 服务器
-            let content = std::fs::read_to_string(&claude_config)?;
-            let config: serde_json::Value = serde_json::from_str(&content)?;
-
-            if let Some(mcp_servers) = config.get("mcpServers") {
-                if let Some(servers) = mcp_servers.as_object() {
-                    if !servers.contains_key("luft") {
-                        return Err(InstallError::VerificationFailed(
-                            "Claude MCP 配置中没有 luft 服务器".to_string(),
-                        ));
+            if claude_config.exists() {
+                let content = std::fs::read_to_string(&claude_config)?;
+                if let Ok(config) = serde_json::from_str::<serde_json::Value>(&content) {
+                    if let Some(servers) = config.get("mcpServers").and_then(|v| v.as_object()) {
+                        if servers.contains_key("luft") {
+                            any_valid = true;
+                        }
                     }
                 }
-            } else {
+            }
+
+            // OpenCode: ~/.config/opencode/opencode.json(.jsonc) -> mcp.luft
+            let opencode_dir = home.join(".config/opencode");
+            for name in ["opencode.jsonc", "opencode.json"] {
+                let config_file = opencode_dir.join(name);
+                if config_file.exists() {
+                    let content = std::fs::read_to_string(&config_file)?;
+                    if content.contains("\"luft\"") {
+                        any_valid = true;
+                    }
+                }
+            }
+
+            // Codex: ~/.codex/config.toml -> [mcp_servers.luft]
+            let codex_config = home.join(".codex/config.toml");
+            if codex_config.exists() {
+                let content = std::fs::read_to_string(&codex_config)?;
+                if content.contains("[mcp_servers.luft]") {
+                    any_valid = true;
+                }
+            }
+
+            if !any_valid {
                 return Err(InstallError::VerificationFailed(
-                    "Claude 配置中没有 mcpServers 部分".to_string(),
+                    "未找到任何已配置的 MCP 服务器".to_string(),
                 ));
             }
         }
