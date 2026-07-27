@@ -15,7 +15,7 @@ use rmcp::{
 };
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 /// RMCP-based MCP server.
 #[derive(Clone)]
@@ -23,6 +23,10 @@ pub struct LuftMcpServer {
     luft: Arc<Luft>,
     search_dirs: Vec<PathBuf>,
     tool_router: ToolRouter<Self>,
+    /// Connected client's self-reported `clientInfo.name`, captured once
+    /// during the `initialize` handshake. Shared across all clones via
+    /// `Arc` (the server is `Clone`).
+    client_name: Arc<OnceLock<String>>,
 }
 
 impl LuftMcpServer {
@@ -31,6 +35,7 @@ impl LuftMcpServer {
             luft: Arc::new(luft),
             search_dirs: vec![PathBuf::from("examples"), PathBuf::from("workflows")],
             tool_router: ToolRouter::default(),
+            client_name: Arc::new(OnceLock::new()),
         };
         s.tool_router = Self::tool_router();
         s
@@ -39,6 +44,23 @@ impl LuftMcpServer {
     pub fn search_dirs(mut self, dirs: Vec<PathBuf>) -> Self {
         self.search_dirs = dirs;
         self
+    }
+
+    /// The connected client's self-reported name, captured at the
+    /// `initialize` handshake. Returns `None` before the handshake
+    /// completes or if the client omitted its identity.
+    pub fn client_name(&self) -> Option<&str> {
+        self.client_name.get().map(|s| s.as_str())
+    }
+
+    /// Whether the connected client identifies itself as Codex.
+    /// Case-insensitive exact match on `clientInfo.name`.
+    /// See `docs/design/mcp-client-detection.md` §4.3 / §7.
+    pub fn is_codex(&self) -> bool {
+        matches!(
+            self.client_name(),
+            Some(n) if n.eq_ignore_ascii_case("codex")
+        )
     }
 }
 
@@ -175,6 +197,23 @@ impl ServerHandler for LuftMcpServer {
         }
     }
 
+    async fn initialize(
+        &self,
+        request: InitializeRequestParam,
+        context: RequestContext<RoleServer>,
+    ) -> Result<InitializeResult, McpError> {
+        let _ = self.client_name.set(request.client_info.name.clone());
+        tracing::info!(
+            client = %request.client_info.name,
+            version = %request.client_info.version,
+            "mcp client connected"
+        );
+        if context.peer.peer_info().is_none() {
+            context.peer.set_peer_info(request);
+        }
+        Ok(self.get_info())
+    }
+
     async fn list_resources(
         &self,
         _request: Option<PaginatedRequestParam>,
@@ -262,4 +301,87 @@ pub async fn serve(server: LuftMcpServer) -> anyhow::Result<()> {
     let service = server.serve(stdio()).await?;
     service.waiting().await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    //! Tests for MCP client identity capture.
+    //!
+    //! `Peer::new` is `pub(crate)` in rmcp 0.6, so `RequestContext` cannot be
+    //! constructed downstream — `initialize` cannot be driven end-to-end in
+    //! a unit test. These tests exercise the read-side logic
+    //! (`client_name` / `is_codex`) by writing directly to the private
+    //! `client_name` field, which is the exact write `initialize` performs.
+    //! End-to-end handshake coverage is deferred to manual validation
+    //! (see `docs/design/mcp-client-detection.md` §6).
+
+    use super::*;
+
+    fn make_server() -> LuftMcpServer {
+        use luft_core::{MockBackend, MockBehavior, TokenUsage};
+        use std::time::Duration;
+        let backend = MockBackend::new(
+            "mock",
+            vec![MockBehavior::Success {
+                output: serde_json::json!({}),
+                tokens: TokenUsage::default(),
+                delay: Duration::ZERO,
+            }],
+        );
+        let luft = luft::Luft::builder()
+            .backend(backend)
+            .base_dir(tempfile::TempDir::new().unwrap().keep())
+            .build()
+            .unwrap();
+        LuftMcpServer::new(luft)
+    }
+
+    /// Mimic the single side-effect `initialize` has on this struct.
+    fn simulate_handshake(server: &LuftMcpServer, name: &str) {
+        let _ = server.client_name.set(name.to_string());
+    }
+
+    #[test]
+    fn client_name_is_none_before_handshake() {
+        let server = make_server();
+        assert_eq!(server.client_name(), None);
+        assert!(!server.is_codex());
+    }
+
+    #[test]
+    fn is_codex_matches_case_insensitive() {
+        for name in ["codex", "CODEX", "Codex", "CoDeX"] {
+            let server = make_server();
+            simulate_handshake(&server, name);
+            assert_eq!(server.client_name(), Some(name));
+            assert!(
+                server.is_codex(),
+                "expected {name:?} to be detected as codex"
+            );
+        }
+    }
+
+    #[test]
+    fn is_codex_rejects_non_codex_clients() {
+        for name in ["claude-code", "claude", "opencode", ""] {
+            let server = make_server();
+            simulate_handshake(&server, name);
+            assert_eq!(server.client_name(), Some(name));
+            assert!(
+                !server.is_codex(),
+                "{name:?} must not be detected as codex"
+            );
+        }
+    }
+
+    #[test]
+    fn client_name_keeps_first_value() {
+        // OnceLock semantics: the first writer wins. Mirrors the stdio
+        // model where one server process serves one client = one handshake.
+        let server = make_server();
+        simulate_handshake(&server, "codex");
+        simulate_handshake(&server, "claude-code");
+        assert_eq!(server.client_name(), Some("codex"));
+        assert!(server.is_codex());
+    }
 }

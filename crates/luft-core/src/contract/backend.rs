@@ -252,6 +252,58 @@ pub struct LogRef {
     pub path: PathBuf,
 }
 
+// ── Process-global current backend identity ────────────────────────────
+
+/// Identity of the backend currently connected to this process, captured
+/// at the ACP `initialize` handshake.
+///
+/// Stored process-globally so any code path — not only the adapter itself —
+/// can answer "which backend am I talking to?". This is the foundation for
+/// agent primitives resolving the default/current backend without each
+/// caller threading an explicit `backend` argument through every call.
+///
+/// **Semantics**: written by the ACP adapter on every handshake. In the
+/// current single-backend model the value is constant for a run's lifetime.
+/// With multiple backends it becomes "most recently handshaken", so readers
+/// must tolerate concurrent writers.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CurrentBackend {
+    /// Backend implementation name, e.g. "opencode", "codex".
+    pub name: String,
+    /// Backend implementation version.
+    pub version: String,
+    /// Optional human-readable title.
+    pub title: Option<String>,
+}
+
+static CURRENT_BACKEND: std::sync::RwLock<Option<CurrentBackend>> =
+    std::sync::RwLock::new(None);
+
+/// Record the backend identity captured during a handshake. Called by the
+/// ACP adapter after `initialize`. Overwrites any prior value.
+///
+/// # Panics
+///
+/// Only if the internal lock is poisoned (a writer panicked while holding
+/// it), which indicates a logic bug rather than a runtime condition.
+pub fn set_current_backend(b: CurrentBackend) {
+    let mut g = CURRENT_BACKEND
+        .write()
+        .expect("CURRENT_BACKEND lock poisoned");
+    *g = Some(b);
+}
+
+/// Read the current backend identity, if a handshake has completed yet.
+///
+/// Returns `None` before any ACP connection has been established (e.g. a
+/// `luft run` using a non-ACP backend, or before the first agent task).
+pub fn current_backend() -> Option<CurrentBackend> {
+    CURRENT_BACKEND
+        .read()
+        .expect("CURRENT_BACKEND lock poisoned")
+        .clone()
+}
+
 #[cfg(test)]
 mod tests {
     //! Tests for the `AgentStatus::as_str()` contract introduced by F5.
