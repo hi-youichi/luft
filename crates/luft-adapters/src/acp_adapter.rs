@@ -684,10 +684,33 @@ async fn run_handshake_and_prompt(
     ctx: HandshakePromptContext<'_>,
 ) -> Result<(), agent_client_protocol::Error> {
     tracing::debug!("ACP handshake: initialize");
-    ctx.conn
+    let init = ctx
+        .conn
         .send_request(InitializeRequest::new(ProtocolVersion::V1))
         .block_task()
         .await?;
+
+    // Capture the connected backend's identity into the process-global
+    // store, so downstream code can resolve "the current backend" without
+    // the adapter having to thread it through every call site.
+    match init.agent_info.as_ref() {
+        Some(info) => {
+            tracing::info!(
+                backend = %info.name,
+                version = %info.version,
+                title = ?info.title,
+                "ACP handshake: connected backend"
+            );
+            luft_core::contract::set_current_backend(luft_core::contract::CurrentBackend {
+                name: info.name.clone(),
+                version: info.version.clone(),
+                title: info.title.clone(),
+            });
+        }
+        None => {
+            tracing::warn!("ACP handshake: backend did not report agent_info");
+        }
+    }
 
     tracing::debug!("ACP handshake: session/new");
     let ns = session_new(

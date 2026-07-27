@@ -46,8 +46,8 @@ pub async fn serve(args: McpServeArgs) -> Result<()> {
 
     let luft = luft::Luft::builder().backend_arc(backend).build()?;
 
-    let server = luft_mcp::McpServer::new(luft);
-    server.serve_stdio().await?;
+    let server = luft_mcp::LuftMcpServer::new(luft);
+    luft_mcp::serve_rmcp(server).await?;
     Ok(())
 }
 
