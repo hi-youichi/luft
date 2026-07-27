@@ -203,7 +203,7 @@ struct RunArgs {
 
     #[arg(
         long,
-        help = "Max number of agents running in parallel (default: auto 4-16)"
+        help = "Max number of agents running in parallel (default: 1)"
     )]
     max_concurrency: Option<usize>,
 }

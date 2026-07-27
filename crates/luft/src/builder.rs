@@ -18,7 +18,7 @@ use crate::error::LuftError;
 
 /// Fluent builder for constructing a [`Luft`] instance.
 ///
-/// Defaults: base dir `.luft/runs`, unlimited concurrency, default
+/// Defaults: base dir `.luft/runs`, scheduler default concurrency (1), default
 /// [`PlannerConfig`] and [`ExecLimits`].
 ///
 /// ```no_run

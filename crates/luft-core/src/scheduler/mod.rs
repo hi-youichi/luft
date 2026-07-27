@@ -584,7 +584,7 @@ mod tests {
     #[tokio::test]
     async fn test_default_config_concurrency() {
         let c = SchedulerConfig::default().max_concurrency;
-        assert!((4..=16).contains(&c), "got {c}");
+        assert_eq!(c, 1);
     }
 
     #[tokio::test]

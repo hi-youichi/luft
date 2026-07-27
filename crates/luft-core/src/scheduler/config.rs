@@ -3,12 +3,14 @@
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-/// Adaptive default concurrency: 2× available cores, clamped to [4, 16].
+/// Default concurrency.
+///
+/// Defaults to `1` (sequential): workflows run agents one at a time unless the
+/// caller raises the limit via `--max-concurrency` (CLI), `concurrency` (MCP),
+/// or `LuftBuilder::concurrency` (library). This keeps token cost and ordering
+/// predictable out of the box; opt into parallelism explicitly when needed.
 fn default_concurrency() -> usize {
-    std::thread::available_parallelism()
-        .map(|n| n.get() * 2)
-        .unwrap_or(8)
-        .clamp(4, 16)
+    1
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -70,13 +72,9 @@ mod tests {
     // ── SchedulerConfig ──────────────────────────────────────────
 
     #[test]
-    fn scheduler_config_default_is_in_adaptive_range() {
+    fn scheduler_config_default_is_one() {
         let cfg = SchedulerConfig::default();
-        assert!(
-            (4..=16).contains(&cfg.max_concurrency),
-            "default max_concurrency {} outside adaptive [4,16]",
-            cfg.max_concurrency
-        );
+        assert_eq!(cfg.max_concurrency, 1);
         assert_eq!(cfg.quota_per_run, 1000);
         // Retry policy defaults are the canonical "2 tries, half a second".
         assert_eq!(cfg.retry.max_attempts, 2);
