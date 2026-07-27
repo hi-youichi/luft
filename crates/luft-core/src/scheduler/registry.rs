@@ -9,12 +9,20 @@ use std::sync::Arc;
 #[derive(Clone, Default)]
 pub struct BackendRegistry {
     backends: HashMap<&'static str, Arc<dyn AgentBackend>>,
+    /// The backend used when an agent omits `backend`. Set automatically to
+    /// the first-registered backend, or explicitly via [`with_default`] /
+    /// [`set_default`].
+    ///
+    /// [`with_default`]: Self::with_default
+    /// [`set_default`]: Self::set_default
+    default_id: Option<&'static str>,
 }
 
 impl std::fmt::Debug for BackendRegistry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BackendRegistry")
             .field("backend_ids", &self.backends.keys().collect::<Vec<_>>())
+            .field("default_id", &self.default_id)
             .finish()
     }
 }
@@ -27,13 +35,39 @@ impl BackendRegistry {
     pub fn register(&mut self, backend: Arc<dyn AgentBackend>) {
         let id = backend.id();
         tracing::debug!(id, "registering backend");
+        // First-registered becomes the default so single-backend callers
+        // using `with()` keep working without an explicit `with_default()`.
+        if self.default_id.is_none() {
+            self.default_id = Some(id);
+        }
         self.backends.insert(id, backend);
     }
 
-    /// Builder-style registration.
+    /// Builder-style registration. The first registered backend becomes the
+    /// default unless [`with_default`](Self::with_default) is used.
     pub fn with(mut self, backend: Arc<dyn AgentBackend>) -> Self {
         self.register(backend);
         self
+    }
+
+    /// Register a backend AND mark it as the default (the backend used when an
+    /// agent omits `backend`). Overrides any previously-set default.
+    pub fn with_default(mut self, backend: Arc<dyn AgentBackend>) -> Self {
+        let id = backend.id();
+        self.backends.insert(id, backend);
+        self.default_id = Some(id);
+        self
+    }
+
+    /// Mark an already-registered backend id as the default.
+    pub fn set_default(&mut self, id: &str) -> Result<(), SchedulerError> {
+        match self.backends.get_key_value(id) {
+            Some((key, _)) => {
+                self.default_id = Some(*key);
+                Ok(())
+            }
+            None => Err(SchedulerError::UnknownBackend(id.to_owned())),
+        }
     }
 
     pub fn get(&self, id: &str) -> Result<Arc<dyn AgentBackend>, SchedulerError> {
@@ -43,12 +77,23 @@ impl BackendRegistry {
         })
     }
 
-    /// First registered backend (v0.1 single-backend default routing).
+    /// The default backend (used when an agent omits `backend`). Deterministic:
+    /// returns the backend marked as default (first-registered, or whichever
+    /// was set via [`with_default`](Self::with_default) /
+    /// [`set_default`](Self::set_default)).
     pub fn default_backend(&self) -> Result<Arc<dyn AgentBackend>, SchedulerError> {
-        self.backends.values().next().cloned().ok_or_else(|| {
-            tracing::error!("no backend registered");
-            SchedulerError::NoBackendRegistered
-        })
+        match self.default_id {
+            Some(id) => self.backends.get(id).cloned().ok_or_else(|| {
+                tracing::error!(default_id = id, "default backend not registered");
+                SchedulerError::NoBackendRegistered
+            }),
+            None => Err(SchedulerError::NoBackendRegistered),
+        }
+    }
+
+    /// The default backend id, if any.
+    pub fn default_id(&self) -> Option<&'static str> {
+        self.default_id
     }
 }
 
@@ -183,9 +228,8 @@ mod tests {
         let mut reg = BackendRegistry::new();
         reg.register(make_backend("alpha"));
         reg.register(make_backend("beta"));
-        let id = reg.default_backend().unwrap().id();
-        // HashMap order is non-deterministic; either is acceptable.
-        assert!(id == "alpha" || id == "beta", "unexpected id: {id}");
+        // First-registered is the deterministic default.
+        assert_eq!(reg.default_backend().unwrap().id(), "alpha");
     }
 
     #[test]
@@ -193,6 +237,36 @@ mod tests {
         let mut reg = BackendRegistry::new();
         reg.register(make_backend("sole"));
         assert_eq!(reg.default_backend().unwrap().id(), "sole");
+    }
+
+    #[test]
+    fn test_with_default_overrides_first_registered() {
+        let reg = BackendRegistry::new()
+            .with(make_backend("a"))
+            .with_default(make_backend("b"))
+            .with(make_backend("c"));
+        assert_eq!(reg.default_backend().unwrap().id(), "b");
+        assert_eq!(reg.default_id(), Some("b"));
+    }
+
+    #[test]
+    fn test_set_default_marks_existing_backend() {
+        let mut reg = BackendRegistry::new();
+        reg.register(make_backend("a"));
+        reg.register(make_backend("b"));
+        assert_eq!(reg.default_id(), Some("a"));
+        reg.set_default("b").unwrap();
+        assert_eq!(reg.default_backend().unwrap().id(), "b");
+    }
+
+    #[test]
+    fn test_set_default_rejects_unknown_id() {
+        let mut reg = BackendRegistry::new();
+        reg.register(make_backend("a"));
+        assert!(matches!(
+            reg.set_default("nope"),
+            Err(SchedulerError::UnknownBackend(_))
+        ));
     }
 
     // ── Clone ──────────────────────────────────────────────────

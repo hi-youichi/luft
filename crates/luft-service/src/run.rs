@@ -308,7 +308,7 @@ pub struct PreparedRun {
 /// `Handle::current()`).
 pub async fn prepare(
     spec: &RunSpec,
-    backend: Arc<dyn AgentBackend>,
+    registry: BackendRegistry,
     base_dir: &Path,
     run_ctx: &RunContext,
     max_concurrency: Option<usize>,
@@ -360,8 +360,8 @@ pub async fn prepare(
     };
 
     // Scheduler. Journaling is handled inside the runtime (cache-key aware), so
-    // no scheduler-level callback is required.
-    let registry = BackendRegistry::new().with(backend);
+    // no scheduler-level callback is required. The registry (with its default
+    // backend + any additional backends) is supplied by the caller.
     let default_cfg = SchedulerConfig::default();
     let actual_concurrency = max_concurrency.unwrap_or(default_cfg.max_concurrency);
     if actual_concurrency != default_cfg.max_concurrency {
@@ -1198,7 +1198,8 @@ mod tests {
         };
 
         let backend = make_prepare_backend();
-        let _prepared = prepare(&spec, backend, dir.path(), &run_ctx, None)
+        let registry = BackendRegistry::new().with(backend);
+        let _prepared = prepare(&spec, registry, dir.path(), &run_ctx, None)
             .await
             .unwrap();
 
@@ -1253,7 +1254,8 @@ mod tests {
         };
 
         let backend = make_prepare_backend();
-        let _prepared = prepare(&spec, backend, dir.path(), &run_ctx, None)
+        let registry = BackendRegistry::new().with(backend);
+        let _prepared = prepare(&spec, registry, dir.path(), &run_ctx, None)
             .await
             .unwrap();
 

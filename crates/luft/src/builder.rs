@@ -1,6 +1,7 @@
 use luft_core::contract::backend::AgentBackend;
 use luft_core::contract::event::AgentEvent;
 use luft_core::contract::ids::RunId;
+use luft_core::scheduler::BackendRegistry;
 use luft_planner::PlannerConfig;
 use luft_runtime::{ExecLimits, ScriptError};
 use luft_service::query::{ReportStatus, StatusOutput};
@@ -32,7 +33,7 @@ use crate::error::LuftError;
 ///     .unwrap();
 /// ```
 pub struct LuftBuilder {
-    backend: Option<Arc<dyn AgentBackend>>,
+    registry: Option<BackendRegistry>,
     base_dir: PathBuf,
     concurrency: Option<usize>,
     planner_config: PlannerConfig,
@@ -52,7 +53,7 @@ impl LuftBuilder {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            backend: None,
+            registry: None,
             base_dir: PathBuf::from(".luft/runs"),
             concurrency: None,
             planner_config: PlannerConfig::default(),
@@ -66,7 +67,7 @@ impl LuftBuilder {
     /// [`LuftError::BackendNotConfigured`].
     #[must_use]
     pub fn backend<B: AgentBackend + 'static>(mut self, b: B) -> Self {
-        self.backend = Some(Arc::new(b));
+        self.registry = Some(BackendRegistry::new().with_default(Arc::new(b)));
         self
     }
 
@@ -76,7 +77,19 @@ impl LuftBuilder {
     /// `Arc<dyn AgentBackend>` (e.g. the CLI backend factory).
     #[must_use]
     pub fn backend_arc(mut self, b: Arc<dyn AgentBackend>) -> Self {
-        self.backend = Some(b);
+        self.registry = Some(BackendRegistry::new().with_default(b));
+        self
+    }
+
+    /// Set a fully-built [`BackendRegistry`], enabling per-agent backend
+    /// selection via `agent({backend = "..."})` in the Lua script.
+    ///
+    /// The registry's default backend (first-registered, or whichever was set
+    /// via [`BackendRegistry::with_default`] / [`BackendRegistry::set_default`])
+    /// is used for agents that omit `backend` and for NL->Lua planning.
+    #[must_use]
+    pub fn registry(mut self, reg: BackendRegistry) -> Self {
+        self.registry = Some(reg);
         self
     }
 
@@ -120,10 +133,10 @@ impl LuftBuilder {
     ///
     /// Returns [`LuftError::BackendNotConfigured`] if no backend was set.
     pub fn build(self) -> Result<Luft, LuftError> {
-        let backend = self.backend.ok_or(LuftError::BackendNotConfigured)?;
+        let registry = self.registry.ok_or(LuftError::BackendNotConfigured)?;
         std::fs::create_dir_all(&self.base_dir)?;
         Ok(Luft {
-            backend,
+            registry,
             base_dir: self.base_dir,
             concurrency: self.concurrency,
             planner_config: self.planner_config,
@@ -139,7 +152,7 @@ impl LuftBuilder {
 /// Each `run_*` method starts a run and returns either a [`RunHandle`]
 /// (async, `start_*` variants) or a [`RunOutcome`] (blocking, `run_*` variants).
 pub struct Luft {
-    backend: Arc<dyn AgentBackend>,
+    registry: BackendRegistry,
     base_dir: PathBuf,
     concurrency: Option<usize>,
     planner_config: PlannerConfig,
@@ -155,7 +168,9 @@ impl Luft {
     }
 
     async fn start_with_source(&self, source: ScriptSource<'_>) -> Result<RunHandle, LuftError> {
-        let mut spec = resolve_fresh(source, self.backend.clone(), self.planner_config.clone())
+        // NL->Lua planning uses the registry's default backend.
+        let default_backend = self.registry.default_backend()?;
+        let mut spec = resolve_fresh(source, default_backend, self.planner_config.clone())
             .await
             .map_err(LuftError::Other)?;
         assign_dir_name(&mut spec, &self.base_dir);
@@ -183,12 +198,12 @@ impl Luft {
             events: tx.clone(),
         };
 
-        let backend = self.backend.clone();
+        let registry = self.registry.clone();
         let base_dir = self.base_dir.clone();
         let concurrency = self.concurrency;
 
         let join = tokio::spawn(async move {
-            let prepared = prepare(&spec, backend, &base_dir, &run_ctx, concurrency)
+            let prepared = prepare(&spec, registry, &base_dir, &run_ctx, concurrency)
                 .await
                 .map_err(LuftError::Other)?;
             let runtime = prepared.runtime;
@@ -319,7 +334,7 @@ impl Luft {
     #[must_use]
     pub fn with_concurrency(&self, n: usize) -> Luft {
         Luft {
-            backend: self.backend.clone(),
+            registry: self.registry.clone(),
             base_dir: self.base_dir.clone(),
             concurrency: Some(n),
             planner_config: self.planner_config.clone(),

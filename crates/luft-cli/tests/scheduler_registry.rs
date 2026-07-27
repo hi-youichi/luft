@@ -392,17 +392,16 @@ fn debug_lists_all_ids_after_overwrite() {
 #[test]
 fn debug_with_only_overwritten_id_lists_it() {
     // Edge: registry with a single id registered twice. Debug must
-    // still list that id exactly once (it's a map, not a list of
-    // registrations).
+    // still list that id exactly once in `backend_ids` (it's a map, not
+    // a list of registrations). The id also appears in `default_id`
+    // (first-registered becomes the default), so the literal "only"
+    // surfaces twice overall: once in `backend_ids`, once in `default_id`.
     let mut reg = BackendRegistry::new();
     reg.register(backend("only"));
     reg.register(backend("only")); // overwrite
     let s = format!("{reg:?}");
     assert!(s.contains("only"), "got: {s}");
-    // No double-listing — `only` should appear exactly once in the
-    // ids Vec. We accept any other formatting by checking the count
-    // of the literal substring "only".
-    assert_eq!(s.matches("only").count(), 1, "got: {s}");
+    assert_eq!(s.matches("only").count(), 2, "got: {s}");
 }
 
 // ════════════════════════════════════════════════════════════

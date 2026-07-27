@@ -347,7 +347,10 @@ async fn run_acp_session(
         &state,
         transport,
         schema_file_path,
-        config.model.clone(),
+        // Per-task model overrides the backend's configured default model,
+        // so `agent({backend = "codex", model = "o4-mini"})` actually uses
+        // o4-mini for that call. Falls back to the backend's `config.model`.
+        task.model.clone().or(config.model.clone()),
         config.luft_binary.clone(),
     );
     let idle_timeout = task.timeout.unwrap_or(DEFAULT_IDLE_TIMEOUT);

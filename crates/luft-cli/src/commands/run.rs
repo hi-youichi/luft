@@ -35,6 +35,7 @@ use anyhow::Result;
 use luft::core::contract::backend::RunContext;
 use luft::core::contract::event::AgentEvent;
 use luft::core::contract::ids::AgentId;
+use luft::core::scheduler::BackendRegistry;
 use luft::core::{AgentBackend, MockFileBackend, MockStats};
 use luft::runtime::Runtime;
 use luft::service::run as svc;
@@ -327,7 +328,7 @@ async fn run_auto_fix_loop(
             }
         });
 
-        let (attempt_backend, mock_stats) = create_run_backend(
+        let (registry, mock_stats) = build_run_registry(
             backend_id,
             args.workflow.as_deref(),
             !args.no_acp_raw,
@@ -335,7 +336,7 @@ async fn run_auto_fix_loop(
         )?;
 
         let prepared =
-            svc::prepare(spec, attempt_backend, base_dir, &ctx, args.max_concurrency).await?;
+            svc::prepare(spec, registry, base_dir, &ctx, args.max_concurrency).await?;
 
         if spec.resuming {
             println!(
@@ -452,6 +453,37 @@ fn create_run_backend(
     } else {
         Ok((backend::create_backend(backend_id, emit_raw, model)?, None))
     }
+}
+
+/// Build the run's [`BackendRegistry`]: the `--backend` choice becomes the
+/// default, and every other available real backend is auto-registered so the
+/// workflow can dispatch `agent({backend = "..."})` to any of them.
+///
+/// `mock` / `mockfile` are test scenarios and stay single-backend (their real
+/// counterparts are not registered alongside them). Returns the mock stats
+/// handle (if any) for coverage checking after the run.
+#[allow(clippy::type_complexity)]
+fn build_run_registry(
+    backend_id: &str,
+    workflow_path: Option<&Path>,
+    emit_raw: bool,
+    model: Option<String>,
+) -> Result<(BackendRegistry, Option<Arc<MockStats>>)> {
+    let (default_backend, mock_stats) =
+        create_run_backend(backend_id, workflow_path, emit_raw, model.clone())?;
+    let mut registry = BackendRegistry::new().with_default(default_backend);
+
+    if !matches!(backend_id, "mock" | "mockfile") {
+        for id in backend::detect_available_backends() {
+            if id != backend_id {
+                if let Ok(b) = backend::create_backend(id, emit_raw, model.clone()) {
+                    registry = registry.with(b);
+                }
+            }
+        }
+    }
+
+    Ok((registry, mock_stats))
 }
 
 /// Pull a human-readable string out of a run's final report value.

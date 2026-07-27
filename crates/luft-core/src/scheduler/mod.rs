@@ -587,6 +587,78 @@ mod tests {
         assert_eq!(c, 1);
     }
 
+    /// A backend whose `id()` is parameterised and which records that id in the
+    /// agent result output, so per-task routing can be observed.
+    struct IdBackend {
+        id: &'static str,
+    }
+
+    #[async_trait::async_trait]
+    impl AgentBackend for IdBackend {
+        fn id(&self) -> &'static str {
+            self.id
+        }
+        fn capabilities(&self) -> AgentCapabilities {
+            AgentCapabilities::default()
+        }
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+        async fn run(&self, task: AgentTask, _ctx: RunContext) -> Result<AgentResult, BackendError> {
+            Ok(AgentResult {
+                agent_id: task.agent_id,
+                status: AgentStatus::Ok,
+                output: serde_json::Value::String(self.id.to_string()),
+                findings: vec![],
+                tokens_used: TokenUsage::default(),
+                artifacts: vec![],
+                logs: LogRef::default(),
+                thread_id: None,
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn per_task_backend_routes_to_named_backend() {
+        let a = Arc::new(IdBackend { id: "alpha" }) as Arc<dyn AgentBackend>;
+        let b = Arc::new(IdBackend { id: "beta" }) as Arc<dyn AgentBackend>;
+        // alpha is the default (first-registered); beta is selectable.
+        let sched = Arc::new(Scheduler::new(
+            fast_config(4, 1000),
+            BackendRegistry::new().with(a).with(b),
+            None,
+        ));
+        let run_id = Uuid::now_v7();
+        let _rx = sched.init_run(run_id, 256);
+
+        // Explicit backend id -> routes to that backend.
+        let r = sched
+            .run_agent(run_id, mk_task("t1"), Some("beta"))
+            .await
+            .unwrap();
+        assert_eq!(r.output, serde_json::Value::String("beta".to_string()));
+
+        // Omitted backend -> routes to the default (alpha).
+        let r = sched.run_agent(run_id, mk_task("t2"), None).await.unwrap();
+        assert_eq!(r.output, serde_json::Value::String("alpha".to_string()));
+    }
+
+    #[tokio::test]
+    async fn per_task_backend_unknown_id_errors() {
+        let a = Arc::new(IdBackend { id: "alpha" }) as Arc<dyn AgentBackend>;
+        let sched = Arc::new(Scheduler::new(
+            fast_config(4, 1000),
+            BackendRegistry::new().with(a),
+            None,
+        ));
+        let run_id = Uuid::now_v7();
+        let _rx = sched.init_run(run_id, 256);
+        assert!(sched
+            .run_agent(run_id, mk_task("t"), Some("nope"))
+            .await
+            .is_err());
+    }
+
     #[tokio::test]
     async fn test_concurrency_limit() {
         let cur = Arc::new(AtomicUsize::new(0));
