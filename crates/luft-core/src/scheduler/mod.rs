@@ -134,7 +134,20 @@ impl Scheduler {
     ) -> Result<AgentResult, SchedulerError> {
         let backend = match backend_id {
             Some(id) => self.registry.get(id)?,
-            None => self.registry.default_backend()?,
+            None => {
+                // Default routing: prefer the ACP-captured "current backend",
+                // resolved via its registry id. Falls back to the registry's
+                // designated default when no handshake has captured one yet
+                // (the first agent of a run, or a mock / non-ACP backend that
+                // never handshakes), or when the captured id is no longer
+                // registered.
+                let from_current = crate::contract::current_backend()
+                    .and_then(|cb| self.registry.get(&cb.id).ok());
+                match from_current {
+                    Some(b) => b,
+                    None => self.registry.default_backend()?,
+                }
+            }
         };
 
         // Snapshot per-run handles without holding the DashMap guard across await.
@@ -619,7 +632,11 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn per_task_backend_routes_to_named_backend() {
+        // No captured current_backend -> the omitted-backend case must fall
+        // back to the registry default (alpha, first-registered).
+        crate::contract::clear_current_backend();
         let a = Arc::new(IdBackend { id: "alpha" }) as Arc<dyn AgentBackend>;
         let b = Arc::new(IdBackend { id: "beta" }) as Arc<dyn AgentBackend>;
         // alpha is the default (first-registered); beta is selectable.
@@ -638,9 +655,68 @@ mod tests {
             .unwrap();
         assert_eq!(r.output, serde_json::Value::String("beta".to_string()));
 
-        // Omitted backend -> routes to the default (alpha).
+        // Omitted backend, no current_backend captured -> registry default (alpha).
         let r = sched.run_agent(run_id, mk_task("t2"), None).await.unwrap();
         assert_eq!(r.output, serde_json::Value::String("alpha".to_string()));
+        crate::contract::clear_current_backend();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn per_task_backend_follows_current_backend() {
+        // When the ACP handshake has captured a current backend, an omitted
+        // `backend` routes to it (via its registry id), even if it is not the
+        // registry default.
+        crate::contract::clear_current_backend();
+        let a = Arc::new(IdBackend { id: "alpha" }) as Arc<dyn AgentBackend>;
+        let b = Arc::new(IdBackend { id: "beta" }) as Arc<dyn AgentBackend>;
+        let sched = Arc::new(Scheduler::new(
+            fast_config(4, 1000),
+            BackendRegistry::new().with(a).with(b),
+            None,
+        ));
+        let run_id = Uuid::now_v7();
+        let _rx = sched.init_run(run_id, 256);
+
+        // Simulate the ACP handshake capturing "beta" as the current backend.
+        crate::contract::set_current_backend(crate::contract::CurrentBackend {
+            id: "beta".to_string(),
+            name: "beta".to_string(),
+            version: "0".to_string(),
+            title: None,
+        });
+
+        // Omitted backend -> routes to current_backend ("beta"), not the
+        // registry default ("alpha").
+        let r = sched.run_agent(run_id, mk_task("t"), None).await.unwrap();
+        assert_eq!(r.output, serde_json::Value::String("beta".to_string()));
+        crate::contract::clear_current_backend();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn per_task_backend_falls_back_when_current_unregistered() {
+        // current_backend captured but its id is not registered -> fall back
+        // to the registry default instead of erroring.
+        crate::contract::clear_current_backend();
+        let a = Arc::new(IdBackend { id: "alpha" }) as Arc<dyn AgentBackend>;
+        let sched = Arc::new(Scheduler::new(
+            fast_config(4, 1000),
+            BackendRegistry::new().with(a),
+            None,
+        ));
+        let run_id = Uuid::now_v7();
+        let _rx = sched.init_run(run_id, 256);
+
+        crate::contract::set_current_backend(crate::contract::CurrentBackend {
+            id: "gone".to_string(),
+            name: "gone".to_string(),
+            version: "0".to_string(),
+            title: None,
+        });
+        let r = sched.run_agent(run_id, mk_task("t"), None).await.unwrap();
+        assert_eq!(r.output, serde_json::Value::String("alpha".to_string()));
+        crate::contract::clear_current_backend();
     }
 
     #[tokio::test]

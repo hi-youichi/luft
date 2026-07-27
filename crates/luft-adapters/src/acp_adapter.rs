@@ -352,6 +352,7 @@ async fn run_acp_session(
         // o4-mini for that call. Falls back to the backend's `config.model`.
         task.model.clone().or(config.model.clone()),
         config.luft_binary.clone(),
+        config.id,
     );
     let idle_timeout = task.timeout.unwrap_or(DEFAULT_IDLE_TIMEOUT);
 
@@ -514,6 +515,7 @@ fn drive_connection(
     schema_file_path: Option<String>,
     model: Option<String>,
     luft_binary: Option<PathBuf>,
+    backend_id: &'static str,
 ) -> impl std::future::Future<Output = Result<(), agent_client_protocol::Error>> {
     let acc = state.acc.clone();
     let events = state.events.clone();
@@ -589,6 +591,7 @@ fn drive_connection(
                         prompt: &prompt,
                         acc: &acc_for_prompt,
                         stop_holder: &stop_holder_for_prompt,
+                        backend_id,
                     })
                     .await?;
                     Ok(())
@@ -678,6 +681,9 @@ struct HandshakePromptContext<'a> {
     prompt: &'a str,
     acc: &'a Arc<update_mapper::Accumulator>,
     stop_holder: &'a Arc<Mutex<Option<String>>>,
+    /// Registry key of this backend (`config.id`), captured into
+    /// [`CurrentBackend::id`] during the handshake.
+    backend_id: &'a str,
 }
 
 async fn run_handshake_and_prompt(
@@ -702,6 +708,7 @@ async fn run_handshake_and_prompt(
                 "ACP handshake: connected backend"
             );
             luft_core::contract::set_current_backend(luft_core::contract::CurrentBackend {
+                id: ctx.backend_id.to_string(),
                 name: info.name.clone(),
                 version: info.version.clone(),
                 title: info.title.clone(),

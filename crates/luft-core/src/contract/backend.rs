@@ -258,17 +258,26 @@ pub struct LogRef {
 /// at the ACP `initialize` handshake.
 ///
 /// Stored process-globally so any code path — not only the adapter itself —
-/// can answer "which backend am I talking to?". This is the foundation for
-/// agent primitives resolving the default/current backend without each
-/// caller threading an explicit `backend` argument through every call.
+/// can answer "which backend am I talking to?". The agent primitive resolves
+/// its default backend (when the script omits `backend`) from this store via
+/// the [`id`](Self::id) field, rather than each caller threading an explicit
+/// `backend` argument through every call.
 ///
 /// **Semantics**: written by the ACP adapter on every handshake. In the
 /// current single-backend model the value is constant for a run's lifetime.
 /// With multiple backends it becomes "most recently handshaken", so readers
-/// must tolerate concurrent writers.
+/// must tolerate concurrent writers; the scheduler falls back to the
+/// registry's designated default when the captured id is stale or missing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CurrentBackend {
-    /// Backend implementation name, e.g. "opencode", "codex".
+    /// Registry key of this backend (i.e. [`AgentBackend::id`], e.g.
+    /// `"opencode"`, `"codex"`). This is the value the scheduler uses to route
+    /// a default (`backend`-omitted) agent, and it is set from the adapter's
+    /// own `config.id` — so it is guaranteed to match a registry key, unlike
+    /// the ACP-reported `name`.
+    pub id: String,
+    /// Backend implementation name as reported by the ACP peer, e.g.
+    /// "opencode", "codex". Display/metadata only — not used for routing.
     pub name: String,
     /// Backend implementation version.
     pub version: String,
@@ -302,6 +311,14 @@ pub fn current_backend() -> Option<CurrentBackend> {
         .read()
         .expect("CURRENT_BACKEND lock poisoned")
         .clone()
+}
+
+/// Clear the recorded current backend identity. Primarily for tests, so a
+/// `current_backend`-dependent assertion does not leak into the next test.
+pub fn clear_current_backend() {
+    *CURRENT_BACKEND
+        .write()
+        .expect("CURRENT_BACKEND lock poisoned") = None;
 }
 
 #[cfg(test)]
