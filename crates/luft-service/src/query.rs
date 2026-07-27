@@ -2,7 +2,7 @@ use anyhow::Result;
 use luft_core::contract::event::AgentEvent;
 use luft_core::contract::finding::Finding;
 use luft_core::state::{get_run_store, list_runs as list_run_dirs, RunCheckpoint};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Summary view of a run's checkpoint — the query DTO shared by the CLI.
 /// It lives in the query layer (not a presentation layer) so that
@@ -52,16 +52,36 @@ impl From<(&str, &RunCheckpoint)> for StatusOutput {
     }
 }
 
-/// Fetch a run's checkpoint, guarding against unknown run dirs: returns
-/// `Ok(None)` rather than letting `get_run_store` create the run directory for
-/// an id that was never started. The single existence-checked accessor shared
-/// by `list_runs` / `get_status` and the binary `status` command.
+/// Fetch a run's checkpoint by reading `checkpoint.json` directly from disk.
+///
+/// This is a **read-only** query — it deliberately does *not* consult the
+/// in-memory `RunStore` cache, which is only populated for runs started in
+/// the current process (via `init_run` / `open_run` / `update_from_event`).
+/// Reading from disk is what makes `list_runs` / `get_run_status` work for
+/// runs created by *other* processes — e.g. the MCP server (started via
+/// `luft mcp serve`) querying runs created by `luft run`, or vice-versa.
+///
+/// Returns `Ok(None)` when the run directory or `checkpoint.json` is absent
+/// (unknown run id, or a run directory that never reached `init_run`).
 pub fn get_checkpoint(run_dir_name: &str, base_dir: &Path) -> Result<Option<RunCheckpoint>> {
-    if !base_dir.join(run_dir_name).exists() {
+    read_checkpoint_from_disk(run_dir_name, base_dir)
+}
+
+/// Read a run's `checkpoint.json` from disk without touching the in-memory
+/// `RunStore` cache. Mirrors the disk-read pattern already used by
+/// `luft_core::journal::RunCreationMode::Auto`.
+fn read_checkpoint_from_disk(
+    run_dir_name: &str,
+    base_dir: &Path,
+) -> Result<Option<RunCheckpoint>> {
+    let checkpoint_path: PathBuf = base_dir.join(run_dir_name).join("checkpoint.json");
+    if !checkpoint_path.exists() {
         return Ok(None);
     }
-    let store = get_run_store(run_dir_name, base_dir)?;
-    Ok(store.get_checkpoint())
+    let content = std::fs::read_to_string(&checkpoint_path)?;
+    let checkpoint: RunCheckpoint = serde_json::from_str(&content)
+        .map_err(|e| anyhow::anyhow!("parse checkpoint for '{run_dir_name}': {e}"))?;
+    Ok(Some(checkpoint))
 }
 
 pub fn list_runs(base_dir: &Path) -> Result<Vec<StatusOutput>> {
@@ -98,8 +118,11 @@ pub fn get_logs(run_dir_name: &str, base_dir: &Path, limit: Option<usize>) -> Re
 }
 
 pub fn get_findings(run_dir_name: &str, base_dir: &Path) -> Result<Vec<Finding>> {
-    let store = get_run_store(run_dir_name, base_dir)?;
-    Ok(store.get_findings())
+    // Read from disk — same rationale as `get_checkpoint`: the in-memory
+    // `RunStore` cache is empty for runs created by other processes.
+    Ok(read_checkpoint_from_disk(run_dir_name, base_dir)?
+        .map(|cp| cp.findings)
+        .unwrap_or_default())
 }
 
 pub fn cancel_run(run_dir_name: &str, base_dir: &Path) -> Result<()> {
@@ -322,6 +345,138 @@ mod tests {
         let cp = result.unwrap();
         assert_eq!(cp.run_id, run_id);
         assert_eq!(cp.task, "test task");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    // ── cross-process regression: disk-only checkpoint (no in-memory cache) ─
+    //
+    // This is the scenario that was broken before the fix: a run created by
+    // *another* process (e.g. `luft run`) leaves a valid `checkpoint.json` on
+    // disk, but the querying process (e.g. `luft mcp serve`, or `luft list`)
+    // has never called `init_run` for it — so the global `RunStore` cache is
+    // empty. Query tools must still find it by reading from disk.
+
+    /// Build a minimal `RunCheckpoint` with one finding, for the disk-only
+    /// regression tests below.
+    fn make_checkpoint(run_id: uuid::Uuid) -> RunCheckpoint {
+        RunCheckpoint {
+            run_id,
+            task: "cross-process task".into(),
+            status: CheckpointStatus::Completed,
+            current_phase: 1,
+            completed_phases: vec![],
+            agent_results: HashMap::new(),
+            findings: vec![Finding {
+                kind: "disk-only".into(),
+                severity: Severity::Medium,
+                title: "T".into(),
+                detail: "D".into(),
+                location: None,
+                evidence: vec![],
+                data: serde_json::json!({}),
+            }],
+            total_tokens: 42,
+            created_at: 1719000000,
+            updated_at: 1719000100,
+            completed_spans: vec![],
+            workflow_meta: None,
+            started_agent_ids: vec![],
+        }
+    }
+
+    /// Write `checkpoint.json` directly to disk, bypassing the `RunStore`
+    /// cache entirely — mirroring what a *different* process would have left
+    /// behind.
+    fn write_checkpoint_disk_only(base_dir: &Path, dir_name: &str, cp: &RunCheckpoint) {
+        let run_dir = base_dir.join(dir_name);
+        std::fs::create_dir_all(&run_dir).unwrap();
+        let json = serde_json::to_string_pretty(cp).unwrap();
+        std::fs::write(run_dir.join("checkpoint.json"), json).unwrap();
+    }
+
+    #[test]
+    fn get_checkpoint_reads_disk_without_in_memory_cache() {
+        let temp_dir = std::env::temp_dir().join("luft_svc_test_disk_only_checkpoint");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let dir_name = format!("hello_{}", uuid::Uuid::now_v7());
+        let run_id = uuid::Uuid::now_v7();
+        write_checkpoint_disk_only(&temp_dir, &dir_name, &make_checkpoint(run_id));
+
+        // No `get_run_store` / `init_run` call has happened in this process —
+        // the global in-memory cache is empty for this run. Before the fix,
+        // this returned `None` ("run not found").
+        let cp = get_checkpoint(&dir_name, &temp_dir).unwrap().expect("checkpoint");
+        assert_eq!(cp.run_id, run_id);
+        assert_eq!(cp.task, "cross-process task");
+        assert_eq!(cp.status, CheckpointStatus::Completed);
+        assert_eq!(cp.total_tokens, 42);
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn get_status_reads_disk_without_in_memory_cache() {
+        let temp_dir = std::env::temp_dir().join("luft_svc_test_disk_only_status");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let dir_name = format!("hello_{}", uuid::Uuid::now_v7());
+        let run_id = uuid::Uuid::now_v7();
+        write_checkpoint_disk_only(&temp_dir, &dir_name, &make_checkpoint(run_id));
+
+        let status = get_status(&dir_name, &temp_dir)
+            .unwrap()
+            .expect("status");
+        assert_eq!(status.run_id, run_id.to_string());
+        assert_eq!(status.run_dir, dir_name);
+        assert_eq!(status.status, "completed");
+        assert_eq!(status.total_tokens, 42);
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn list_runs_reads_disk_without_in_memory_cache() {
+        let temp_dir = std::env::temp_dir().join("luft_svc_test_disk_only_list");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let dir_a = format!("run-a_{}", uuid::Uuid::now_v7());
+        let dir_b = format!("run-b_{}", uuid::Uuid::now_v7());
+        write_checkpoint_disk_only(&temp_dir, &dir_a, &make_checkpoint(uuid::Uuid::now_v7()));
+        write_checkpoint_disk_only(&temp_dir, &dir_b, &make_checkpoint(uuid::Uuid::now_v7()));
+
+        // Before the fix, this returned an empty list because neither run had
+        // an entry in the global in-memory `RunStore` cache.
+        let results = list_runs(&temp_dir).unwrap();
+        assert_eq!(results.len(), 2, "both disk-only runs must be listed");
+        let dirs: Vec<&str> = results.iter().map(|r| r.run_dir.as_str()).collect();
+        assert!(dirs.contains(&dir_a.as_str()));
+        assert!(dirs.contains(&dir_b.as_str()));
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn get_findings_reads_disk_without_in_memory_cache() {
+        let temp_dir = std::env::temp_dir().join("luft_svc_test_disk_only_findings");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let dir_name = format!("hello_{}", uuid::Uuid::now_v7());
+        let run_id = uuid::Uuid::now_v7();
+        write_checkpoint_disk_only(&temp_dir, &dir_name, &make_checkpoint(run_id));
+
+        let findings = get_findings(&dir_name, &temp_dir).unwrap();
+        assert_eq!(findings.len(), 1, "finding must be read from disk");
+        assert_eq!(findings[0].kind, "disk-only");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn get_checkpoint_returns_none_when_checkpoint_json_missing() {
+        // Run directory exists but has no checkpoint.json (e.g. a half-written
+        // run). Must return Ok(None), not error.
+        let temp_dir = std::env::temp_dir().join("luft_svc_test_no_checkpoint_file");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(temp_dir.join("half_baked_run")).unwrap();
+        let result = get_checkpoint("half_baked_run", &temp_dir).unwrap();
+        assert!(result.is_none());
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 

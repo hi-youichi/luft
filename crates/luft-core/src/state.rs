@@ -446,6 +446,25 @@ impl RunStore {
     pub fn cancel(&self) -> Result<(), std::io::Error> {
         tracing::info!("cancelling run");
         let mut guard = self.checkpoint.write().unwrap();
+
+        // Cache miss: this `RunStore` was created by a *different* process
+        // (e.g. the MCP server cancelling a run started by `luft run`), so
+        // the in-memory cache was never populated by `init_run` /
+        // `update_from_event`. Load the checkpoint from disk so we can
+        // mutate + persist it. If no `checkpoint.json` exists at all, there
+        // is nothing to cancel — return Ok (preserves the prior no-op
+        // behaviour for unknown runs, and must not create a file).
+        if guard.is_none() {
+            let checkpoint_path = self.run_dir.join("checkpoint.json");
+            if !checkpoint_path.exists() {
+                return Ok(());
+            }
+            let content = fs::read_to_string(&checkpoint_path)?;
+            let cp: RunCheckpoint = serde_json::from_str(&content)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+            *guard = Some(cp);
+        }
+
         if let Some(ref mut checkpoint) = *guard {
             checkpoint.status = CheckpointStatus::Cancelled;
             checkpoint.updated_at = current_timestamp();
@@ -911,6 +930,62 @@ mod tests {
         assert!(
             !dir.path().join("checkpoint.json").exists(),
             "cancel before init must not create checkpoint.json"
+        );
+    }
+
+    #[test]
+    fn cancel_loads_checkpoint_from_disk_when_cache_is_empty() {
+        // Cross-process regression: a different process (e.g. `luft run`)
+        // wrote a Running checkpoint to disk, then this process (e.g. the
+        // MCP server) opens a fresh `RunStore` whose in-memory cache is
+        // empty. `cancel()` must load from disk, flip the status to
+        // Cancelled, and persist — not silently no-op.
+        let dir = tempdir().unwrap();
+        let run_id = uuid::Uuid::now_v7();
+
+        // Write the checkpoint directly to disk, bypassing the in-memory
+        // cache entirely (mirrors what another process leaves behind).
+        let cp = RunCheckpoint {
+            run_id,
+            task: "started elsewhere".into(),
+            status: CheckpointStatus::Running,
+            current_phase: 0,
+            completed_phases: vec![],
+            agent_results: HashMap::new(),
+            findings: vec![],
+            total_tokens: 0,
+            created_at: current_timestamp(),
+            updated_at: current_timestamp(),
+            completed_spans: vec![],
+            workflow_meta: None,
+            started_agent_ids: vec![],
+        };
+        let cp_path = dir.path().join("checkpoint.json");
+        std::fs::write(
+            &cp_path,
+            serde_json::to_string_pretty(&cp).unwrap(),
+        )
+        .unwrap();
+
+        // Fresh RunStore — cache is None, exactly like a query-only process.
+        let store = RunStore::new(dir.path()).unwrap();
+        assert!(store.get_checkpoint().is_none(), "cache must start empty");
+
+        store.cancel().expect("cancel must succeed cross-process");
+
+        // In-memory cache is now populated with the cancelled checkpoint.
+        let cached = store.get_checkpoint().expect("cache populated after cancel");
+        assert_eq!(cached.status, CheckpointStatus::Cancelled);
+
+        // Disk reflects the same terminal status — observable to any process.
+        let raw = read_raw_checkpoint(dir.path());
+        assert_eq!(
+            raw.get("status").and_then(|v| v.as_str()),
+            Some("cancelled")
+        );
+        assert_eq!(
+            raw.get("run_id").and_then(|v| v.as_str()),
+            Some(run_id.to_string()).as_deref()
         );
     }
 

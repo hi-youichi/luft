@@ -691,8 +691,13 @@ mod tests {
     #[test]
     fn assign_dir_name_v4_uuid_fallback_timestamp() {
         let dir = tempfile::tempdir().unwrap();
+        // A v4 UUID carries no timestamp, so `assign_dir_name` must fall back
+        // to `SystemTime::now()`. Parsed from a literal because the `uuid`
+        // crate is built with only the `v7` feature (no `new_v4`).
+        let v4 = uuid::Uuid::parse_str("00000000-0000-4000-8000-000000000000").unwrap();
+        assert_eq!(v4.get_version(), Some(uuid::Version::Random));
         let mut spec = RunSpec {
-            run_id: uuid::Uuid::new_v4(),
+            run_id: v4,
             run_dir_name: String::new(),
             script: String::new(),
             task_label: "test".to_string(),
