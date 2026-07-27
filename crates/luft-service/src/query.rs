@@ -74,7 +74,23 @@ fn read_checkpoint_from_disk(
     run_dir_name: &str,
     base_dir: &Path,
 ) -> Result<Option<RunCheckpoint>> {
-    let checkpoint_path: PathBuf = base_dir.join(run_dir_name).join("checkpoint.json");
+    let run_dir = base_dir.join(run_dir_name);
+    if !run_dir.exists() {
+        return Ok(None);
+    }
+    // Surface an explicit io error when the run path exists but isn't a
+    // directory (e.g. a stray file where `.luft/runs/<name>` should be).
+    // The previous code path triggered this naturally via
+    // `RunStore::new` → `create_dir_all`; preserve that contract so
+    // callers can distinguish "no such run" (Ok(None)) from "corrupted
+    // run dir" (Err).
+    if !run_dir.is_dir() {
+        return Err(anyhow::anyhow!(
+            "Not a directory: run path '{}' exists as a non-directory file",
+            run_dir.display()
+        ));
+    }
+    let checkpoint_path: PathBuf = run_dir.join("checkpoint.json");
     if !checkpoint_path.exists() {
         return Ok(None);
     }
