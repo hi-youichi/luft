@@ -453,11 +453,6 @@ impl Scheduler {
         }
     }
 
-    /// Current global active concurrency.
-    pub fn active_concurrency(&self) -> usize {
-        self.config.max_concurrency - self.semaphore.available_permits()
-    }
-
     /// Quota consumed by a run, if initialised.
     pub fn quota_used(&self, run_id: RunId) -> Option<u32> {
         self.runs

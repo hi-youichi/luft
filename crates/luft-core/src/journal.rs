@@ -142,12 +142,6 @@ impl JournalStore {
         })
     }
 
-    /// Attach an event sender for broadcasting journal updates.
-    pub fn with_event_sender(mut self, tx: EventSender) -> Self {
-        self.event_tx = Some(tx);
-        self
-    }
-
     /// Initialize a new run in the journal.
     pub fn init_run(&self, run_id: RunId, task: &str) -> Result<(), JournalError> {
         tracing::info!(%run_id, %task, "initializing run in journal");

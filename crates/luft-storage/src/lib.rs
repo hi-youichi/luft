@@ -38,7 +38,7 @@ pub use db::{open_db, DbPool, DEFAULT_DB_PATH};
 pub use error::StorageError;
 pub use reader::{
     get_agent_overview, get_agent_turns, get_run_agents, get_run_overview, get_run_spans,
-    get_run_tree, list_runs, search_turns, AgentOverview, RunOverview, RunSummary, SpanRow,
+    list_runs, search_turns, AgentOverview, RunOverview, RunSummary, SpanRow,
     TurnKindCount, TurnRow,
 };
 pub use writer::EventWriter;

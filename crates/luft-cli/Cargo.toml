@@ -21,10 +21,10 @@ testing = ["luft/testing"]
 unstable_end_turn_token_usage = ["luft/unstable_end_turn_token_usage"]
 
 [dependencies]
-luft = { path = "../luft", version = "0.3.4", features = ["testing"] }
-luft-core = { path = "../luft-core", version = "0.3.4" }
-luft-mcp = { path = "../luft-mcp", version = "0.3.4" }
-luft-skills = { path = "../luft-skills", version = "0.3.4" }
+luft = { path = "../luft", version = "0.4.0", features = ["testing"] }
+luft-core = { path = "../luft-core", version = "0.4.0" }
+luft-mcp = { path = "../luft-mcp", version = "0.4.0" }
+luft-skills = { path = "../luft-skills", version = "0.4.0" }
 clap = { version = "4", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
 anyhow = "1"
@@ -52,3 +52,4 @@ which = "6"
 [dev-dependencies]
 tempfile = "3"
 serial_test = "3"
+

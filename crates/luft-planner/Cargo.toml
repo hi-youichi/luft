@@ -1,6 +1,6 @@
 [package]
 name = "luft-planner"
-version = "0.3.4"
+version = "0.4.0"
 edition = "2021"
 description = "NL to Lua workflow planner for Luft"
 license = "MIT"
@@ -9,9 +9,9 @@ keywords = ["luft", "agent", "orchestration", "lua", "planner"]
 categories = ["asynchronous"]
 
 [dependencies]
-luft-core = { path = "../luft-core", version = "0.3.4", features = ["testing"] }
-luft-runtime = { path = "../luft-runtime", version = "0.3.4" }
-luft-skills = { path = "../luft-skills", version = "0.3.4" }
+luft-core = { path = "../luft-core", version = "0.4.0", features = ["testing"] }
+luft-runtime = { path = "../luft-runtime", version = "0.4.0" }
+luft-skills = { path = "../luft-skills", version = "0.4.0" }
 mlua = { version = "0.10", features = ["lua54", "vendored", "async", "serialize", "send"] }
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["compat"] }
@@ -21,3 +21,5 @@ anyhow = "1"
 thiserror = "1"
 tracing = "0.1"
 uuid = { version = "1", features = ["v7", "serde"] }
+
+

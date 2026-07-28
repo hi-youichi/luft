@@ -22,19 +22,6 @@ pub enum AgentType {
 }
 
 impl AgentType {
-    #[allow(dead_code)]
-    pub fn is_custom(&self) -> bool {
-        matches!(self, AgentType::Custom(_))
-    }
-
-    #[allow(dead_code)]
-    pub fn custom_id(&self) -> Option<&str> {
-        match self {
-            AgentType::Custom(id) => Some(id),
-            _ => None,
-        }
-    }
-
     pub fn display_name(&self) -> String {
         match self {
             AgentType::Mock => "Mock".to_string(),

@@ -365,15 +365,6 @@ impl RunStore {
         guard.clone()
     }
 
-    /// Get cached agent results.
-    pub fn get_agent_results(&self) -> HashMap<AgentId, AgentResultCache> {
-        let guard = self.checkpoint.read().unwrap();
-        guard
-            .as_ref()
-            .map(|c| c.agent_results.clone())
-            .unwrap_or_default()
-    }
-
     /// Get all findings collected so far.
     pub fn get_findings(&self) -> Vec<Finding> {
         let guard = self.checkpoint.read().unwrap();

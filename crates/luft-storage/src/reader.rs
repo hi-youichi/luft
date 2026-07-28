@@ -330,10 +330,6 @@ pub async fn get_run_spans(pool: &DbPool, run_id: RunId) -> StorageResult<Vec<Sp
         .collect()
 }
 
-/// Alias for backwards-compat with the design doc.
-pub async fn get_run_tree(pool: &DbPool, run_id: RunId) -> StorageResult<Vec<SpanRow>> {
-    get_run_spans(pool, run_id).await
-}
 
 /// Search turns by free-text query (basic LIKE-based, sufficient for now;
 /// will be upgraded to FTS5 in P4).

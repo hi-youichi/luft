@@ -120,27 +120,7 @@ impl SkillManager {
         Ok(dirs)
     }
 
-    /// 计算目录中的技能文件数量（递归统计）
-    #[allow(dead_code)]
-    pub fn count_skills_in_dir(&self, dir: &Path) -> Result<usize> {
-        fn count_files_recursive(path: &Path) -> std::io::Result<usize> {
-            let mut total = 0;
-            if path.is_file() {
-                return Ok(1);
-            }
 
-            if let Ok(entries) = std::fs::read_dir(path) {
-                for entry in entries.flatten() {
-                    let entry_path = entry.path();
-                    total += count_files_recursive(&entry_path)?;
-                }
-            }
-
-            Ok(total)
-        }
-
-        count_files_recursive(dir).map_err(From::from)
-    }
 }
 
 #[cfg(test)]

@@ -9,10 +9,8 @@ use crate::contract::backend::{
 };
 use crate::contract::ids::TokenUsage;
 use serde_json::Value;
-use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 #[derive(Debug, Clone)]
 pub struct CallRecord {
@@ -92,9 +90,6 @@ impl CountingBackend {
             calls: Arc::new(Mutex::new(Vec::new())),
         }
     }
-    pub fn dispatched_names(&self) -> Vec<String> {
-        self.calls.lock().unwrap().clone()
-    }
     pub fn total_calls(&self) -> usize {
         self.calls.lock().unwrap().len()
     }
@@ -154,36 +149,8 @@ impl SharedBackend {
             calls: Arc::new(Mutex::new(Vec::new())),
         }
     }
-    pub fn with_block_on(self, n: u64) -> Self {
-        *self.block_on.lock().unwrap() = Some(n);
-        self
-    }
-    pub fn with_fail_on(self, n: u64) -> Self {
-        *self.fail_on.lock().unwrap() = Some(n);
-        self
-    }
     pub fn total_calls(&self) -> usize {
         self.calls.lock().unwrap().len()
-    }
-    pub fn calls_snapshot(&self) -> Vec<CallRecord> {
-        self.calls.lock().unwrap().clone()
-    }
-    pub fn dispatched_names(&self) -> Vec<String> {
-        self.calls
-            .lock()
-            .unwrap()
-            .iter()
-            .map(|c| c.agent_name.clone().unwrap_or_default())
-            .collect()
-    }
-    pub fn mirror(&self) -> Self {
-        Self {
-            canned: self.canned.clone(),
-            call_count: self.call_count.clone(),
-            block_on: self.block_on.clone(),
-            fail_on: self.fail_on.clone(),
-            calls: self.calls.clone(),
-        }
     }
 }
 
@@ -243,25 +210,5 @@ impl AgentBackend for SharedBackend {
     }
 }
 
-pub async fn wait_for_calls(backend: &SharedBackend, n: usize, timeout_ms: u64) {
-    let deadline = tokio::time::sleep(Duration::from_millis(timeout_ms));
-    tokio::pin!(deadline);
-    loop {
-        if backend.total_calls() >= n {
-            return;
-        }
-        tokio::select! {
-            _ = &mut deadline => panic!("timeout waiting for {n} agent calls (got {})", backend.total_calls()),
-            _ = tokio::time::sleep(Duration::from_millis(25)) => {}
-        }
-    }
-}
 
-pub async fn read_checkpoint(base: &Path, run_dir: &str) -> Value {
-    let path = base.join(run_dir).join("checkpoint.json");
-    match tokio::fs::read(&path).await {
-        Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or(Value::Null),
-        Err(_) => Value::Null,
-    }
-}
 

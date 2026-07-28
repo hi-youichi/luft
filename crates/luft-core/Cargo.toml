@@ -1,6 +1,6 @@
 [package]
 name = "luft-core"
-version = "0.3.4"
+version = "0.4.0"
 edition = "2021"
 description = "Luft core contracts: AgentBackend trait, scheduling, journaling, state"
 license = "MIT"
@@ -32,3 +32,5 @@ futures = "0.3"
 [dev-dependencies]
 tempfile = "3"
 serial_test = "3"
+
+

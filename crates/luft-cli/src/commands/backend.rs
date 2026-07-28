@@ -10,7 +10,7 @@ use clap::Subcommand;
 use serde::Serialize;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
-use crate::config::{config_path, load_config, save_config, LuftConfig};
+use crate::config::load_config;
 
 #[derive(Debug, Subcommand)]
 pub enum BackendSubcommand {
@@ -264,95 +264,6 @@ pub fn check_backend(id: Option<String>) {
     }
 }
 
-#[allow(dead_code)]
-pub fn config_backend(key: Option<String>, value: Option<String>) {
-    match (key, value) {
-        (None, None) => {
-            // Print current config
-            let cfg = load_config().unwrap_or_default();
-            println!("{}", serde_json::to_string_pretty(&cfg).unwrap());
-            println!();
-            println!("Config file: {}", config_path().display());
-            println!("(Use `luft backend config <key> <value>` to update)");
-        }
-        (Some(key), Some(value)) => {
-            let mut cfg = load_config().unwrap_or_default();
-            if let Err(e) = apply_config_update(&mut cfg, &key, &value) {
-                eprintln!("Error: {e}");
-                return;
-            }
-            match save_config(&cfg) {
-                Ok(()) => println!("\u{2713} Config saved: {key} = {value}"),
-                Err(e) => eprintln!("Error: {e}"),
-            }
-        }
-        (Some(_), None) => {
-            eprintln!("Error: missing value. Usage: `luft backend config <key> <value>`");
-        }
-        (None, Some(_)) => {
-            eprintln!("Error: missing key. Usage: `luft backend config <key> <value>`");
-        }
-    }
-}
-
-#[allow(dead_code)]
-fn apply_config_update(cfg: &mut LuftConfig, key: &str, value: &str) -> Result<(), String> {
-    match key {
-        "default" => {
-            cfg.backend.default = Some(value.to_string());
-            Ok(())
-        }
-        "acp.log_level" => {
-            cfg.backend.acp.log_level = Some(value.to_string());
-            Ok(())
-        }
-        "acp.connect_timeout_secs" => {
-            let n: u64 = value
-                .parse()
-                .map_err(|_| format!("invalid number: {value}"))?;
-            cfg.backend.acp.connect_timeout_secs = Some(n);
-            Ok(())
-        }
-        "acp.idle_timeout_secs" => {
-            let n: u64 = value
-                .parse()
-                .map_err(|_| format!("invalid number: {value}"))?;
-            cfg.backend.acp.idle_timeout_secs = Some(n);
-            Ok(())
-        }
-        "acp.emit_raw_events" => {
-            let b: bool = match value {
-                "true" | "1" | "yes" => true,
-                "false" | "0" | "no" => false,
-                _ => return Err(format!("invalid bool: {value} (expected true/false)")),
-            };
-            cfg.backend.acp.emit_raw_events = Some(b);
-            Ok(())
-        }
-        "acp.binary" => {
-            cfg.backend.acp.binary = Some(value.into());
-            Ok(())
-        }
-        "acp.args" => {
-            cfg.backend.acp.args = Some(value.split(',').map(|s| s.trim().to_string()).collect());
-            Ok(())
-        }
-        _ => Err(format!(
-            "unknown config key: {key}\n  known keys: default, acp.log_level, acp.binary, \
-             acp.args, acp.connect_timeout_secs, acp.idle_timeout_secs, acp.emit_raw_events"
-        )),
-    }
-}
-
-#[allow(dead_code)]
-pub fn set_default_backend(id: String) {
-    let mut cfg = load_config().unwrap_or_default();
-    cfg.backend.default = Some(id.clone());
-    match save_config(&cfg) {
-        Ok(()) => println!("\u{2713} Config saved: default backend = \"{id}\""),
-        Err(e) => eprintln!("Error: {e}"),
-    }
-}
 
 // ── ACP handshake check ────────────────────────────────────────────────────
 
@@ -440,197 +351,6 @@ fn codex_default_args() -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{AcpConfigOverride, BackendConfig, PlannerConfig};
-
-    // ── apply_config_update ──────────────────────────────────────────────
-
-    #[test]
-    fn apply_config_update_default_key() {
-        let mut cfg = LuftConfig::default();
-        apply_config_update(&mut cfg, "default", "opencode").unwrap();
-        assert_eq!(cfg.backend.default.as_deref(), Some("opencode"));
-    }
-
-    #[test]
-    fn apply_config_update_default_key_empty_value() {
-        let mut cfg = LuftConfig::default();
-        apply_config_update(&mut cfg, "default", "").unwrap();
-        assert_eq!(cfg.backend.default.as_deref(), Some(""));
-    }
-
-    #[test]
-    fn apply_config_update_acp_log_level() {
-        let mut cfg = LuftConfig::default();
-        apply_config_update(&mut cfg, "acp.log_level", "debug").unwrap();
-        assert_eq!(cfg.backend.acp.log_level.as_deref(), Some("debug"));
-    }
-
-    #[test]
-    fn apply_config_update_acp_connect_timeout_secs_valid() {
-        let mut cfg = LuftConfig::default();
-        apply_config_update(&mut cfg, "acp.connect_timeout_secs", "30").unwrap();
-        assert_eq!(cfg.backend.acp.connect_timeout_secs, Some(30));
-    }
-
-    #[test]
-    fn apply_config_update_acp_connect_timeout_secs_zero() {
-        let mut cfg = LuftConfig::default();
-        apply_config_update(&mut cfg, "acp.connect_timeout_secs", "0").unwrap();
-        assert_eq!(cfg.backend.acp.connect_timeout_secs, Some(0));
-    }
-
-    #[test]
-    fn apply_config_update_acp_connect_timeout_secs_invalid() {
-        let mut cfg = LuftConfig::default();
-        let err = apply_config_update(&mut cfg, "acp.connect_timeout_secs", "abc").unwrap_err();
-        assert!(err.contains("invalid number"));
-        assert!(err.contains("abc"));
-    }
-
-    #[test]
-    fn apply_config_update_acp_connect_timeout_secs_negative_rejected() {
-        let mut cfg = LuftConfig::default();
-        let err = apply_config_update(&mut cfg, "acp.connect_timeout_secs", "-1").unwrap_err();
-        assert!(err.contains("invalid number"));
-    }
-
-    #[test]
-    fn apply_config_update_acp_idle_timeout_secs_valid() {
-        let mut cfg = LuftConfig::default();
-        apply_config_update(&mut cfg, "acp.idle_timeout_secs", "300").unwrap();
-        assert_eq!(cfg.backend.acp.idle_timeout_secs, Some(300));
-    }
-
-    #[test]
-    fn apply_config_update_acp_idle_timeout_secs_invalid() {
-        let mut cfg = LuftConfig::default();
-        let err = apply_config_update(&mut cfg, "acp.idle_timeout_secs", "xyz").unwrap_err();
-        assert!(err.contains("invalid number"));
-    }
-
-    #[test]
-    fn apply_config_update_acp_emit_raw_events_true_variants() {
-        for v in ["true", "1", "yes"] {
-            let mut cfg = LuftConfig::default();
-            apply_config_update(&mut cfg, "acp.emit_raw_events", v).unwrap();
-            assert_eq!(cfg.backend.acp.emit_raw_events, Some(true), "value={v}");
-        }
-    }
-
-    #[test]
-    fn apply_config_update_acp_emit_raw_events_false_variants() {
-        for v in ["false", "0", "no"] {
-            let mut cfg = LuftConfig::default();
-            apply_config_update(&mut cfg, "acp.emit_raw_events", v).unwrap();
-            assert_eq!(cfg.backend.acp.emit_raw_events, Some(false), "value={v}");
-        }
-    }
-
-    #[test]
-    fn apply_config_update_acp_emit_raw_events_invalid() {
-        let mut cfg = LuftConfig::default();
-        let err = apply_config_update(&mut cfg, "acp.emit_raw_events", "maybe").unwrap_err();
-        assert!(err.contains("invalid bool"));
-        assert!(err.contains("maybe"));
-    }
-
-    #[test]
-    fn apply_config_update_acp_binary() {
-        let mut cfg = LuftConfig::default();
-        apply_config_update(&mut cfg, "acp.binary", "/usr/local/bin/opencode").unwrap();
-        assert_eq!(
-            cfg.backend.acp.binary.as_deref(),
-            Some(std::path::Path::new("/usr/local/bin/opencode"))
-        );
-    }
-
-    #[test]
-    fn apply_config_update_acp_binary_empty() {
-        let mut cfg = LuftConfig::default();
-        apply_config_update(&mut cfg, "acp.binary", "").unwrap();
-        assert_eq!(
-            cfg.backend.acp.binary.as_ref().map(|p| p.to_str().unwrap()),
-            Some("")
-        );
-    }
-
-    #[test]
-    fn apply_config_update_acp_args_single() {
-        let mut cfg = LuftConfig::default();
-        apply_config_update(&mut cfg, "acp.args", "verbose").unwrap();
-        assert_eq!(
-            cfg.backend.acp.args.as_ref().unwrap(),
-            &vec!["verbose".to_string()]
-        );
-    }
-
-    #[test]
-    fn apply_config_update_acp_args_multiple() {
-        let mut cfg = LuftConfig::default();
-        apply_config_update(&mut cfg, "acp.args", "verbose, no-color").unwrap();
-        assert_eq!(
-            cfg.backend.acp.args.as_ref().unwrap(),
-            &vec!["verbose".to_string(), "no-color".to_string()]
-        );
-    }
-
-    #[test]
-    fn apply_config_update_acp_args_with_extra_whitespace() {
-        let mut cfg = LuftConfig::default();
-        apply_config_update(&mut cfg, "acp.args", "  a ,  b  ,c ").unwrap();
-        assert_eq!(
-            cfg.backend.acp.args.as_ref().unwrap(),
-            &vec!["a".to_string(), "b".to_string(), "c".to_string()]
-        );
-    }
-
-    #[test]
-    fn apply_config_update_acp_args_empty_string_yields_one_empty_arg() {
-        let mut cfg = LuftConfig::default();
-        apply_config_update(&mut cfg, "acp.args", "").unwrap();
-        // Empty input still produces a single empty-string element because
-        // split(',') on "" yields one item.
-        assert_eq!(cfg.backend.acp.args.as_ref().unwrap().len(), 1);
-        assert_eq!(cfg.backend.acp.args.as_ref().unwrap()[0], "");
-    }
-
-    #[test]
-    fn apply_config_update_unknown_key() {
-        let mut cfg = LuftConfig::default();
-        let err = apply_config_update(&mut cfg, "no.such.key", "x").unwrap_err();
-        assert!(err.contains("unknown config key"));
-        assert!(err.contains("no.such.key"));
-        // Hint should list at least one known key.
-        assert!(err.contains("default"));
-    }
-
-    #[test]
-    fn apply_config_update_empty_key_is_unknown() {
-        let mut cfg = LuftConfig::default();
-        let err = apply_config_update(&mut cfg, "", "x").unwrap_err();
-        assert!(err.contains("unknown config key"));
-    }
-
-    #[test]
-    fn apply_config_update_preserves_other_fields() {
-        let mut cfg = LuftConfig {
-            backend: BackendConfig {
-                default: Some("keep".into()),
-                model: Some("keep-model".into()),
-                acp: AcpConfigOverride::default(),
-                codex_acp: Default::default(),
-            },
-            planner: PlannerConfig {
-                model: Some("keep-planner".into()),
-            },
-        };
-        apply_config_update(&mut cfg, "acp.log_level", "trace").unwrap();
-        // Untouched fields remain.
-        assert_eq!(cfg.backend.default.as_deref(), Some("keep"));
-        assert_eq!(cfg.backend.model.as_deref(), Some("keep-model"));
-        assert_eq!(cfg.planner.model.as_deref(), Some("keep-planner"));
-        assert_eq!(cfg.backend.acp.log_level.as_deref(), Some("trace"));
-    }
 
     // ── bool_mark ────────────────────────────────────────────────────────
 
@@ -638,7 +358,6 @@ mod tests {
     fn bool_mark_true() {
         let mark = bool_mark(true);
         assert!(!mark.is_empty());
-        // Should be the check character.
         assert_ne!(mark, bool_mark(false));
     }
 
@@ -703,38 +422,6 @@ mod tests {
         let s = format!("{cmd:?}");
         assert!(s.contains("Set"));
         assert!(s.contains("opencode"));
-    }
-
-    // ── apply_config_update: combined scenarios ──────────────────────────
-
-    #[test]
-    fn apply_config_update_full_round_trip_via_save() {
-        // Use a tempdir; we can't redirect config_dir(), but we can confirm
-        // that all known keys are accepted and produce parseable TOML.
-        let mut cfg = LuftConfig::default();
-        apply_config_update(&mut cfg, "default", "opencode").unwrap();
-        apply_config_update(&mut cfg, "acp.log_level", "info").unwrap();
-        apply_config_update(&mut cfg, "acp.connect_timeout_secs", "5").unwrap();
-        apply_config_update(&mut cfg, "acp.idle_timeout_secs", "60").unwrap();
-        apply_config_update(&mut cfg, "acp.emit_raw_events", "true").unwrap();
-        apply_config_update(&mut cfg, "acp.binary", "/usr/bin/opencode").unwrap();
-        apply_config_update(&mut cfg, "acp.args", "x,y,z").unwrap();
-
-        let s = toml::to_string(&cfg).unwrap();
-        let parsed: LuftConfig = toml::from_str(&s).unwrap();
-        assert_eq!(parsed.backend.default.as_deref(), Some("opencode"));
-        assert_eq!(parsed.backend.acp.log_level.as_deref(), Some("info"));
-        assert_eq!(parsed.backend.acp.connect_timeout_secs, Some(5));
-        assert_eq!(parsed.backend.acp.idle_timeout_secs, Some(60));
-        assert_eq!(parsed.backend.acp.emit_raw_events, Some(true));
-        assert_eq!(
-            parsed.backend.acp.binary.as_deref(),
-            Some(std::path::Path::new("/usr/bin/opencode"))
-        );
-        assert_eq!(
-            parsed.backend.acp.args.as_ref().unwrap(),
-            &vec!["x".to_string(), "y".to_string(), "z".to_string()]
-        );
     }
 }
 
