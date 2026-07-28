@@ -276,7 +276,6 @@ mod tests {
             total_tokens: 0,
             created_at: 1719000000,
             updated_at: 1719000100,
-            completed_spans: vec![],
             workflow_meta: None,
             started_agent_ids: vec![],
         };
@@ -334,7 +333,6 @@ mod tests {
             total_tokens: 500,
             created_at: 1719000000,
             updated_at: 1719000100,
-            completed_spans: vec![],
             workflow_meta: None,
             started_agent_ids: vec![agent_id],
         };
@@ -394,7 +392,6 @@ mod tests {
             total_tokens: 42,
             created_at: 1719000000,
             updated_at: 1719000100,
-            completed_spans: vec![],
             workflow_meta: None,
             started_agent_ids: vec![],
         }

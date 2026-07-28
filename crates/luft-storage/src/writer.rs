@@ -342,8 +342,6 @@ impl EventWriter {
             AgentEvent::AcpRaw { .. } => {}
             // Phase span events are structural metadata; captured in audit log
             // and checkpoint, no dedicated SQL table needed.
-            AgentEvent::PhaseSpanStarted { .. }
-            | AgentEvent::PhaseSpanDone { .. }
             | AgentEvent::PlanPreview { .. }
             | AgentEvent::SchemaRetry { .. } => {}
         }
@@ -779,8 +777,6 @@ fn audit_metadata(event: &AgentEvent) -> (Option<RunId>, &'static str) {
         }
         AgentEvent::PipelineItemDone { run_id, .. } => (Some(*run_id), "pipeline_item_done"),
         AgentEvent::PipelineDone { run_id, .. } => (Some(*run_id), "pipeline_done"),
-        AgentEvent::PhaseSpanStarted { run_id, .. } => (Some(*run_id), "phase_span_started"),
-        AgentEvent::PhaseSpanDone { run_id, .. } => (Some(*run_id), "phase_span_done"),
         AgentEvent::PlanPreview { run_id, .. } => (Some(*run_id), "plan_preview"),
         AgentEvent::SignalReceived { run_id, .. } => (*run_id, "signal_received"),
         AgentEvent::SchemaRetry { run_id, .. } => (Some(*run_id), "schema_retry"),

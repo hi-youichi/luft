@@ -4,7 +4,6 @@
 //! on a Lua global. `phase()` advances the shared phase counter that
 //! `agent()`/`parallel()` read for cache keys and events.
 
-use crate::sdk::PhaseSpan;
 use crate::sdk::SdkContext;
 use luft_core::contract::event::{AgentEvent, LogLevel};
 use mlua::{Lua, Table, Value};
@@ -23,7 +22,6 @@ pub(crate) fn register_control_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<(
     {
         let events = cx.events();
         let phase_counter = cx.phase_counter.clone();
-        let phase_span_stack = cx.phase_span_stack.clone();
         let phase_fn = lua.create_function(move |lua, (first, second): (Value, Option<f64>)| {
             let (label, planned, description, role) = match first {
                 Value::String(s) => {
@@ -76,17 +74,12 @@ pub(crate) fn register_control_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<(
             };
 
             let phase_id = phase_counter.fetch_add(1, Ordering::Relaxed) + 1;
-            let parent_span_id = {
-                let stack = phase_span_stack.lock().unwrap();
-                stack.last().map(|s| s.id)
-            };
-            tracing::info!(phase_id, %label, planned, parent_span_id = ?parent_span_id, "phase started");
+            tracing::info!(phase_id, %label, planned, "phase started");
             let _ = events.send(AgentEvent::PhaseStarted {
                 run_id,
                 phase_id,
                 label,
                 planned,
-                parent_span_id,
                 description,
                 role,
                 ts: chrono::Utc::now(),
@@ -96,87 +89,7 @@ pub(crate) fn register_control_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<(
         globals.set("phase", phase_fn)?;
     }
 
-    // ---- phase_begin(name, planned?) -> span_id ----------------------------
-    {
-        let events = cx.events();
-        let phase_counter = cx.phase_counter.clone();
-        let phase_span_stack = cx.phase_span_stack.clone();
-        let begin_fn = lua.create_function(move |_, (name, planned): (String, Option<f64>)| {
-            let id = phase_counter.fetch_add(1, Ordering::Relaxed) + 1;
-            let planned = planned
-                .map(|v| {
-                    if v.is_nan() || v < 0.0 { 0 }
-                    else if v > usize::MAX as f64 { usize::MAX }
-                    else { v as usize }
-                })
-                .unwrap_or(0);
-            let (parent_id, depth) = {
-                let stack = phase_span_stack.lock().unwrap();
-                (stack.last().map(|s| s.id), stack.len() as u32)
-            };
-            let span = PhaseSpan {
-                id,
-                name: name.clone(),
-                parent_id,
-                depth,
-                started_at: std::time::Instant::now(),
-                planned,
-            };
-            tracing::info!(span_id = id, %name, parent_id = ?parent_id, depth, "phase span started");
-            phase_span_stack.lock().unwrap().push(span);
-            let _ = events.send(AgentEvent::PhaseSpanStarted {
-                run_id,
-                span_id: id,
-                name,
-                parent_id,
-                depth,
-                planned,
-            });
-            Ok(id as i64)
-        })?;
-        globals.set("phase_begin", begin_fn)?;
-    }
 
-    // ---- phase_end(span_id?) -----------------------------------------------
-    {
-        let events = cx.events();
-        let phase_span_stack = cx.phase_span_stack.clone();
-        let end_fn = lua.create_function(move |_, id: Option<i64>| {
-            let span = {
-                let mut stack = phase_span_stack.lock().unwrap();
-                match id {
-                    Some(target) => {
-                        let pos = stack
-                            .iter()
-                            .rposition(|s| s.id as i64 == target)
-                            .ok_or_else(|| {
-                                mlua::Error::RuntimeError(format!(
-                                    "phase_end: span id {} not found in stack",
-                                    target
-                                ))
-                            })?;
-                        stack.split_off(pos).remove(0)
-                    }
-                    None => stack.pop().ok_or_else(|| {
-                        mlua::Error::RuntimeError("phase_end: span stack is empty".to_string())
-                    })?,
-                }
-            };
-            let elapsed_ms = span.started_at.elapsed().as_millis() as u64;
-            tracing::info!(span_id = span.id, elapsed_ms, "phase span ended");
-            let _ = events.send(AgentEvent::PhaseSpanDone {
-                run_id,
-                span_id: span.id,
-                name: span.name,
-                parent_id: span.parent_id,
-                depth: span.depth,
-                elapsed_ms,
-                status: "completed".to_string(),
-            });
-            Ok(())
-        })?;
-        globals.set("phase_end", end_fn)?;
-    }
 
     // ---- log(msg, level?) --------------------------------------------------
     {

@@ -21,7 +21,6 @@ use luft_core::Scheduler;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
 use tokio::runtime::Handle;
 
 /// Report sink shared between the runtime and the `report()` primitive.
@@ -100,8 +99,7 @@ pub(crate) struct SdkContext {
     pub journal: Option<Arc<JournalStore>>,
     pub handle: Handle,
     pub report_sink: ReportSink,
-    /// Phase counter — incremented by `phase()` and `phase_begin()`, read by
-    /// `agent()`/`parallel()` so cache keys and events carry a meaningful phase id.
+    /// Phase counter — incremented by `phase()`, read by `agent()`/`parallel()` so cache keys and events carry a meaningful phase id.
     pub phase_counter: Arc<AtomicU32>,
     /// Agent sequence counter — global monotonic, incremented per `agent()` call.
     /// Shared across pipeline/parallel so every agent gets a unique display id.
@@ -109,9 +107,6 @@ pub(crate) struct SdkContext {
     /// Span counter — `fetch_add`'d by each blocking SDK primitive to correlate
     /// its `*Started`/`*Done` event pair (see `docs/design/sdk-events.md`).
     pub span_counter: Arc<AtomicU64>,
-    /// Phase span stack — push/pop by `phase_begin()`/`phase_end()`.
-    /// `phase()` reads the top as `parent_span_id`.
-    pub phase_span_stack: Arc<Mutex<Vec<PhaseSpan>>>,
     /// Coroutine bridge for `pmap()` coordination.
     pub coroutine_bridge: Arc<CoroutineBridge>,
 }
@@ -133,7 +128,7 @@ impl SdkContext {
             phase_counter: Arc::new(AtomicU32::new(0)),
             agent_seq_counter: Arc::new(AtomicU32::new(0)),
             span_counter: Arc::new(AtomicU64::new(0)),
-            phase_span_stack: Arc::new(Mutex::new(Vec::new())),
+
             coroutine_bridge: Arc::new(CoroutineBridge::new()),
         }
     }
@@ -149,17 +144,7 @@ impl SdkContext {
     }
 }
 
-/// A phase span entry on the span stack.
-#[derive(Debug, Clone)]
-pub struct PhaseSpan {
-    pub id: u32,
-    pub name: String,
-    pub parent_id: Option<u32>,
-    pub depth: u32,
-    pub started_at: Instant,
-    #[allow(dead_code)]
-    pub planned: usize,
-}
+
 
 /// Internal test helpers, exposed to every sibling `#[cfg(test)] mod` under
 /// `sdk::` via `crate::sdk::test_support::*`. Not part of the public API.
@@ -383,8 +368,8 @@ mod tests {
         let cx = make_sdk_context();
         assert_eq!(cx.phase_counter.load(Ordering::Relaxed), 0);
         assert_eq!(cx.agent_seq_counter.load(Ordering::Relaxed), 0);
-        assert_eq!(cx.span_counter.load(Ordering::Relaxed), 0);
-        assert!(cx.phase_span_stack.lock().unwrap().is_empty());
+
+
         assert!(!cx.coroutine_bridge.is_in_pmap());
         assert!(cx.journal.is_none());
     }
@@ -441,46 +426,6 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // PhaseSpan — public Pubsub field shape
-    // -----------------------------------------------------------------------
-    #[test]
-    fn phase_span_clone_preserves_fields() {
-        let now = Instant::now();
-        let span = PhaseSpan {
-            id: 3,
-            name: "explore".into(),
-            parent_id: Some(2),
-            depth: 1,
-            started_at: now,
-            planned: 4,
-        };
-        let cloned = span.clone();
-        assert_eq!(cloned.id, 3);
-        assert_eq!(cloned.name, "explore");
-        assert_eq!(cloned.parent_id, Some(2));
-        assert_eq!(cloned.depth, 1);
-        assert_eq!(cloned.planned, 4);
-        // Debug should mention key fields.
-        let dbg = format!("{:?}", cloned);
-        assert!(dbg.contains("PhaseSpan"));
-        assert!(dbg.contains("explore"));
-    }
-
-    #[test]
-    fn phase_span_with_no_parent_and_zero_planned() {
-        let span = PhaseSpan {
-            id: 0,
-            name: String::new(),
-            parent_id: None,
-            depth: 0,
-            started_at: Instant::now(),
-            planned: 0,
-        };
-        assert!(span.parent_id.is_none());
-        assert_eq!(span.depth, 0);
-        assert_eq!(span.name, "");
-        assert_eq!(span.planned, 0);
-    }
 
     // -----------------------------------------------------------------------
     // ReportSink — compile-time sanity check on the type alias
@@ -506,16 +451,7 @@ mod tests {
     fn public_api_re_exports_compile() {
         // Touch each public type so a future rename / private-pub regression
         // is caught at compile time, not at the first integration use.
-        fn _touch(_: &PhaseSpan) {}
-        let span = PhaseSpan {
-            id: 0,
-            name: "x".into(),
-            parent_id: None,
-            depth: 0,
-            started_at: Instant::now(),
-            planned: 0,
-        };
-        _touch(&span);
+
         // PendingTask is pub(crate) — used here only via super import.
         let _ = std::any::type_name::<PendingTask>();
         let _ = std::any::type_name::<SdkContext>();

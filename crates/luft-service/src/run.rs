@@ -428,20 +428,6 @@ pub async fn prepare(
         handle,
     )?;
 
-    // Inject completed phase spans for resume so scripts can skip finished units.
-    if spec.resuming {
-        let cp_path = run_dir.join("checkpoint.json");
-        if let Ok(content) = std::fs::read_to_string(&cp_path) {
-            if let Ok(cp) = serde_json::from_str::<RunCheckpoint>(&content) {
-                let names: Vec<String> =
-                    cp.completed_spans.iter().map(|s| s.name.clone()).collect();
-                if !names.is_empty() {
-                    runtime.set_completed_spans(&names)?;
-                }
-            }
-        }
-    }
-
     Ok(PreparedRun { runtime, journal })
 }
 

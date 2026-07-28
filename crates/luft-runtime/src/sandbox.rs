@@ -9,8 +9,7 @@
 
 //! - `workflow(path, args?)`     — nested sub-workflow (M6)
 //! - `phase(name, planned?)`     — progress grouping, returns phase id
-//! - `phase_begin(name, planned?)` — begin a structural phase span (push)
-//! - `phase_end(span_id?)`        — end the current structural phase span (pop)
+
 //! - `log(msg, level?)`          — structured log event
 //! - `budget(time_ms?, rounds?)` — runtime limits hint
 //! - `report(value)`             — final workflow output
@@ -152,20 +151,6 @@ impl Runtime {
         );
         Ok(guard.clone().unwrap_or(serde_json::Value::Null))
     }
-
-    /// Inject completed phase span names as the `completed_spans` Lua global,
-    /// so resume scripts can skip already-finished structural units.
-    pub fn set_completed_spans(&self, names: &[String]) -> Result<(), ScriptError> {
-        if names.is_empty() {
-            return Ok(());
-        }
-        let table = self.lua.create_table()?;
-        for name in names {
-            table.set(name.as_str(), true)?;
-        }
-        self.lua.globals().set("completed_spans", table)?;
-        Ok(())
-    }
 }
 
 /// Validates a script (syntax only) without executing it.
@@ -223,8 +208,6 @@ pub struct WorkflowValidation {
     pub has_main: bool,
     /// Whether `report(` appears in the script body (heuristic).
     pub has_report_call: bool,
-    /// Whether `phase_begin()` / `phase_end()` calls are paired.
-    pub span_pairing_ok: bool,
     /// All validation errors found.
     pub errors: Vec<String>,
     /// All validation warnings.
@@ -299,20 +282,7 @@ pub(crate) fn extract_meta(lua: &Lua) -> Result<Option<WorkflowMeta>, ScriptErro
     Ok(Some(WorkflowMeta { reasoning, phases }))
 }
 
-/// Heuristic check that `phase_begin()` calls are accompanied by at least one
-/// `phase_end()`. Dynamic loops render as a single text pair, so we only reject
-/// the case where there are begins but zero ends.
-pub(crate) fn check_span_pairing(script: &str) -> Result<(), String> {
-    let begin_count = script.matches("phase_begin(").count();
-    let end_count = script.matches("phase_end(").count();
-    if begin_count > 0 && end_count == 0 {
-        return Err(format!(
-            "script has {} phase_begin() call(s) but no phase_end() — spans must be paired",
-            begin_count
-        ));
-    }
-    Ok(())
-}
+
 
 /// Register no-op stubs for SDK globals so that top-level calls in malformed
 /// scripts (e.g. `agent()` outside `main()`) don't crash validation. These
@@ -329,8 +299,6 @@ fn register_validation_stubs(lua: &Lua) -> Result<(), ScriptError> {
         "parallel",
         "workflow",
         "phase",
-        "phase_begin",
-        "phase_end",
         "budget",
     ] {
         globals.set(name, stub_ret.clone())?;
@@ -354,7 +322,7 @@ fn register_validation_stubs(lua: &Lua) -> Result<(), ScriptError> {
 ///    calls don't crash validation.
 /// 2. **Structure** — verifies `meta` table exists with `reasoning` and `phases`,
 ///    and that `main()` is defined.
-/// 3. **Heuristic** — checks for `report(` call and `phase_begin/phase_end` pairing.
+/// 3. **Heuristic** — checks for `report(` call presence.
 ///
 /// Returns a [`WorkflowValidation`] regardless of semantic errors (only syntax
 /// errors or internal failures produce `Err`).
@@ -374,7 +342,6 @@ pub fn validate_workflow(script: &str) -> Result<WorkflowValidation, ScriptError
 
     // Phase 4: heuristic checks.
     let has_report_call = script.contains("report(");
-    let span_pairing_ok = check_span_pairing(script).is_ok();
 
     let mut errors = Vec::new();
     let warnings = Vec::new();
@@ -391,15 +358,11 @@ pub fn validate_workflow(script: &str) -> Result<WorkflowValidation, ScriptError
     if !has_report_call {
         errors.push("script must call `report(...)` to emit a final result".into());
     }
-    if let Err(e) = check_span_pairing(script) {
-        errors.push(e);
-    }
 
     Ok(WorkflowValidation {
         meta,
         has_main,
         has_report_call,
-        span_pairing_ok,
         errors,
         warnings,
     })
@@ -450,7 +413,6 @@ mod tests {
             meta: None,
             has_main: false,
             has_report_call: false,
-            span_pairing_ok: false,
             errors: vec!["x".into()],
             warnings: vec!["w".into()],
         };
@@ -460,7 +422,6 @@ mod tests {
             meta: None,
             has_main: false,
             has_report_call: false,
-            span_pairing_ok: false,
             errors: vec![],
             warnings: vec!["w".into()],
         };
@@ -677,53 +638,6 @@ mod tests {
         let extracted = extract_meta(&lua).unwrap().expect("meta must be Some");
         assert_eq!(extracted.reasoning, "");
     }
-
-    // -----------------------------------------------------------------------
-    // check_span_pairing — every branch
-    // -----------------------------------------------------------------------
-    #[test]
-    fn check_span_pairing_empty_script_is_ok() {
-        assert!(check_span_pairing("").is_ok());
-    }
-
-    #[test]
-    fn check_span_pairing_no_phase_calls_is_ok() {
-        let script = "function main() report({ ok = true }) end";
-        assert!(check_span_pairing(script).is_ok());
-    }
-
-    #[test]
-    fn check_span_pairing_only_ends_is_ok() {
-        // No begins → no pairing violation.
-        let script = "phase_end(1)";
-        assert!(check_span_pairing(script).is_ok());
-    }
-
-    #[test]
-    fn check_span_pairing_more_begins_than_ends_with_zero_ends_is_error() {
-        // The function only rejects scripts where begins > 0 AND ends == 0,
-        // so two begins + zero ends triggers the error, but two begins + one
-        // end is already balanced enough to pass.
-        let script = "phase_begin(\"a\") phase_begin(\"b\")";
-        let err = check_span_pairing(script).unwrap_err();
-        assert!(err.contains("phase_begin"));
-        assert!(err.contains("phase_end"));
-    }
-
-    #[test]
-    fn check_span_pairing_single_unpaired_begin_is_error() {
-        let script = "phase_begin(\"a\")";
-        let err = check_span_pairing(script).unwrap_err();
-        assert!(err.contains("1 phase_begin()"));
-    }
-
-    #[test]
-    fn check_span_pairing_extra_ends_do_not_count_as_paired_begins() {
-        // Multiple ends with zero begins is allowed (orphan ends are not rejected).
-        let script = "phase_end(1) phase_end(2)";
-        assert!(check_span_pairing(script).is_ok());
-    }
-
     // -----------------------------------------------------------------------
     // validate_workflow — every branch
     // -----------------------------------------------------------------------
@@ -738,7 +652,6 @@ mod tests {
         assert!(v.is_valid(), "errors: {:?}", v.errors);
         assert!(v.has_main);
         assert!(v.has_report_call);
-        assert!(v.span_pairing_ok);
         let meta = v.meta.expect("meta must be Some for well-formed script");
         assert_eq!(meta.reasoning, "do thing");
         assert_eq!(meta.phases.len(), 1);
@@ -774,21 +687,6 @@ mod tests {
         let v = validate_workflow(script).unwrap();
         assert!(!v.is_valid());
         assert!(v.errors.iter().any(|e| e.contains("report")));
-    }
-
-    #[test]
-    fn validate_workflow_unpaired_phase_begin_is_error() {
-        let script = r#"
-            meta = { reasoning = "r", phases = {} }
-            function main()
-              phase_begin("outer")
-              report({ ok = true })
-            end
-        "#;
-        let v = validate_workflow(script).unwrap();
-        assert!(!v.is_valid());
-        assert!(!v.span_pairing_ok);
-        assert!(v.errors.iter().any(|e| e.contains("phase_begin")));
     }
 
     #[test]
@@ -846,36 +744,6 @@ mod tests {
                 other => panic!("{forbidden} must be nil after Runtime::new, got {other:?}"),
             }
         }
-    }
-
-    #[tokio::test]
-    async fn runtime_set_completed_spans_empty_input_is_noop() {
-        let runtime = make_runtime();
-        // No-op for empty input: must not create the global.
-        runtime.set_completed_spans(&[]).unwrap();
-        // The global is absent (set only when non-empty), but accessing it as
-        // mlua::Value should not panic — we just confirm a non-error path.
-        let _ = runtime.lua.globals().get::<Value>("completed_spans");
-    }
-
-    #[tokio::test]
-    async fn runtime_set_completed_spans_creates_global_with_truthy_names() {
-        let runtime = make_runtime();
-        runtime
-            .set_completed_spans(&["explore".into(), "audit".into()])
-            .unwrap();
-        let t: Table = runtime
-            .lua
-            .globals()
-            .get("completed_spans")
-            .expect("completed_spans global must exist after set");
-
-        // Iterate to confirm both keys are present.
-        let mut seen = 0;
-        for _ in t.clone().pairs::<String, bool>() {
-            seen += 1;
-        }
-        assert_eq!(seen, 2);
     }
 
     #[tokio::test]
@@ -972,13 +840,11 @@ mod tests {
             meta: None,
             has_main: false,
             has_report_call: false,
-            span_pairing_ok: true,
             errors: vec![],
             warnings: vec![],
         };
         // Public methods on Runtime stay callable.
         let rt = make_runtime();
-        let _: Result<(), ScriptError> = rt.set_completed_spans(&["a".into()]);
     }
 
     // -----------------------------------------------------------------------

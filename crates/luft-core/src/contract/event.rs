@@ -25,8 +25,6 @@ pub enum AgentEvent {
         label: String,
         planned: usize,
         #[serde(default)]
-        parent_span_id: Option<u32>,
-        #[serde(default)]
         description: Option<String>,
         #[serde(default)]
         role: Option<String>,
@@ -198,25 +196,7 @@ pub enum AgentEvent {
         total_ok: usize,
         total_failed: usize,
     },
-    /// Structural phase span started — emitted by `phase_begin()`.
-    PhaseSpanStarted {
-        run_id: RunId,
-        span_id: u32,
-        name: String,
-        parent_id: Option<u32>,
-        depth: u32,
-        planned: usize,
-    },
-    /// Structural phase span done — emitted by `phase_end()`.
-    PhaseSpanDone {
-        run_id: RunId,
-        span_id: u32,
-        name: String,
-        parent_id: Option<u32>,
-        depth: u32,
-        elapsed_ms: u64,
-        status: String,
-    },
+
     /// Agent output failed schema validation and is being retried with corrective
     /// feedback injected into the prompt. Consumers (CLI, event log) can use this
     /// to inform users that an extra LLM round-trip is underway.
@@ -523,7 +503,6 @@ mod tests {
             phase_id: 3,
             label: "scan".into(),
             planned: 5,
-            parent_span_id: None,
             description: None,
             role: None,
             ts: DateTime::<Utc>::from_timestamp(0, 0).unwrap(),
@@ -553,7 +532,6 @@ mod tests {
             phase_id: 0,
             label: "x".into(),
             planned: 0,
-            parent_span_id: None,
             description: None,
             role: None,
             ts: ts(),
@@ -565,18 +543,15 @@ mod tests {
         let back: AgentEvent = serde_json::from_str(&s).unwrap();
         match back {
             AgentEvent::PhaseStarted {
-                parent_span_id,
                 description,
                 role,
                 ..
             } => {
-                assert!(parent_span_id.is_none());
                 assert!(description.is_none());
                 assert!(role.is_none());
             }
             _ => panic!("wrong variant"),
         }
-        assert!(s.contains("\"parent_span_id\":null"));
         assert!(s.contains("\"description\":null"));
         assert!(s.contains("\"role\":null"));
     }
@@ -1083,57 +1058,6 @@ mod tests {
                 assert_eq!(stages_completed, 4);
                 assert_eq!(total_ok, 12);
                 assert_eq!(total_failed, 1);
-            }
-            _ => panic!("wrong variant"),
-        }
-    }
-
-    #[test]
-    fn event_phase_span_started_roundtrip() {
-        let ev = AgentEvent::PhaseSpanStarted {
-            run_id: run_id(),
-            span_id: 11,
-            name: "investigate".into(),
-            parent_id: Some(1),
-            depth: 2,
-            planned: 4,
-        };
-        let s = serde_json::to_string(&ev).unwrap();
-        let back: AgentEvent = serde_json::from_str(&s).unwrap();
-        match back {
-            AgentEvent::PhaseSpanStarted {
-                span_id,
-                depth,
-                planned,
-                ..
-            } => {
-                assert_eq!(span_id, 11);
-                assert_eq!(depth, 2);
-                assert_eq!(planned, 4);
-            }
-            _ => panic!("wrong variant"),
-        }
-    }
-
-    #[test]
-    fn event_phase_span_done_roundtrip() {
-        let ev = AgentEvent::PhaseSpanDone {
-            run_id: run_id(),
-            span_id: 11,
-            name: "investigate".into(),
-            parent_id: None,
-            depth: 0,
-            elapsed_ms: 500,
-            status: "ok".into(),
-        };
-        let s = serde_json::to_string(&ev).unwrap();
-        let back: AgentEvent = serde_json::from_str(&s).unwrap();
-        match back {
-            AgentEvent::PhaseSpanDone {
-                status, elapsed_ms, ..
-            } => {
-                assert_eq!(status, "ok");
-                assert_eq!(elapsed_ms, 500);
             }
             _ => panic!("wrong variant"),
         }

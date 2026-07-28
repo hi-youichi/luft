@@ -741,7 +741,6 @@ mod tests {
             phase_id,
             label: label.to_string(),
             planned: 1,
-            parent_span_id: None,
             description: None,
             role: None,
             ts: Utc::now(),

@@ -34,8 +34,6 @@ pub struct RunCheckpoint {
     pub created_at: u64,
     pub updated_at: u64,
     #[serde(default)]
-    pub completed_spans: Vec<PhaseSpanSummary>,
-    #[serde(default)]
     pub workflow_meta: Option<serde_json::Value>,
     /// Every agent_id that has received an `AgentStarted` event, in arrival
     /// order. Used to compute "running" = started − done.
@@ -96,15 +94,6 @@ pub struct AgentResultCache {
     pub role: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PhaseSpanSummary {
-    pub id: u32,
-    pub name: String,
-    pub parent_id: Option<u32>,
-    pub depth: u32,
-    pub elapsed_ms: u64,
-    pub completed_at: u64,
-}
 
 /// Persistence store for a single run.
 #[derive(Debug)]
@@ -162,7 +151,6 @@ impl RunStore {
             total_tokens: 0,
             created_at: current_timestamp(),
             updated_at: current_timestamp(),
-            completed_spans: vec![],
             workflow_meta: None,
             started_agent_ids: vec![],
         };
@@ -205,7 +193,6 @@ impl RunStore {
             total_tokens: 0,
             created_at: current_timestamp(),
             updated_at: current_timestamp(),
-            completed_spans: vec![],
             workflow_meta: Some(workflow_meta),
             started_agent_ids: vec![],
         };
@@ -316,23 +303,6 @@ impl RunStore {
                     if *phase_id > 0 {
                         checkpoint.current_phase = *phase_id;
                     }
-                }
-                AgentEvent::PhaseSpanDone {
-                    span_id,
-                    name,
-                    parent_id,
-                    depth,
-                    elapsed_ms,
-                    ..
-                } => {
-                    checkpoint.completed_spans.push(PhaseSpanSummary {
-                        id: *span_id,
-                        name: name.clone(),
-                        parent_id: *parent_id,
-                        depth: *depth,
-                        elapsed_ms: *elapsed_ms,
-                        completed_at: current_timestamp(),
-                    });
                 }
                 AgentEvent::RunDone {
                     status,
@@ -956,7 +926,6 @@ mod tests {
             total_tokens: 0,
             created_at: current_timestamp(),
             updated_at: current_timestamp(),
-            completed_spans: vec![],
             workflow_meta: None,
             started_agent_ids: vec![],
         };

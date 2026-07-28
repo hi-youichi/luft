@@ -265,14 +265,3 @@ pub async fn read_checkpoint(base: &Path, run_dir: &str) -> Value {
     }
 }
 
-pub fn completed_span_names(cp: &Value) -> Vec<String> {
-    cp.get("phase_state")
-        .and_then(|ps| ps.get("completed_spans"))
-        .and_then(|cs| cs.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.get("name").and_then(|n| n.as_str()).map(String::from))
-                .collect()
-        })
-        .unwrap_or_default()
-}
