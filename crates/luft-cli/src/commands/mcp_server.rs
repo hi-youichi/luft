@@ -36,18 +36,13 @@ pub struct McpServeArgs {
 ///
 /// Constructs a Luft instance with the requested (or auto-detected) backend,
 /// wraps it in an [`luft_mcp::LuftMcpServer`], and runs the stdio loop.
-pub async fn serve(args: McpServeArgs) -> Result<()> {
-    let backend_id = args
-        .backend
-        .as_deref()
-        .unwrap_or_else(|| crate::backend::detect_backend());
-
-    let backend = crate::backend::create_backend(backend_id, false, None)?;
-
-    let luft = luft::Luft::builder().backend_arc(backend).build()?;
-
-    let server = luft_mcp::LuftMcpServer::new(luft);
-    luft_mcp::serve_rmcp(server).await?;
+/// `luft mcp serve` — proxy stdio ↔ daemon WebSocket.
+///
+/// If a daemon is already running, connects to it. If not, auto-starts one.
+/// Either way, stdin/stdout JSON-RPC is forwarded to the daemon's MCP WS endpoint.
+pub async fn serve(_args: McpServeArgs) -> Result<()> {
+    let addr = luft_daemon::discover_or_autostart().await?;
+    luft_mcp::proxy::run_proxy(&addr).await?;
     Ok(())
 }
 

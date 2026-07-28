@@ -45,8 +45,10 @@
 //! # }
 //! ```
 
+pub mod proxy;
 pub mod resources;
 pub mod server_rmcp;
+pub mod ws_transport;
 
 pub use resources::{
     build_read_response, list_examples, read_resource, ResourceContent, WorkflowUri,

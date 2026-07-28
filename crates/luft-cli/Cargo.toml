@@ -24,6 +24,7 @@ unstable_end_turn_token_usage = ["luft/unstable_end_turn_token_usage"]
 luft = { path = "../luft", version = "0.4.0", features = ["testing"] }
 luft-core = { path = "../luft-core", version = "0.4.0" }
 luft-mcp = { path = "../luft-mcp", version = "0.4.0" }
+luft-daemon = { path = "../luft-daemon", version = "0.4.0" }
 luft-skills = { path = "../luft-skills", version = "0.4.0" }
 clap = { version = "4", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
@@ -48,6 +49,9 @@ dashmap = "6"
 mlua = { version = "0.10", features = ["lua54", "vendored", "async", "serialize", "send"] }
 thiserror = "1"
 which = "6"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [dev-dependencies]
 tempfile = "3"

@@ -10,7 +10,7 @@ use clap::Subcommand;
 use serde::Serialize;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
-use crate::config::load_config;
+
 
 #[derive(Debug, Subcommand)]
 pub enum BackendSubcommand {

@@ -92,6 +92,9 @@ enum Commands {
     /// Start the Luft MCP server (stdio JSON-RPC).
     #[command(subcommand)]
     Mcp(commands::mcp_server::McpSubcommand),
+    /// Start or manage the Luft daemon (workflow execution backend).
+    #[command(subcommand)]
+    Daemon(commands::daemon::DaemonSubcommand),
     /// Lua script utilities.
     #[command(subcommand)]
     Lua(commands::lua_validate::LuaSubcommand),
@@ -262,6 +265,7 @@ async fn dispatch(
                 commands::mcp_server::serve(args).await?
             }
         },
+        Commands::Daemon(cmd) => commands::daemon::run(cmd).await?,
         Commands::Lua(cmd) => match cmd {
             commands::lua_validate::LuaSubcommand::Validate(args) => {
                 commands::lua_validate::validate_lua(args)?

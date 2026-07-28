@@ -10,6 +10,7 @@ members = [
     "crates/luft",
     "crates/luft-mcp",
     "crates/luft-cli",
+    "crates/luft-daemon",
 ]
 resolver = "2"
 

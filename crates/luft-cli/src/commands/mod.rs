@@ -4,6 +4,7 @@
 pub mod artifact_writer;
 pub mod backend;
 pub mod clear;
+pub mod daemon;
 pub mod event_log;
 pub mod generate;
 pub mod install;
