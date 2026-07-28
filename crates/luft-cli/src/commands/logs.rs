@@ -197,7 +197,6 @@ mod tests {
                 phase_id: 0,
                 label: "phase 0".into(),
                 planned: 2,
-                parent_span_id: None,
                 description: None,
                 role: None,
                 ts: chrono::Utc::now(),

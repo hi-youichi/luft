@@ -93,10 +93,7 @@ fn print_verbose(file: &str, result: &WorkflowValidation) {
 
     println!("\nmain():    {}", presence_label(result.has_main));
     println!("report():  {}", presence_label(result.has_report_call));
-    println!(
-        "phase_begin/end paired: {}",
-        presence_label(result.span_pairing_ok)
-    );
+
 
     if !result.warnings.is_empty() {
         println!("\nWarnings:");

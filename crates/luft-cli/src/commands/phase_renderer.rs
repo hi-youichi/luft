@@ -229,21 +229,7 @@ impl PhaseRenderer {
                 };
                 self.summary(&msg);
             }
-            AgentEvent::PhaseSpanDone {
-                span_id,
-                name,
-                elapsed_ms,
-                status,
-                ..
-            } => {
-                self.summary(&format!(
-                    "span#{} · {} ({}, {})",
-                    span_id,
-                    name,
-                    status,
-                    fmt_dur(*elapsed_ms)
-                ));
-            }
+
             AgentEvent::PlanPreview {
                 reasoning, phases, ..
             } => {

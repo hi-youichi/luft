@@ -1,10 +1,11 @@
 //! # luft-service
 //!
-//! **Presentation-free run lifecycle and query functions.**
+//! **Presentation-free run lifecycle, query functions, and domain service.**
 //!
-//! The service layer sits between the facade (`luft`) and the runtime /
-//! scheduler. It provides:
+//! The service layer sits between the transport facade (`luft-mcp`) and the
+//! runtime / scheduler. It provides:
 //!
+//! - **WorkflowService**: typed domain API (`request` → `response`), no transport deps
 //! - **Run preparation**: resolve script source (NL / workflow file / raw Lua),
 //!   extract meta, assign run directories.
 //! - **Execution**: build the sandboxed runtime and execute the script.
@@ -16,40 +17,33 @@
 //!
 //! | Module | Responsibility |
 //! |--------|---------------|
+//! | [`service`] | `WorkflowService` trait + impl — the typed domain API |
+//! | [`request`] | Request structs (`#[derive(Deserialize, JsonSchema)]`) |
+//! | [`response`] | Response structs (`#[derive(Serialize)]`) |
+//! | [`error`] | `ServiceError` enum |
 //! | [`run`] | Run lifecycle: validate, resolve, prepare, execute |
 //! | [`query`] | Read-only queries: status, events, findings, report, cancel |
 //! | [`phases`] | Phase tree builder for CLI / UI rendering |
 //!
+//! [`service`]: service
+//! [`request`]: request
+//! [`response`]: response
+//! [`error`]: error
 //! [`run`]: run
 //! [`query`]: query
 //! [`phases`]: phases
 
+pub mod error;
+pub mod json_to_lua;
+pub mod params;
 pub mod phases;
 pub mod query;
+pub mod request;
+pub mod response;
 pub mod run;
+pub mod service;
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn submodules_are_accessible() {
-        // Compile-time check: referencing each submodule's marker proves the
-        // module path resolves. If any module becomes private / removed,
-        // this file will fail to compile.
-        let _: phases::__PhasesProbe = ();
-        let _: query::__QueryProbe = ();
-        let _: run::__RunProbe = ();
-    }
-
-    mod phases {
-        #[cfg(test)]
-        pub type __PhasesProbe = ();
-    }
-    mod query {
-        #[cfg(test)]
-        pub type __QueryProbe = ();
-    }
-    mod run {
-        #[cfg(test)]
-        pub type __RunProbe = ();
-    }
-}
+pub use error::ServiceError;
+pub use request::*;
+pub use response::*;
+pub use service::WorkflowService;

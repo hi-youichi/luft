@@ -26,7 +26,6 @@ tracing        = "0.1"
 
 [dev-dependencies]
 tempfile = "3"
-uuid     = { version = "1", features = ["v7"] }
-chrono   = "0.4"
 tokio     = { version = "1", features = ["rt", "rt-multi-thread", "sync", "io-util", "macros"] }
-	rmcp      = { version = "0.6", features = ["server", "macros", "transport-io"] }
+chrono   = { version = "0.4", features = ["serde", "clock"] }
+uuid     = { version = "1", features = ["v7", "serde"] }

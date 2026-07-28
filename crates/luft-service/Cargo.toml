@@ -9,12 +9,13 @@ keywords = ["luft", "agent", "orchestration", "service"]
 categories = ["asynchronous"]
 
 [dependencies]
-luft-core = { path = "../luft-core", version = "0.3.4" }
+luft-core  = { path = "../luft-core", version = "0.3.4" }
 luft-runtime = { path = "../luft-runtime", version = "0.3.4" }
 luft-storage = { path = "../luft-storage", version = "0.3.4" }
 luft-planner = { path = "../luft-planner", version = "0.3.4" }
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["compat"] }
+rmcp = { version = "0.6", features = ["server", "macros"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"

@@ -136,12 +136,7 @@ RunDone { status, total_tokens, .. } => {
         PipelineDone { stages_completed, total_ok, total_failed, .. } => {
             format!("pipeline done: {stages_completed} stages, {total_ok} ok, {total_failed} failed")
         }
-        PhaseSpanStarted { span_id, name, depth, .. } => {
-            format!("phase span#{span_id} started (depth {depth}): {name}")
-        }
-        PhaseSpanDone { span_id, name, elapsed_ms, status, .. } => {
-            format!("phase span#{span_id} done: {name} ({status}, {elapsed_ms}ms)")
-        }
+
         SchemaRetry {
             agent_id,
             attempt,
