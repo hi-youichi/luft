@@ -9,7 +9,7 @@ keywords = ["luft", "agent", "orchestration", "lua", "planner"]
 categories = ["asynchronous"]
 
 [dependencies]
-luft-core = { path = "../luft-core", version = "0.3.4" }
+luft-core = { path = "../luft-core", version = "0.3.4", features = ["testing"] }
 luft-runtime = { path = "../luft-runtime", version = "0.3.4" }
 luft-skills = { path = "../luft-skills", version = "0.3.4" }
 mlua = { version = "0.10", features = ["lua54", "vendored", "async", "serialize", "send"] }

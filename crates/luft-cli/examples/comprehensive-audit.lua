@@ -206,7 +206,7 @@ for _, sys in ipairs(subsystems) do
         goto skip_sys
     end
 
-    local g = phase_begin(gname)
+    phase(gname)
 
     -- 2.1 发现该子系统下的模块文件
     phase("discover modules")
@@ -355,7 +355,7 @@ for _, sys in ipairs(subsystems) do
             res.ok or 0, res.failed or 0, res.total_elapsed_ms or 0))
     end
 
-    phase_end(g)
+    
     ::skip_sys::
 end
 
@@ -454,3 +454,4 @@ end
 
 report(report_data)
 end
+

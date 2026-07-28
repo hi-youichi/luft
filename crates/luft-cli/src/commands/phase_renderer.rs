@@ -751,7 +751,6 @@ mod tests {
             phase_id,
             label: "phase".into(),
             planned: 1,
-            parent_span_id: None,
             description: None,
             role: None,
             ts: chrono::Utc::now(),
@@ -1146,3 +1145,5 @@ mod tests {
         r.tick_elapsed();
     }
 }
+
+

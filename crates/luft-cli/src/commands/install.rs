@@ -66,3 +66,4 @@ fn print_installation_summary(summary: &crate::install::InstallSummary) {
         eprintln!("3. 运行 'luft mcp serve' 启动 MCP 服务器");
     }
 }
+

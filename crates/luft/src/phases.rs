@@ -15,9 +15,9 @@
 //! - **Running agents**: events with `AgentStarted` but no paired `AgentDone`.
 
 use chrono::{DateTime, Utc};
-use luft_core::contract::event::AgentEvent;
-use luft_core::contract::ids::RunId;
-use luft_core::state::{CheckpointStatus, RunCheckpoint};
+use crate::core::contract::event::AgentEvent;
+use crate::core::contract::ids::RunId;
+use crate::core::state::{CheckpointStatus, RunCheckpoint};
 use luft_planner::PlanMeta;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
@@ -478,8 +478,8 @@ fn compute_run_elapsed(events: &[AgentEvent], checkpoint: &RunCheckpoint) -> Opt
 mod tests {
     use super::*;
     use chrono::TimeZone;
-    use luft_core::contract::ids::{AgentId, PhaseId, RunId, TokenUsage};
-    use luft_core::state::{AgentResultCache, PhaseSummary};
+    use crate::core::contract::ids::{AgentId, PhaseId, RunId, TokenUsage};
+    use crate::core::state::{AgentResultCache, PhaseSummary};
     use luft_planner::{MetaPhase, PlanMeta};
     use std::collections::HashMap;
 
@@ -873,3 +873,4 @@ mod tests {
         }
     }
 }
+

@@ -20,7 +20,7 @@ pub use luft_core::scheduler::{BackendRegistry, RetryPolicy, Scheduler, Schedule
 pub use luft_core::state::{CheckpointStatus, RunCheckpoint};
 pub use luft_planner::{plan_workflow, PlannedWorkflow, PlannerConfig};
 pub use luft_runtime::{validate, ExecLimits, ScriptError};
-pub use luft_service::query::{ReportStatus, StatusOutput};
+pub use luft_core::query::{ReportStatus, StatusOutput};
 
 #[cfg(test)]
 mod tests {
@@ -228,7 +228,8 @@ mod tests {
         );
         assert_eq!(
             type_name_of::<ReportStatus>(),
-            type_name_of::<luft_service::query::ReportStatus>(),
+            type_name_of::<luft_core::query::ReportStatus>(),
         );
     }
 }
+

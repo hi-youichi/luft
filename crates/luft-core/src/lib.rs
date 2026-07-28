@@ -49,11 +49,14 @@ pub mod run_dir;
 pub mod scheduler;
 pub mod state;
 
+pub mod json_to_lua;
 pub mod mock_backend;
 #[cfg(feature = "testing")]
 pub mod mock_file_backend;
 #[cfg(feature = "testing")]
 pub mod mock_gen;
+pub mod params;
+pub mod query;
 pub mod testing;
 
 pub use contract::*;

@@ -4,8 +4,8 @@ use luft_core::contract::ids::RunId;
 use luft_core::scheduler::BackendRegistry;
 use luft_planner::PlannerConfig;
 use luft_runtime::{ExecLimits, ScriptError};
-use luft_service::query::{ReportStatus, StatusOutput};
-use luft_service::run::{
+use luft_core::query::{ReportStatus, StatusOutput};
+use crate::run::{
     assign_dir_name, prepare, resolve_fresh, resolve_resume, RunSpec, ScriptSource,
 };
 use std::future::Future;
@@ -207,7 +207,7 @@ impl Luft {
                 .await
                 .map_err(LuftError::Other)?;
             let runtime = prepared.runtime;
-            let result = luft_service::run::execute(&run_ctx, runtime, script)
+            let result = crate::run::execute(&run_ctx, runtime, script)
                 .await
                 .map_err(LuftError::Other)?;
             Ok(result)
@@ -292,22 +292,22 @@ impl Luft {
     ///
     /// Returns `None` if the run directory does not exist.
     pub fn status(&self, run_dir: &str) -> Result<Option<StatusOutput>, LuftError> {
-        luft_service::query::get_status(run_dir, &self.base_dir).map_err(LuftError::Other)
+        luft_core::query::get_status(run_dir, &self.base_dir).map_err(LuftError::Other)
     }
 
     /// List all runs under the base directory, sorted by most-recent update.
     pub fn list(&self) -> Result<Vec<StatusOutput>, LuftError> {
-        luft_service::query::list_runs(&self.base_dir).map_err(LuftError::Other)
+        luft_core::query::list_runs(&self.base_dir).map_err(LuftError::Other)
     }
 
     /// Get the raw chronological event log for a run.
     pub fn events(&self, run_dir: &str) -> Result<Vec<AgentEvent>, LuftError> {
-        luft_service::query::get_events(run_dir, &self.base_dir).map_err(LuftError::Other)
+        luft_core::query::get_events(run_dir, &self.base_dir).map_err(LuftError::Other)
     }
 
     /// Get the final report value emitted by `report()` in the Lua script.
     pub fn report(&self, run_dir: &str) -> Result<ReportStatus, LuftError> {
-        luft_service::query::get_report(run_dir, &self.base_dir).map_err(LuftError::Other)
+        luft_core::query::get_report(run_dir, &self.base_dir).map_err(LuftError::Other)
     }
 
     /// Get structured findings (from agent MCP injection) collected during the run.
@@ -315,12 +315,12 @@ impl Luft {
         &self,
         run_dir: &str,
     ) -> Result<Vec<luft_core::contract::finding::Finding>, LuftError> {
-        luft_service::query::get_findings(run_dir, &self.base_dir).map_err(LuftError::Other)
+        luft_core::query::get_findings(run_dir, &self.base_dir).map_err(LuftError::Other)
     }
 
     /// Cancel an active run by signalling its cancellation token.
     pub fn cancel(&self, run_dir: &str) -> Result<(), LuftError> {
-        luft_service::query::cancel_run(run_dir, &self.base_dir).map_err(LuftError::Other)?;
+        luft_core::query::cancel_run(run_dir, &self.base_dir).map_err(LuftError::Other)?;
         Ok(())
     }
 
@@ -1022,3 +1022,5 @@ mod tests {
         );
     }
 }
+
+

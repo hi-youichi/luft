@@ -1164,7 +1164,6 @@ mod tests {
             phase_id: 1,
             label: "explore".into(),
             planned: 3,
-            parent_span_id: None,
             description: None,
             role: None,
             ts: chrono::Utc::now(),

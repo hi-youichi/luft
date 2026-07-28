@@ -1,7 +1,7 @@
 use anyhow::Result;
-use luft_core::contract::event::AgentEvent;
-use luft_core::contract::finding::Finding;
-use luft_core::state::{get_run_store, list_runs as list_run_dirs, RunCheckpoint};
+use crate::contract::event::AgentEvent;
+use crate::contract::finding::Finding;
+use crate::state::{get_run_store, list_runs as list_run_dirs, RunCheckpoint};
 use std::path::{Path, PathBuf};
 
 /// Summary view of a run's checkpoint — the query DTO shared by the CLI.
@@ -175,13 +175,13 @@ pub fn get_report(run_dir_name: &str, base_dir: &Path) -> Result<ReportStatus> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use luft_core::contract::event::RunStatus;
-    use luft_core::contract::ids::TokenUsage;
+    use crate::contract::event::RunStatus;
+    use crate::contract::ids::TokenUsage;
 
     use chrono::Utc;
-    use luft_core::contract::event::LogLevel;
-    use luft_core::contract::finding::Severity;
-    use luft_core::state::{AgentResultCache, CheckpointStatus, PhaseSummary};
+    use crate::contract::event::LogLevel;
+    use crate::contract::finding::Severity;
+    use crate::state::{AgentResultCache, CheckpointStatus, PhaseSummary};
     use std::collections::HashMap;
 
     #[test]
@@ -648,3 +648,4 @@ mod tests {
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }
+

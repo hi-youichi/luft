@@ -1,5 +1,5 @@
 //! `run` subcommand: detect the backend, resolve (and optionally confirm) the
-//! script via the shared run service ([`luft::service::run`]), then drive
+//! script via the shared run service ([`luft::run`]), then drive
 //! output. This is the sole presentation layer for `run`;
 //! the library exposes only the presentation-free service.
 //!
@@ -38,7 +38,7 @@ use luft::core::contract::ids::AgentId;
 use luft::core::scheduler::BackendRegistry;
 use luft::core::{AgentBackend, MockFileBackend, MockStats};
 use luft::runtime::Runtime;
-use luft::service::run as svc;
+use luft::run as svc;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -1205,3 +1205,5 @@ mod tests {
         assert!(content.contains("\"type\":\"run_done\""));
     }
 }
+
+

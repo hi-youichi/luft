@@ -276,7 +276,6 @@ mod tests {
                     phase_id: 1,
                     label: "work".into(),
                     planned: 3,
-                    parent_span_id: None,
                     description: None,
                     role: None,
                     ts: chrono::Utc::now(),
@@ -717,3 +716,5 @@ mod tests {
         std::fs::remove_file(&dir).ok();
     }
 }
+
+

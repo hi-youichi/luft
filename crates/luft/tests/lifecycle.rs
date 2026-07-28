@@ -31,7 +31,7 @@ async fn wait_for_status(
     luft: &Luft,
     run_dir: &str,
     want: &str,
-) -> luft_service::query::StatusOutput {
+) -> luft_core::query::StatusOutput {
     tokio::time::timeout(Duration::from_secs(5), async {
         loop {
             if let Ok(Some(s)) = luft.status(run_dir) {
@@ -91,7 +91,7 @@ async fn happy_path_start_status_events_report_list() {
     assert!(has_done, "events should contain RunDone");
 
     // report() recovers the final report() value from the event log.
-    use luft_service::query::ReportStatus;
+    use luft_core::query::ReportStatus;
     match luft.report(&dir_name).expect("report") {
         ReportStatus::Found(v) => assert_eq!(v["ok"], true),
         ReportStatus::RunFinished => panic!("expected Found, got RunFinished"),
@@ -319,3 +319,4 @@ async fn resume_replays_cached_agent_and_skips_rerun() {
     let _ = tokio::time::timeout(Duration::from_secs(5), handle.join()).await;
     eprintln!("[t4] done");
 }
+

@@ -86,41 +86,6 @@ pub async fn resolve_script_with_meta(
     Ok(ResolvedScript { script, meta })
 }
 
-pub enum ResumeCheck {
-    CanResume,
-    NotFound,
-    NotResumable(CheckpointStatus),
-}
-
-pub fn check_resumable(run_dir_name: &str, base_dir: &Path) -> ResumeCheck {
-    let run_dir = base_dir.join(run_dir_name);
-    if !run_dir.exists() {
-        return ResumeCheck::NotFound;
-    }
-
-    // Read only the `status` field, so a partially-written checkpoint still
-    // gates correctly (a finished run is never silently treated as resumable).
-    let checkpoint_path = run_dir.join("checkpoint.json");
-    if let Ok(content) = std::fs::read_to_string(&checkpoint_path) {
-        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&content) {
-            if let Some(status) = value
-                .get("status")
-                .and_then(|s| serde_json::from_value::<CheckpointStatus>(s.clone()).ok())
-            {
-                if matches!(
-                    status,
-                    CheckpointStatus::Completed
-                        | CheckpointStatus::Cancelled
-                        | CheckpointStatus::Failed
-                ) {
-                    return ResumeCheck::NotResumable(status);
-                }
-            }
-        }
-    }
-
-    ResumeCheck::CanResume
-}
 
 /// A fully-resolved run: everything needed to prepare execution, regardless of
 /// how it was requested.
@@ -192,6 +157,40 @@ fn slug_sources(spec: &RunSpec) -> (Option<&Path>, Option<&str>) {
     } else {
         (None, Some(label))
     }
+}
+
+pub enum ResumeCheck {
+    CanResume,
+    NotFound,
+    NotResumable(luft_core::state::CheckpointStatus),
+}
+
+pub fn check_resumable(run_dir_name: &str, base_dir: &Path) -> ResumeCheck {
+    let run_dir = base_dir.join(run_dir_name);
+    if !run_dir.exists() {
+        return ResumeCheck::NotFound;
+    }
+
+    let checkpoint_path = run_dir.join("checkpoint.json");
+    if let Ok(content) = std::fs::read_to_string(&checkpoint_path) {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Some(status) = value
+                .get("status")
+                .and_then(|s| serde_json::from_value::<luft_core::state::CheckpointStatus>(s.clone()).ok())
+            {
+                if matches!(
+                    status,
+                    luft_core::state::CheckpointStatus::Completed
+                        | luft_core::state::CheckpointStatus::Cancelled
+                        | luft_core::state::CheckpointStatus::Failed
+                ) {
+                    return ResumeCheck::NotResumable(status);
+                }
+            }
+        }
+    }
+
+    ResumeCheck::CanResume
 }
 
 /// Resolve a resume of a specific run by reading its checkpoint + persisted
@@ -866,7 +865,6 @@ mod tests {
             total_tokens: 0,
             created_at: 0,
             updated_at: 0,
-            completed_spans: vec![],
             workflow_meta: None,
             started_agent_ids: vec![],
         };

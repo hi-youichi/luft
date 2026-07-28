@@ -18,7 +18,7 @@
 //! | `pipeline(items, stages)` | Streaming pipeline: items flow through stages without barrier sync |
 //! | `workflow(path, args?)` | Invoke a nested sub-workflow |
 //! | `converge(opts)` | Multi-round consensus: agents iterate until convergence or round limit |
-//! | `phase_begin(name)` / `phase_end(span)` | Structural progress spans for observability |
+//! 
 //! | `report(value)` | Emit the final workflow output (required) |
 //! | `log(msg, level?)` | Structured log event |
 //! | `budget(time_ms?, rounds?)` | Set runtime limits hint |
@@ -125,3 +125,4 @@ mod tests {
         assert!(validate("function add(a, b) return a + b end").is_ok());
     }
 }
+

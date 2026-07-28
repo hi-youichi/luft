@@ -87,12 +87,13 @@ pub use luft_adapters as adapters;
 pub use luft_core as core;
 pub use luft_planner as planner;
 pub use luft_runtime as runtime;
-pub use luft_service as service;
 pub use luft_storage as storage;
 
 mod builder;
 mod error;
 pub mod prelude;
+pub mod phases;
+pub mod run;
 
 pub use builder::{Luft, LuftBuilder, RunHandle, RunOutcome};
 pub use error::LuftError;
@@ -182,14 +183,7 @@ mod tests {
     #[test]
     fn service_crate_alias_resolves() {
         let _: fn() = || {
-            // `luft_service` exposes submodules (phases / query / run) at the
-            // crate root. The alias must resolve to the same crate.
-            let _ = std::any::type_name::<service::query::StatusOutput>();
-            let _ = std::any::type_name::<luft_service::query::StatusOutput>();
-            assert_eq!(
-                std::any::type_name::<service::query::StatusOutput>(),
-                std::any::type_name::<luft_service::query::StatusOutput>(),
-            );
+            let _ = std::any::type_name::<luft_core::query::StatusOutput>();
         };
     }
 
@@ -257,3 +251,4 @@ mod tests {
         let _ = _takes;
     }
 }
+

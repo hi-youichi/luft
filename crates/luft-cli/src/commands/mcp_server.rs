@@ -843,3 +843,4 @@ mod tests {
         assert_eq!(args.schema_file.display().to_string(), "test.json");
     }
 }
+

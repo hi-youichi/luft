@@ -1718,3 +1718,4 @@ mod tests {
         assert!(tmp.path().join("pipeline_1").join("_summary.md").exists());
     }
 }
+

@@ -769,18 +769,6 @@ mod tests {
     // ── Span pairing validation ─────────────────────────────────────────
 
     #[test]
-    fn test_validate_span_unpaired() {
-        let script = "meta = { reasoning = \"test\", phases = {} }\nfunction main()\nlocal m = phase_begin(\"x\")\nreport({})\nend";
-        assert!(validate_generated(script).is_err());
-    }
-
-    #[test]
-    fn test_validate_span_paired() {
-        let script = "meta = { reasoning = \"test\", phases = {} }\nfunction main()\nlocal m = phase_begin(\"x\")\nphase_end(m)\nreport({})\nend";
-        assert!(validate_generated(script).is_ok());
-    }
-
-    #[test]
     fn test_validate_no_span_ok() {
         let script =
             "meta = { reasoning = \"test\", phases = {} }\nfunction main() report({ok=true}) end";
@@ -794,3 +782,4 @@ mod tests {
         assert!(p.contains("meta.phases") || p.contains("phases"));
     }
 }
+

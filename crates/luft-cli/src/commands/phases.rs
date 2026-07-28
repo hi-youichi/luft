@@ -7,7 +7,7 @@
 use super::runs_base_dir;
 use anyhow::Result;
 use luft::core::contract::event::AgentEvent;
-use luft::service::phases::{PhaseStatus, PhasesView};
+use luft::phases::{PhaseStatus, PhasesView};
 use std::io::Write;
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -37,7 +37,7 @@ pub(crate) fn phases_cmd_inner(
     let events_path = base_dir.join(&run_dir).join("events.jsonl");
     let events = read_events(&events_path);
 
-    let view = luft::service::phases::build_phases_view(&checkpoint, &events);
+    let view = luft::phases::build_phases_view(&checkpoint, &events);
 
     if args.json {
         let json = serde_json::to_string_pretty(&view)
@@ -178,8 +178,8 @@ fn render_phases(w: &mut impl Write, view: &PhasesView) -> std::io::Result<()> {
 
     // Source footer
     let source_note = match view.source {
-        luft::service::phases::PhasesSource::Meta => "meta",
-        luft::service::phases::PhasesSource::EventsFallback => "events fallback",
+        luft::phases::PhasesSource::Meta => "meta",
+        luft::phases::PhasesSource::EventsFallback => "events fallback",
     };
     if total == 0 {
         writeln!(w, "(no phases started yet)")?;
@@ -436,3 +436,5 @@ mod tests {
         assert_eq!(format_elapsed(65.0), "1m5s");
     }
 }
+
+

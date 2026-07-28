@@ -177,7 +177,7 @@ end
 
 -- ── Phase 2: Per-subsystem pipeline (overview -> assess) ──
 
-local pipeline_span = phase_begin("analyze subsystems", #subsystems)
+phase("analyze subsystems", #subsystems)
 
 local pipe_results = pipeline{
   items = subsystems,
@@ -233,7 +233,7 @@ local pipe_results = pipeline{
   }
 }
 
-phase_end(pipeline_span)
+
 
 -- Collect successful assessments
 local assessments = {}

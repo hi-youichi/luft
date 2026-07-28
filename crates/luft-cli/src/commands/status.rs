@@ -11,7 +11,7 @@ pub fn status_run_cmd(run_dir: String) -> Result<()> {
 
 pub(crate) fn status_run_cmd_inner(w: &mut impl Write, run_dir: String) -> Result<()> {
     let base_dir = runs_base_dir();
-    let checkpoint = luft::service::query::get_checkpoint(&run_dir, &base_dir)?
+    let checkpoint = luft_core::query::get_checkpoint(&run_dir, &base_dir)?
         .ok_or_else(|| anyhow::anyhow!("run not found or has no checkpoint: {}", run_dir))?;
 
     writeln!(w, "=== Run Status ===")?;
@@ -322,3 +322,4 @@ mod tests {
         assert!(output.contains("Findings: 1 total"));
     }
 }
+

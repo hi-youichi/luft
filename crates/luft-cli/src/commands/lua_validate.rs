@@ -4,7 +4,7 @@
 //! 1. Syntax — compiles the script and executes top-level (safe: only `meta`
 //!    assignment and function definitions run, `main()` is never called).
 //! 2. Structure — verifies `meta` table and `main()` function exist.
-//! 3. Heuristic — checks for `report(...)` call and `phase_begin/phase_end`
+//! 3. Heuristic — checks for `report(...)` call and `phase`
 //!    pairing.
 
 use anyhow::Result;
@@ -568,3 +568,5 @@ mod tests {
         assert!(mock_check(args).is_err());
     }
 }
+
+

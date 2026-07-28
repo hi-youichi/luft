@@ -18,7 +18,6 @@ luft-storage = { path = "../luft-storage", version = "0.3.4" }
 luft-runtime = { path = "../luft-runtime", version = "0.3.4" }
 luft-adapters = { path = "../luft-adapters", version = "0.3.4" }
 luft-planner = { path = "../luft-planner", version = "0.3.4" }
-luft-service = { path = "../luft-service", version = "0.3.4" }
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["compat"] }
 serde = { version = "1", features = ["derive"] }

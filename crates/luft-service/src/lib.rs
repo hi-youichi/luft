@@ -34,16 +34,11 @@
 //! [`phases`]: phases
 
 pub mod error;
-pub mod json_to_lua;
-pub mod params;
-pub mod phases;
-pub mod query;
 pub mod request;
 pub mod response;
-pub mod run;
 pub mod service;
 
 pub use error::ServiceError;
 pub use request::*;
 pub use response::*;
-pub use service::WorkflowService;
+pub use service::{WorkflowService, WorkflowServiceImpl};

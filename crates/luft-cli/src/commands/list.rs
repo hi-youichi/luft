@@ -12,7 +12,7 @@ pub const DEFAULT_LIMIT: usize = 20;
 /// rendered output without capturing stdout.
 pub fn format_runs(limit: Option<usize>) -> Result<String> {
     let base_dir = runs_base_dir();
-    let runs = luft::service::query::list_runs(&base_dir)?;
+    let runs = luft_core::query::list_runs(&base_dir)?;
     if runs.is_empty() {
         return Ok("No runs found.\n".to_string());
     }
@@ -220,3 +220,4 @@ mod tests {
         assert_eq!(run_line_count(&body), 1);
     }
 }
+

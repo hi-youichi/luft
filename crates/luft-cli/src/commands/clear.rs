@@ -153,3 +153,4 @@ mod tests {
         assert!(runs_base_dir().read_dir().unwrap().next().is_none());
     }
 }
+

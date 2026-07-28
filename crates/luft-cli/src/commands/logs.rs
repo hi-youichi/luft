@@ -8,7 +8,7 @@ pub fn logs_run_cmd(run_dir: String, limit: Option<usize>) -> Result<()> {
     if !base_dir.join(&run_dir).exists() {
         anyhow::bail!("run not found: {}", run_dir);
     }
-    let events = luft::service::query::get_events(&run_dir, &base_dir)?;
+    let events = luft_core::query::get_events(&run_dir, &base_dir)?;
     if events.is_empty() {
         println!("No events for run {}", run_dir);
         return Ok(());
@@ -262,3 +262,4 @@ mod tests {
         // NOTE: this test was incomplete — `events` was never consumed.
     }
 }
+

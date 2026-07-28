@@ -9,7 +9,8 @@ keywords = ["luft", "agent", "orchestration", "service"]
 categories = ["asynchronous"]
 
 [dependencies]
-luft-core  = { path = "../luft-core", version = "0.3.4" }
+luft        = { path = "../luft", version = "0.3.4" }
+luft-core   = { path = "../luft-core", version = "0.3.4" }
 luft-runtime = { path = "../luft-runtime", version = "0.3.4" }
 luft-storage = { path = "../luft-storage", version = "0.3.4" }
 luft-planner = { path = "../luft-planner", version = "0.3.4" }
