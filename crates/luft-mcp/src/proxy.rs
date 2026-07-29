@@ -3,6 +3,8 @@
 //! Connects to a daemon's `/mcp` endpoint and forwards JSON-RPC
 //! bidirectionally: stdin lines → WS text frames, WS text frames → stdout lines.
 
+use std::time::Duration;
+
 use anyhow::Result;
 use futures::{SinkExt, StreamExt};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -33,10 +35,12 @@ pub async fn run_proxy(daemon_addr: &str) -> Result<()> {
                     if ws_sink.send(Message::Text(trimmed.into())).await.is_err() {
                         break;
                     }
+                    let _ = ws_sink.flush().await;
                 }
                 Err(_) => break,
             }
         }
+        // Don't close ws_sink here — let stdout drain remaining responses.
     });
 
     let stdout_task = tokio::spawn(async move {
@@ -58,10 +62,9 @@ pub async fn run_proxy(daemon_addr: &str) -> Result<()> {
         }
     });
 
-    tokio::select! {
-        _ = stdin_task => {}
-        _ = stdout_task => {}
-    }
+    // Wait for stdin to close, then give stdout time to drain.
+    stdin_task.await?;
+    let _ = tokio::time::timeout(Duration::from_secs(5), stdout_task).await;
 
     Ok(())
 }

@@ -65,20 +65,26 @@ where
 {
     type Item = RxJsonRpcMessage<RoleServer>;
 
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         use futures::StreamExt;
-        match self.get_mut().0.poll_next_unpin(cx) {
-            Poll::Ready(Some(Ok(Message::Text(text)))) => {
-                let msg = serde_json::from_str(text.as_str()).ok();
-                Poll::Ready(msg)
+        loop {
+            match self.as_mut().get_mut().0.poll_next_unpin(cx) {
+                Poll::Ready(Some(Ok(Message::Text(text)))) => {
+                    match serde_json::from_str::<RxJsonRpcMessage<RoleServer>>(text.as_str()) {
+                        Ok(msg) => return Poll::Ready(Some(msg)),
+                        Err(_) => continue,
+                    }
+                }
+                Poll::Ready(Some(Ok(Message::Binary(data)))) => {
+                    match serde_json::from_slice::<RxJsonRpcMessage<RoleServer>>(&data) {
+                        Ok(msg) => return Poll::Ready(Some(msg)),
+                        Err(_) => continue,
+                    }
+                }
+                Poll::Ready(Some(Ok(_))) => continue,
+                Poll::Ready(Some(Err(_))) | Poll::Ready(None) => return Poll::Ready(None),
+                Poll::Pending => return Poll::Pending,
             }
-            Poll::Ready(Some(Ok(Message::Binary(data)))) => {
-                let msg = serde_json::from_slice(&data).ok();
-                Poll::Ready(msg)
-            }
-            Poll::Ready(Some(Err(_))) | Poll::Ready(None) => Poll::Ready(None),
-            Poll::Ready(Some(Ok(_))) => Poll::Pending,
-            Poll::Pending => Poll::Pending,
         }
     }
 }

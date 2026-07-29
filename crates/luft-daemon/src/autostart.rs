@@ -4,7 +4,6 @@ use std::time::Duration;
 
 use anyhow::{bail, Result};
 use tokio::net::TcpStream;
-use tokio_tungstenite::tungstenite::handshake::client::generate_key;
 
 use crate::process;
 
@@ -72,18 +71,8 @@ async fn autostart() -> Result<String> {
     bail!("daemon failed to start within 5s")
 }
 
-/// Quick WS liveness check: connect, send a ping, close.
+/// Quick TCP liveness check.
 async fn try_connect(addr: &str) -> Result<()> {
-    let stream = TcpStream::connect(addr).await?;
-    let ws = tokio_tungstenite::client_async(
-        format!(
-            "GET / HTTP/1.1\r\nHost: {addr}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {}\r\nSec-WebSocket-Version: 13\r\n\r\n",
-            generate_key()
-        ),
-        stream,
-    )
-    .await?
-    .0;
-    drop(ws);
+    tokio::time::timeout(Duration::from_millis(500), TcpStream::connect(addr)).await??;
     Ok(())
 }
