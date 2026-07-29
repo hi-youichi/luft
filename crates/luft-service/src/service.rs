@@ -303,7 +303,7 @@ impl WorkflowService for WorkflowServiceImpl {
                     run_id: run_id.clone(),
                     result: "cancelling".into(),
                     note: Some(
-                        "cancellation signalled; poll get_run_status to observe the terminal state"
+                        "cancellation signalled; poll workflow_status to observe the terminal state"
                             .into(),
                     ),
                 }),

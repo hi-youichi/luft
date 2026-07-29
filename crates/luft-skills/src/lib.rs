@@ -16,7 +16,9 @@
 use luft_core::Skill;
 use std::path::Path;
 
-const SKILL_MAIN: &str = include_str!("skill/main.md");
+const SKILL_BODY: &str = include_str!(env!("SKILL_BODY_PATH"));
+const SKILL_NAME: &str = env!("SKILL_NAME");
+const SKILL_DESCRIPTION: &str = env!("SKILL_DESCRIPTION");
 const REF_ARCHITECTURE_HEADER: &str = include_str!("skill/references/architecture-header.md");
 const REF_PRIMITIVES: &str = include_str!("skill/references/primitives.md");
 const REF_AGENT_PROMPTS: &str = include_str!("skill/references/agent-prompts.md");
@@ -28,7 +30,7 @@ const REF_EXAMPLES: &str = include_str!("skill/references/examples.md");
 /// Full reference, reassembled from the split `skill/` files in the same
 /// order as the original monolithic `lua_dsl_reference.md`.
 pub const LUA_DSL_REFERENCE: &str = const_format::concatcp!(
-    SKILL_MAIN,
+    SKILL_BODY,
     "\n",
     REF_ARCHITECTURE_HEADER,
     "\n",
@@ -48,9 +50,9 @@ pub const LUA_DSL_REFERENCE: &str = const_format::concatcp!(
 /// agent how to write Luft workflows (e.g. wrapping it into a richer
 /// agent-specific skill format with triggers/tool requirements).
 pub const WORKFLOW_SKILL: Skill = Skill {
-    name: "workflow",
-    description: "Lua DSL reference for writing multi-agent Luft workflows",
-    content: SKILL_MAIN,
+    name: SKILL_NAME,
+    description: SKILL_DESCRIPTION,
+    content: SKILL_BODY,
     references: &[
         ("references/architecture-header.md", REF_ARCHITECTURE_HEADER),
         ("references/primitives.md", REF_PRIMITIVES),
@@ -96,8 +98,8 @@ mod tests {
     fn workflow_skill_wraps_the_dsl_reference() {
         assert_eq!(WORKFLOW_SKILL.name, "workflow");
         assert!(!WORKFLOW_SKILL.description.is_empty());
-        assert_eq!(WORKFLOW_SKILL.content, SKILL_MAIN);
-        assert!(LUA_DSL_REFERENCE.starts_with(SKILL_MAIN));
+        assert_eq!(WORKFLOW_SKILL.content, SKILL_BODY);
+        assert!(LUA_DSL_REFERENCE.starts_with(SKILL_BODY));
         assert_eq!(WORKFLOW_SKILL.references.len(), 6);
     }
 

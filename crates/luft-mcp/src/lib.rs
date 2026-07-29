@@ -11,12 +11,12 @@
 //! - `workflow://example/{name}` - read a specific example `.lua` file
 //!
 //! ## Tools
-//! - `execute_workflow` - validate + fire-and-forget execute (or resume) a Lua workflow
-//! - `list_files` - list available `.lua` files
-//! - `list_runs` - paginated history of past runs
-//! - `get_run_status` - rich run status (phases/agents/report/error)
-//! - `get_run_events` - paginated/filtered run event log
-//! - `cancel_run` - cancel an in-flight run
+//! - `workflow_execute` - validate + fire-and-forget execute (or resume) a Lua workflow
+//! - `workflow_list_files` - list available `.lua` files
+//! - `workflow_list_runs` - paginated history of past runs
+//! - `workflow_status` - rich run status (phases/agents/report/error)
+//! - `workflow_events` - paginated/filtered run event log
+//! - `workflow_cancel` - cancel an in-flight run
 //!
 //! `run_id` is the run directory name itself throughout - there is no
 //! separate UUID layer.

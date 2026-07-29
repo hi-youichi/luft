@@ -74,9 +74,9 @@ impl LuftMcpServer {
 #[tool_router]
 impl LuftMcpServer {
     #[tool(
-        description = "Execute a Luft workflow, or resume a prior checkpointed run. Exactly one of `script`, `path`, `resume_from_id` is required. Returns immediately with a run_id — use get_run_status to poll progress."
+        description = "Execute a Luft workflow, or resume a prior checkpointed run. Exactly one of `script`, `path`, `resume_from_id` is required. Returns immediately with a run_id — use workflow_status to poll progress."
     )]
-    async fn execute_workflow(
+    async fn workflow_execute(
         &self,
         Parameters(req): Parameters<ExecuteWorkflowRequest>,
     ) -> Result<String, String> {
@@ -91,7 +91,7 @@ impl LuftMcpServer {
     #[tool(
         description = "List available .lua workflow files from workflows/ and examples/ directories"
     )]
-    fn list_files(&self) -> Result<String, String> {
+    fn workflow_list_files(&self) -> Result<String, String> {
         let resp = self.service.list_files().map_err(|e| e.to_string())?;
         serde_json::to_string(&resp).map_err(|e| e.to_string())
     }
@@ -99,7 +99,7 @@ impl LuftMcpServer {
     #[tool(
         description = "List past workflow runs, paginated and optionally filtered by terminal status"
     )]
-    fn list_runs(
+    fn workflow_list_runs(
         &self,
         Parameters(req): Parameters<ListRunsRequest>,
     ) -> Result<String, String> {
@@ -110,7 +110,7 @@ impl LuftMcpServer {
     #[tool(
         description = "Get the current rich status of a workflow run, including per-phase and per-agent detail"
     )]
-    fn get_run_status(
+    fn workflow_status(
         &self,
         Parameters(req): Parameters<GetRunStatusRequest>,
     ) -> Result<String, String> {
@@ -122,7 +122,7 @@ impl LuftMcpServer {
     }
 
     #[tool(description = "Get paginated/filtered events for a workflow run")]
-    fn get_run_events(
+    fn workflow_events(
         &self,
         Parameters(req): Parameters<GetRunEventsRequest>,
     ) -> Result<String, String> {
@@ -134,7 +134,7 @@ impl LuftMcpServer {
     }
 
     #[tool(description = "Cancel an in-flight workflow run")]
-    fn cancel_run(
+    fn workflow_cancel(
         &self,
         Parameters(req): Parameters<CancelRunRequest>,
     ) -> Result<String, String> {
