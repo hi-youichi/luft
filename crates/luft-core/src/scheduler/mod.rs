@@ -256,8 +256,15 @@ impl Scheduler {
             match res {
                 Ok(result) => {
                     if let Some(ref schema) = task.output_schema {
-                        let fallback = result.output.get("_agent_fallback_text").is_some();
-                        let validation_err = if fallback {
+                        let fallback_text = match &result.output {
+                            serde_json::Value::String(s) => Some(s.clone()),
+                            obj if obj.get("_agent_fallback_text").is_some() => obj
+                                .get("text")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
+                            _ => None,
+                        };
+                        let validation_err = if fallback_text.is_some() {
                             Some(
                                 "agent returned text instead of calling structured_output tool"
                                     .to_string(),
@@ -291,17 +298,13 @@ impl Scheduler {
                             );
                             let schema_json =
                                 serde_json::to_string_pretty(schema).unwrap_or_default();
-                            let last_output = if fallback {
-                                result
-                                    .output
-                                    .get("text")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string()
-                            } else {
-                                serde_json::to_string_pretty(&result.output).unwrap_or_default()
-                            };
-                            task.prompt = if fallback {
+                            let last_output = fallback_text
+                                .clone()
+                                .unwrap_or_else(|| {
+                                    serde_json::to_string_pretty(&result.output)
+                                        .unwrap_or_default()
+                                });
+                            task.prompt = if fallback_text.is_some() {
                                 format!(
                                     "{original_prompt}\n\n\
                                      ---\n\

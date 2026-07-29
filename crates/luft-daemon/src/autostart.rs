@@ -41,7 +41,8 @@ async fn autostart() -> Result<String> {
     cmd.arg("daemon")
         .arg("start")
         .arg("--port")
-        .arg(port.to_string());
+        .arg(port.to_string())
+        .arg("--foreground");
 
     #[cfg(unix)]
     {
@@ -56,8 +57,9 @@ async fn autostart() -> Result<String> {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-        cmd.creation_flags(CREATE_NEW_PROCESS_GROUP);
+        cmd.creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP);
     }
 
     cmd.stdin(std::process::Stdio::null())

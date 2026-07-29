@@ -27,7 +27,7 @@ impl AgentDetector {
                 agent_type: AgentType::Codex,
                 is_available: true,
                 skill_directory: Self::get_codex_skill_directory()?,
-                supports_mcp: false,
+                supports_mcp: true,
                 detector_name: "CodexDetector".to_string(),
             });
         }
@@ -39,7 +39,7 @@ impl AgentDetector {
                 agent_type: AgentType::Opencode,
                 is_available: true,
                 skill_directory: Self::get_opencode_skill_directory()?,
-                supports_mcp: false,
+                supports_mcp: true,
                 detector_name: "OpenCodeDetector".to_string(),
             });
         }
@@ -61,7 +61,26 @@ impl AgentDetector {
 
     /// 检测 codex-acp 是否已安装
     fn is_codex_acp_installed() -> Result<bool> {
-        // 检查全局安装
+        // 检查 PATH 上的 codex 二进制
+        if which::which("codex").is_ok() {
+            return Ok(true);
+        }
+
+        // 检查 ~/.codex 配置目录（Codex Desktop / CLI 安装后存在）
+        if let Some(home) = home_dir() {
+            if home.join(".codex").exists() {
+                return Ok(true);
+            }
+        }
+
+        // 检查 Codex Desktop 常见安装路径
+        for path in Self::get_codex_paths() {
+            if path.exists() {
+                return Ok(true);
+            }
+        }
+
+        // 检查 npm 全局安装
         if Self::check_npm_global("@agentclientprotocol/codex-acp")? {
             return Ok(true);
         }
@@ -143,6 +162,22 @@ impl AgentDetector {
     fn get_codex_skill_directory() -> Result<PathBuf> {
         let home = home_dir().ok_or(crate::install::types::InstallError::HomeDirNotFound)?;
         Ok(home.join(".agents/skills/workflow"))
+    }
+
+    /// 获取 Codex Desktop / CLI 常见路径
+    fn get_codex_paths() -> Vec<PathBuf> {
+        let mut paths = vec![];
+
+        if let Some(home) = home_dir() {
+            paths.push(home.join(".codex"));
+        }
+
+        if let Some(data_local) = data_local_dir() {
+            // Windows: %LOCALAPPDATA%\OpenAI\Codex
+            paths.push(data_local.join("OpenAI").join("Codex").join("bin"));
+        }
+
+        paths
     }
 
     /// 获取 OpenCode 技能目录

@@ -22,16 +22,22 @@ fn get_home_dir() -> Option<PathBuf> {
 ///
 /// Resolution priority:
 /// 1. `LUFT_BIN` env var — override for packagers / tests / scenarios where
-///    `current_exe()` doesn't point at the canonical install location.
-/// 2. `std::env::current_exe()` — the absolute path of the currently-running
-///    luft binary.
-/// 3. `"luft"` — bare command fallback (relies on PATH at agent-launch time),
-///    used only if both above fail (extremely rare on any mainstream OS).
+///    neither canonical install path nor `current_exe()` is correct.
+/// 2. `~/.luft/bin/luft` — the canonical install location.
+/// 3. `std::env::current_exe()` — fallback if the canonical path doesn't exist
+///    (e.g. running directly from `target/release/` during development).
+/// 4. `"luft"` — bare command fallback (relies on PATH at agent-launch time).
 fn luft_command() -> String {
     if let Ok(path) = std::env::var("LUFT_BIN") {
         let trimmed = path.trim();
         if !trimmed.is_empty() {
             return trimmed.to_string();
+        }
+    }
+    if let Some(home) = dirs::home_dir() {
+        let canon = home.join(".luft").join("bin").join("luft");
+        if canon.exists() {
+            return canon.to_string_lossy().to_string();
         }
     }
     std::env::current_exe()

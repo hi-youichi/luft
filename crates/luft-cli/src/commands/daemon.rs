@@ -7,7 +7,7 @@ use crate::backend;
 
 #[derive(Debug, Subcommand)]
 pub enum DaemonSubcommand {
-    /// Start the daemon (foreground, blocks until shutdown signal).
+    /// Start the daemon. Detaches to background by default.
     Start {
         /// Port to listen on.
         #[arg(long, default_value_t = luft_daemon::autostart::DEFAULT_PORT)]
@@ -15,6 +15,9 @@ pub enum DaemonSubcommand {
         /// Override the default backend (agents without explicit `backend` use this).
         #[arg(long)]
         backend: Option<String>,
+        /// Run in foreground (blocks terminal). Internal use.
+        #[arg(long)]
+        foreground: bool,
     },
     /// Stop the running daemon.
     Stop,
@@ -24,14 +27,24 @@ pub enum DaemonSubcommand {
 
 pub async fn run(cmd: DaemonSubcommand) -> Result<()> {
     match cmd {
-        DaemonSubcommand::Start { port, backend } => start(port, backend).await,
+        DaemonSubcommand::Start {
+            port,
+            backend,
+            foreground,
+        } => start(port, backend, foreground).await,
         DaemonSubcommand::Stop => stop().await,
         DaemonSubcommand::Status => status(),
     }
 }
 
-async fn start(port: u16, default_backend: Option<String>) -> Result<()> {
-    // Auto-detect all available backends and register them.
+async fn start(port: u16, default_backend: Option<String>, foreground: bool) -> Result<()> {
+    if !foreground {
+        return spawn_detached(port, default_backend).await;
+    }
+    run_foreground(port, default_backend).await
+}
+
+async fn run_foreground(port: u16, default_backend: Option<String>) -> Result<()> {
     let mut ids = backend::detect_available_backends();
     if ids.is_empty() {
         ids.push("mock");
@@ -46,7 +59,6 @@ async fn start(port: u16, default_backend: Option<String>) -> Result<()> {
             Err(e) => eprintln!("  failed to create backend '{id}': {e}"),
         }
     }
-    // Set explicit default if requested
     if let Some(ref id) = default_backend {
         if let Ok(b) = backend::create_backend(id, false, None) {
             reg = reg.with_default(b);
@@ -59,25 +71,104 @@ async fn start(port: u16, default_backend: Option<String>) -> Result<()> {
     luft_daemon::serve(luft, listener).await
 }
 
+/// Resolve the daemon log directory (`~/.luft`).
+fn daemon_log_dir() -> std::path::PathBuf {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_else(|_| ".".into());
+    std::path::PathBuf::from(home).join(".luft")
+}
+
+/// Spawn a detached daemon process in the background.
+async fn spawn_detached(port: u16, default_backend: Option<String>) -> Result<()> {
+    if let Some(pf) = luft_daemon::read_pid()? {
+        if luft_daemon::is_alive(pf.pid) {
+            println!("Daemon already running: PID {}, addr {}", pf.pid, pf.addr);
+            return Ok(());
+        }
+    }
+
+    let exe = std::env::current_exe()?;
+    let mut cmd = std::process::Command::new(&exe);
+    cmd.arg("daemon")
+        .arg("start")
+        .arg("--port")
+        .arg(port.to_string())
+        .arg("--foreground");
+
+    if let Some(ref id) = default_backend {
+        cmd.arg("--backend").arg(id);
+    }
+
+    let log_dir = daemon_log_dir();
+    std::fs::create_dir_all(&log_dir)?;
+    let log_path = log_dir.join("daemon.log");
+    let log_file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::from(log_file.try_clone()?))
+            .stderr(std::process::Stdio::from(log_file))
+            .process_group(0);
+        unsafe {
+            cmd.pre_exec(|| {
+                libc::setsid();
+                Ok(())
+            });
+        }
+    }
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
+        cmd.stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::from(log_file.try_clone()?))
+            .stderr(std::process::Stdio::from(log_file))
+            .creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP);
+    }
+
+    let child = cmd.spawn()?;
+    drop(child);
+
+    for _ in 0..50 {
+        if let Some(pf) = luft_daemon::read_pid()? {
+            if luft_daemon::is_alive(pf.pid) {
+                println!("Daemon started: PID {}, addr {}", pf.pid, pf.addr);
+                println!("Log: {}", log_path.display());
+                return Ok(());
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    anyhow::bail!(
+        "daemon did not start within 5s; check log: {}",
+        log_path.display()
+    )
+}
+
 async fn stop() -> Result<()> {
     let pf = luft_daemon::read_pid()?;
     match pf {
         Some(pf) => {
             let pid = pf.pid;
             println!("Stopping daemon (PID {pid})...");
-            // Send Ctrl+C on Windows, SIGTERM on Unix
             #[cfg(unix)]
             {
                 unsafe { libc::kill(pid as i32, libc::SIGTERM) };
             }
             #[cfg(windows)]
             {
-                // On Windows, generate a Ctrl+C event in the daemon's process group
                 std::process::Command::new("taskkill")
-                    .args(["/PID", &pid.to_string(), "/T"])
+                    .args(["/PID", &pid.to_string(), "/T", "/F"])
                     .status()?;
             }
-            // Wait for PID file removal
             for _ in 0..20 {
                 if luft_daemon::read_pid()?.is_none() {
                     println!("Daemon stopped.");

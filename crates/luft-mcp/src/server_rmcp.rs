@@ -13,6 +13,7 @@ use luft_service::{WorkflowServiceImpl, WorkflowService};
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::*,
+    schemars,
     service::RequestContext,
     tool, tool_handler, tool_router,
     transport::stdio,
@@ -141,6 +142,21 @@ impl LuftMcpServer {
         let resp = self.service.cancel_run(req).map_err(|e| e.to_string())?;
         serde_json::to_string(&resp).map_err(|e| e.to_string())
     }
+
+    #[tool(
+        description = "Submit a structured result. Call this tool with a JSON object to deliver your final output. The result field accepts any JSON value."
+    )]
+    fn workflow_validate_schema(
+        &self,
+        Parameters(req): Parameters<StructuredOutputRequest>,
+    ) -> Result<String, String> {
+        serde_json::to_string(&req).map_err(|e| e.to_string())
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+pub struct StructuredOutputRequest {
+    pub result: serde_json::Value,
 }
 
 // ── Resources + ServerHandler ──────────────────────────────────────────
