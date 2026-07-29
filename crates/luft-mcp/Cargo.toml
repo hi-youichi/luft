@@ -9,7 +9,7 @@ categories = ["api-bindings", "asynchronous"]
 description = "MCP server crate — exposes workflow authoring resources and execution tools to external AI clients"
 
 [dependencies]
-luft = { path = "../luft", version = "0.4.2", features = ["testing"] }
+luft = { path = "../luft", version = "0.4.3", features = ["testing"] }
 luft-service   = { path = "../luft-service", version = "0.4.1" }
 luft-runtime   = { path = "../luft-runtime", version = "0.4.1" }
 luft-skills    = { path = "../luft-skills", version = "0.4.1" }

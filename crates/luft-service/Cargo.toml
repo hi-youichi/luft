@@ -11,9 +11,9 @@ categories = ["asynchronous"]
 [dependencies]
 luft        = { path = "../luft", version = "0.4.1" }
 luft-core   = { path = "../luft-core", version = "0.4.1" }
-luft-runtime = { path = "../luft-runtime", version = "0.4.2" }
-luft-storage = { path = "../luft-storage", version = "0.4.2" }
-luft-planner = { path = "../luft-planner", version = "0.4.2" }
+luft-runtime = { path = "../luft-runtime", version = "0.4.3" }
+luft-storage = { path = "../luft-storage", version = "0.4.3" }
+luft-planner = { path = "../luft-planner", version = "0.4.3" }
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["compat"] }
 rmcp = { version = "0.6", features = ["server", "macros"] }
@@ -26,6 +26,6 @@ uuid = { version = "1", features = ["v7", "serde"] }
 
 [dev-dependencies]
 tempfile = "3"
-luft-core = { path = "../luft-core", version = "0.4.2", features = ["testing"] }
+luft-core = { path = "../luft-core", version = "0.4.3", features = ["testing"] }
 
 
