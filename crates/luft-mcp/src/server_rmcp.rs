@@ -148,14 +148,14 @@ impl LuftMcpServer {
     )]
     fn workflow_validate_schema(
         &self,
-        Parameters(req): Parameters<StructuredOutputRequest>,
+        Parameters(req): Parameters<WorkflowValidateSchemaRequest>,
     ) -> Result<String, String> {
         serde_json::to_string(&req).map_err(|e| e.to_string())
     }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
-pub struct StructuredOutputRequest {
+pub struct WorkflowValidateSchemaRequest {
     pub result: serde_json::Value,
 }
 

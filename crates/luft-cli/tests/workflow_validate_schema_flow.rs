@@ -1,9 +1,9 @@
-//! End-to-end test for the `structured_output` MCP tool flow.
+//! End-to-end test for the `workflow_validate_schema` MCP tool flow.
 //!
 //! This drives the real scheduler + real `AcpAdapter` + fake ACP agent binary
 //! (`fake-acp`) through the Lua runtime. It verifies that:
 //!
-//! 1. The SDK injects the "call structured_output tool" instruction.
+//! 1. The SDK injects the "call workflow_validate_schema tool" instruction.
 //! 2. `AcpAdapter` spawns the MCP `luft mcp-structured-output` server.
 //! 3. The fake agent emits a `session/update` ToolCall.
 //! 4. `update_mapper` captures the tool raw input as the agent result.
@@ -104,7 +104,7 @@ async fn run_with_fake_acp(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn e2e_structured_output_tool_call_returns_valid_schema_data() {
+async fn e2e_workflow_validate_schema_tool_call_returns_valid_schema_data() {
     let schema = serde_json::json!({
         "type": "object",
         "properties": {

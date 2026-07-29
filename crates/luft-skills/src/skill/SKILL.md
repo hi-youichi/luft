@@ -184,6 +184,9 @@ workflow_status(run_id)  ──►  status: "running" | "completed" | "failed" |
   optionally filtered by terminal status (`completed` / `failed` / `cancelled`).
 - **`workflow_cancel`** (`{ run_id }`) — abort an in-flight workflow. Use when the
   user asks to stop or the workflow appears stuck.
+- **`workflow_validate_schema`** (`{ result }`) — submit a structured result. Call
+  this tool with a JSON object to deliver your final output. The `result` field
+  accepts any JSON value.
 
 ## Progress Reporting Guidelines
 

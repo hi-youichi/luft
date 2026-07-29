@@ -16,7 +16,7 @@ use std::sync::Mutex;
 pub struct Accumulator {
     pub message: Mutex<String>,
     pub tokens: Mutex<TokenUsage>,
-    pub structured_output: Mutex<Option<serde_json::Value>>,
+    pub workflow_validate_schema: Mutex<Option<serde_json::Value>>,
 }
 
 impl Accumulator {
@@ -84,7 +84,7 @@ pub fn handle_update(
 
             tracing::debug!(title = %title, kind = %kind, "ACP tool_call");
 
-            if title.contains("structured_output") {
+            if title.contains("workflow_validate_schema") {
                 if let Some(raw_input) = v
                     .get("rawInput")
                     .cloned()
@@ -93,8 +93,8 @@ pub fn handle_update(
                     if !raw_input.is_null()
                         && !raw_input.as_object().map(|o| o.is_empty()).unwrap_or(false)
                     {
-                        tracing::debug!(title = %title, "captured structured_output rawInput from ToolCall");
-                        *acc.structured_output.lock().unwrap() = Some(raw_input);
+                        tracing::debug!(title = %title, "captured workflow_validate_schema rawInput from ToolCall");
+                        *acc.workflow_validate_schema.lock().unwrap() = Some(raw_input);
                     }
                 }
             }
@@ -114,7 +114,7 @@ pub fn handle_update(
 
             tracing::debug!(title = %find_str(&v, "title").unwrap_or_default(), path = ?find_str(&v, "path"), "ACP tool_call_update");
 
-            if title_contains(&v, "structured_output") {
+            if title_contains(&v, "workflow_validate_schema") {
                 if let Some(raw_input) = v
                     .get("rawInput")
                     .cloned()
@@ -123,8 +123,8 @@ pub fn handle_update(
                     if !raw_input.is_null()
                         && !raw_input.as_object().map(|o| o.is_empty()).unwrap_or(false)
                     {
-                        tracing::debug!("captured structured_output rawInput from ToolCallUpdate");
-                        *acc.structured_output.lock().unwrap() = Some(raw_input);
+                        tracing::debug!("captured workflow_validate_schema rawInput from ToolCallUpdate");
+                        *acc.workflow_validate_schema.lock().unwrap() = Some(raw_input);
                     }
                 }
             }
@@ -502,13 +502,13 @@ mod tests {
     }
 
     #[test]
-    fn handle_update_structured_output_tool_call_captures_value() {
+    fn handle_update_workflow_validate_schema_tool_call_captures_value() {
         let raw = serde_json::json!({
             "file": "src/adapters/result_collector.rs",
             "kind": "rust",
             "summary": "collects agent results"
         });
-        let mut tc = agent_client_protocol::schema::ToolCall::new("tc-1", "structured_output");
+        let mut tc = agent_client_protocol::schema::ToolCall::new("tc-1", "workflow_validate_schema");
         tc.raw_input = Some(raw.clone());
 
         let update = SessionUpdate::ToolCall(tc);
@@ -517,20 +517,20 @@ mod tests {
 
         handle_update(&update, RunId::nil(), AgentId::nil(), &acc, &tx, false);
 
-        let captured = acc.structured_output.lock().unwrap().clone();
-        assert!(captured.is_some(), "structured_output should be captured");
+        let captured = acc.workflow_validate_schema.lock().unwrap().clone();
+        assert!(captured.is_some(), "workflow_validate_schema should be captured");
         assert_eq!(captured.unwrap(), raw);
     }
 
     #[test]
-    fn handle_update_structured_output_tool_call_update_captures_value() {
+    fn handle_update_workflow_validate_schema_tool_call_update_captures_value() {
         let raw = serde_json::json!({
             "file": "src/adapters/result_collector.rs",
             "kind": "rust",
             "summary": "collects agent results"
         });
         let fields = agent_client_protocol::schema::ToolCallUpdateFields::default()
-            .title("structured_output")
+            .title("workflow_validate_schema")
             .raw_input(raw.clone());
         let u = agent_client_protocol::schema::ToolCallUpdate::new("tc-so", fields);
         let update = SessionUpdate::ToolCallUpdate(u);
@@ -539,17 +539,17 @@ mod tests {
 
         handle_update(&update, RunId::nil(), AgentId::nil(), &acc, &tx, false);
 
-        let captured = acc.structured_output.lock().unwrap().clone();
+        let captured = acc.workflow_validate_schema.lock().unwrap().clone();
         assert!(
             captured.is_some(),
-            "structured_output should be captured via ToolCallUpdate"
+            "workflow_validate_schema should be captured via ToolCallUpdate"
         );
         assert_eq!(captured.unwrap(), raw);
     }
 
     #[test]
-    fn handle_update_structured_output_empty_raw_input_not_captured() {
-        let mut tc = agent_client_protocol::schema::ToolCall::new("tc-1", "structured_output");
+    fn handle_update_workflow_validate_schema_empty_raw_input_not_captured() {
+        let mut tc = agent_client_protocol::schema::ToolCall::new("tc-1", "workflow_validate_schema");
         tc.raw_input = Some(serde_json::json!({}));
 
         let update = SessionUpdate::ToolCall(tc);
@@ -558,7 +558,7 @@ mod tests {
 
         handle_update(&update, RunId::nil(), AgentId::nil(), &acc, &tx, false);
 
-        let captured = acc.structured_output.lock().unwrap().clone();
+        let captured = acc.workflow_validate_schema.lock().unwrap().clone();
         assert!(captured.is_none(), "empty rawInput should not be captured");
     }
 
@@ -573,10 +573,10 @@ mod tests {
 
         handle_update(&update, RunId::nil(), AgentId::nil(), &acc, &tx, false);
 
-        let captured = acc.structured_output.lock().unwrap().clone();
+        let captured = acc.workflow_validate_schema.lock().unwrap().clone();
         assert!(
             captured.is_none(),
-            "non-structured_output tool should not capture"
+            "non-workflow_validate_schema tool should not capture"
         );
     }
 

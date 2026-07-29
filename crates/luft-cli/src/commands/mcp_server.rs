@@ -1,6 +1,6 @@
 //! MCP Server subcommand: `luft mcp-structured-output --schema-file <path>`.
 //!
-//! Speaks minimal MCP (JSON-RPC over stdio) with a single `structured_output`
+//! Speaks minimal MCP (JSON-RPC over stdio) with a single `workflow_validate_schema`
 //! tool whose `inputSchema` is the workflow-provided JSON Schema.
 //! opencode spawns this as a subprocess via `NewSessionRequest.mcp_servers`.
 //!
@@ -49,12 +49,12 @@ pub async fn serve(_args: McpServeArgs) -> Result<()> {
 // ── `luft mcp-structured-output` — internal schema validator ─────────
 
 #[derive(Debug, clap::Args)]
-pub struct McpStructuredOutputArgs {
+pub struct McpWorkflowValidateSchemaArgs {
     #[arg(long, help = "Path to JSON Schema file")]
     pub schema_file: PathBuf,
 }
 
-pub fn run(args: McpStructuredOutputArgs) -> Result<()> {
+pub fn run(args: McpWorkflowValidateSchemaArgs) -> Result<()> {
     let log_path = std::env::var("LUFT_MCP_LOG").unwrap_or_else(|_| {
         let dir = std::env::temp_dir();
         dir.join(format!("luft-mcp-{}.log", std::process::id()))
@@ -115,7 +115,7 @@ fn serve_mcp(schema: &Value) -> Result<()> {
             (Some("tools/list"), Some(id)) => {
                 let result = serde_json::json!({
                     "tools": [{
-                        "name": "structured_output",
+                        "name": "workflow_validate_schema",
                         "description": format!(
                             "Call this tool to submit your final result.\n\
                              The result MUST be a JSON object matching this schema:\n\n\
@@ -158,7 +158,7 @@ fn handle_tool_call(params: &Option<Value>, schema: &Value) -> Value {
         .and_then(|n| n.as_str())
         .unwrap_or("");
 
-    if name != "structured_output" {
+    if name != "workflow_validate_schema" {
         return serde_json::json!({
             "content": [{ "type": "text", "text": format!("Unknown tool: {name}") }],
             "isError": true
@@ -448,7 +448,7 @@ mod tests {
             "required": ["result"]
         });
         let params =
-            serde_json::json!({"name": "structured_output", "arguments": {"result": "ok"}});
+            serde_json::json!({"name": "workflow_validate_schema", "arguments": {"result": "ok"}});
         let result = handle_tool_call(&Some(params), &schema);
         assert_eq!(result["isError"], false);
         assert_eq!(result["content"][0]["text"], "Result accepted.");
@@ -461,7 +461,7 @@ mod tests {
             "properties": {"result": {"type": "string"}},
             "required": ["result"]
         });
-        let params = serde_json::json!({"name": "structured_output", "arguments": {"result": 42}});
+        let params = serde_json::json!({"name": "workflow_validate_schema", "arguments": {"result": 42}});
         let result = handle_tool_call(&Some(params), &schema);
         assert_eq!(result["isError"], true);
         assert!(result["content"][0]["text"]
@@ -477,7 +477,7 @@ mod tests {
             "properties": {"result": {"type": "string"}},
             "required": ["result"]
         });
-        let params = serde_json::json!({"name": "structured_output"});
+        let params = serde_json::json!({"name": "workflow_validate_schema"});
         let result = handle_tool_call(&Some(params), &schema);
         assert_eq!(result["isError"], true);
         assert!(result["content"][0]["text"]
@@ -499,7 +499,7 @@ mod tests {
         });
 
         let params = serde_json::json!({
-            "name": "structured_output",
+            "name": "workflow_validate_schema",
             "arguments": {
                 "file": "src/adapters/result_collector.rs",
                 "kind": "rust",
@@ -511,7 +511,7 @@ mod tests {
         assert_eq!(result["content"][0]["text"], "Result accepted.");
 
         let missing = serde_json::json!({
-            "name": "structured_output",
+            "name": "workflow_validate_schema",
             "arguments": {
                 "file": "src/adapters/result_collector.rs",
                 "kind": "rust"
@@ -641,7 +641,7 @@ mod tests {
         let json = json_lines(&lines);
         assert_eq!(json.len(), 1);
         assert_eq!(json[0]["id"], 2);
-        assert_eq!(json[0]["result"]["tools"][0]["name"], "structured_output");
+        assert_eq!(json[0]["result"]["tools"][0]["name"], "workflow_validate_schema");
         assert_eq!(json[0]["result"]["tools"][0]["inputSchema"], schema);
     }
 
@@ -656,7 +656,7 @@ mod tests {
         });
         let lines = run_serve_mcp(
             &[
-                r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"structured_output","arguments":{"result":"done"}}}"#,
+                r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"workflow_validate_schema","arguments":{"result":"done"}}}"#,
             ],
             &schema,
         );
@@ -678,7 +678,7 @@ mod tests {
         });
         let lines = run_serve_mcp(
             &[
-                r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"structured_output","arguments":{"result":42}}}"#,
+                r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"workflow_validate_schema","arguments":{"result":42}}}"#,
             ],
             &schema,
         );
@@ -765,7 +765,7 @@ mod tests {
 
         let _lock = IO_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let (_, out_lines) = with_redirected_io(input, || {
-            let args = McpStructuredOutputArgs {
+            let args = McpWorkflowValidateSchemaArgs {
                 schema_file: schema_path,
             };
             let _ = run(args);
@@ -777,7 +777,7 @@ mod tests {
     fn run_missing_schema_file() {
         // The default log path creates a file under temp_dir, which should succeed.
         // The schema file does NOT exist → run() returns Err.
-        let args = McpStructuredOutputArgs {
+        let args = McpWorkflowValidateSchemaArgs {
             schema_file: "/tmp/nonexistent_schema_luft_test.json".into(),
         };
         let result = run(args);
@@ -814,7 +814,7 @@ mod tests {
         let _lock = IO_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let (_, out_lines) =
             with_redirected_io(r#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#, || {
-                let args = McpStructuredOutputArgs {
+                let args = McpWorkflowValidateSchemaArgs {
                     schema_file: schema_path.clone(),
                 };
                 let _ = run(args);
@@ -827,12 +827,12 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
-    //  McpStructuredOutputArgs
+    //  McpWorkflowValidateSchemaArgs
     // ------------------------------------------------------------------
 
     #[test]
     fn mcp_args_has_schema_file() {
-        let args = McpStructuredOutputArgs {
+        let args = McpWorkflowValidateSchemaArgs {
             schema_file: "test.json".into(),
         };
         assert_eq!(args.schema_file.display().to_string(), "test.json");

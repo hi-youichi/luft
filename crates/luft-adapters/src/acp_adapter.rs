@@ -61,7 +61,7 @@ use agent_client_protocol::{Agent, ByteStreams, Client, ConnectionTo, Responder}
 /// for this duration, the session is killed.
 const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
 
-/// After a `structured_output` submission is captured, the agent has this long
+/// After a `workflow_validate_schema` submission is captured, the agent has this long
 /// to stop generating before the session is force-killed. The timer does NOT
 /// reset on further activity — once the LLM has submitted its result, any
 /// additional tool calls after that point are dropped and the session is
@@ -82,7 +82,7 @@ const STOP_REASON_END_TURN: &str = "EndTurn";
 enum WatchdogOutcome {
     /// LLM hung for `pre_idle` with no protocol activity and no submission.
     PreIdleTimeout,
-    /// LLM submitted a valid `structured_output` but kept generating for
+    /// LLM submitted a valid `workflow_validate_schema` but kept generating for
     /// `post_idle` after the submission. Caller should treat the captured
     /// submission as the result.
     PostSubmissionTimeout,
@@ -256,7 +256,7 @@ impl AgentBackend for AcpAdapter {
         AgentCapabilities {
             streaming: true,
             mcp_injection: true,
-            structured_output: true,
+            workflow_validate_schema: true,
             models: vec![],
         }
     }
@@ -602,7 +602,7 @@ fn drive_connection(
 }
 
 /// Notification handler body. Updates the accumulator, emits a progress event,
-/// and signals the watchdog the moment a `structured_output` payload is first
+/// and signals the watchdog the moment a `workflow_validate_schema` payload is first
 /// captured (None → Some transition).
 #[allow(clippy::too_many_arguments)]
 fn handle_session_update(
@@ -627,14 +627,14 @@ fn handle_session_update(
     tracing::debug!(%kind, "ACP session/update");
 
     // Capture pre-update submission state so we can detect the None → Some
-    // transition on `structured_output` and signal the idle watchdog to switch
+    // transition on `workflow_validate_schema` and signal the idle watchdog to switch
     // to a short, non-resetting timer.
-    let was_submitted = acc.structured_output.lock().unwrap().is_some();
+    let was_submitted = acc.workflow_validate_schema.lock().unwrap().is_some();
     update_mapper::handle_update(&n.update, run_id, agent_id, acc, events, emit_raw);
-    if !was_submitted && acc.structured_output.lock().unwrap().is_some() {
+    if !was_submitted && acc.workflow_validate_schema.lock().unwrap().is_some() {
         submit_signal.notify_one();
         tracing::debug!(
-            "ACP structured_output captured; watchdog switching to post-submission mode"
+            "ACP workflow_validate_schema captured; watchdog switching to post-submission mode"
         );
     }
 }
@@ -909,7 +909,7 @@ fn stop_reason_as_str(r: &StopReason) -> String {
 
 /// Convert a `WatchdogOutcome` into a `BackendError` (pre-timeouts) or update
 /// the shared `stop_holder` with a synthesized `EndTurn` when the LLM has
-/// already submitted its `structured_output` (post-submission timeout).
+/// already submitted its `workflow_validate_schema` (post-submission timeout).
 fn handle_watchdog_outcome(
     res: WatchdogOutcome,
     child: &mut tokio::process::Child,
@@ -930,7 +930,7 @@ fn handle_watchdog_outcome(
             Err(BackendError::Timeout)
         }
         WatchdogOutcome::PostSubmissionTimeout => {
-            // The LLM submitted a valid `structured_output` but kept
+            // The LLM submitted a valid `workflow_validate_schema` but kept
             // generating tool calls after that (e.g. `todo_write`). We treat
             // the captured submission as the session result: synthesize an
             // `EndTurn` stop_reason and fall through to the normal collection
@@ -938,7 +938,7 @@ fn handle_watchdog_outcome(
             // payload against `task.output_schema`.
             tracing::info!(
                 post_idle_ms = POST_SUBMISSION_IDLE.as_millis() as u64,
-                "ACP post-submission timeout; treating structured_output as result"
+                "ACP post-submission timeout; treating workflow_validate_schema as result"
             );
             // Single `MutexGuard` (no double-lock): the original code took
             // the lock twice in a row; we hold it once and only overwrite
@@ -988,7 +988,7 @@ fn collect_session_result(task: &AgentTask, state: &SessionState) -> AgentResult
     let stop = state.stop_holder.lock().unwrap().take().unwrap_or_default();
     let message = std::mem::take(&mut *state.acc.message.lock().unwrap());
     let tokens = *state.acc.tokens.lock().unwrap();
-    let structured = state.acc.structured_output.lock().unwrap().take();
+    let structured = state.acc.workflow_validate_schema.lock().unwrap().take();
     result_collector::collect(task, &stop, message, tokens, structured)
 }
 
@@ -1002,7 +1002,7 @@ fn collect_session_result(task: &AgentTask, state: &SessionState) -> AgentResult
 /// When `submit_signal.notify_one()` is called, the watchdog transitions
 /// into a **post-submission** state: it switches to a short `post_idle`
 /// timer that is **not** reset by further activity on `activity_rx`. This
-/// bounds the wait once the LLM has submitted a valid `structured_output`
+/// bounds the wait once the LLM has submitted a valid `workflow_validate_schema`
 /// but keeps producing tool calls (e.g. `todo_write`) — the exact race
 /// that produced the `story-UpdateDialog` and `story-MessageListSubmodule`
 /// failures documented in
@@ -1030,7 +1030,7 @@ async fn idle_watchdog(
             // We deliberately do NOT wait on `submit_signal` or
             // `activity_rx` here: the submission is one-shot and any
             // further activity is irrelevant to whether the captured
-            // `structured_output` is the result.
+            // `workflow_validate_schema` is the result.
             while activity_rx.try_recv().is_ok() {}
             tokio::time::sleep(post_idle).await;
             return WatchdogOutcome::PostSubmissionTimeout;
@@ -1256,7 +1256,7 @@ mod tests {
     // is actively emitting notifications. Once `submit_signal.notify_one()`
     // is called, the watchdog must switch to a short, non-resetting
     // post-idle timer so a chatty post-submission agent (one that keeps
-    // calling `todo_write` after submitting `structured_output`) cannot
+    // calling `todo_write` after submitting `workflow_validate_schema`) cannot
     // hang the session. This is the race that produced
     // `story-UpdateDialog` / `story-MessageListSubmodule` failures in
     // `docs/issues/opengui-stories-2026-07-06-stuck-run.md`.

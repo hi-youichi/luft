@@ -46,7 +46,7 @@ function main()
   log(string.format("《%s》 — %s (%d)", res.output.title, res.output.author, res.output.year or 0))
   report({
     ok = true,
-    source = "structured_output",
+    source = "workflow_validate_schema",
     info = res.output,
   })
 end

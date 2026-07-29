@@ -827,19 +827,19 @@ fn print_verbose_summary(tool_calls: &Arc<Mutex<HashMap<AgentId, Vec<String>>>>)
     let total_agents = calls.len();
     let structured_agents: Vec<(&AgentId, &Vec<String>)> = calls
         .iter()
-        .filter(|(_, names)| names.iter().any(|n| n == "structured_output"))
+        .filter(|(_, names)| names.iter().any(|n| n == "workflow_validate_schema"))
         .collect();
 
     println!();
     println!("=== Structured Output Summary ===");
     println!("Agents with tool calls: {total_agents}");
     println!(
-        "Agents that called structured_output: {}",
+        "Agents that called workflow_validate_schema: {}",
         structured_agents.len()
     );
 
     for (agent_id, names) in calls.iter() {
-        let called = names.iter().any(|n| n == "structured_output");
+        let called = names.iter().any(|n| n == "workflow_validate_schema");
         let all_tools = names.join(", ");
         let mark = if called { "\u{2713}" } else { "\u{2717}" };
         println!("  {agent_id} {mark}  tools: {all_tools}");

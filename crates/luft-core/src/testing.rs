@@ -46,7 +46,7 @@ impl AgentBackend for CrashBackend {
         AgentCapabilities {
             streaming: true,
             mcp_injection: false,
-            structured_output: false,
+            workflow_validate_schema: false,
             models: vec![],
         }
     }
@@ -104,7 +104,7 @@ impl AgentBackend for CountingBackend {
         AgentCapabilities {
             streaming: true,
             mcp_injection: false,
-            structured_output: false,
+            workflow_validate_schema: false,
             models: vec![],
         }
     }
@@ -163,7 +163,7 @@ impl AgentBackend for SharedBackend {
         AgentCapabilities {
             streaming: true,
             mcp_injection: false,
-            structured_output: false,
+            workflow_validate_schema: false,
             models: vec![],
         }
     }

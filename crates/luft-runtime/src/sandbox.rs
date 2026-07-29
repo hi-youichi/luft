@@ -844,7 +844,7 @@ mod tests {
             warnings: vec![],
         };
         // Public methods on Runtime stay callable.
-        let rt = make_runtime();
+        let _rt = make_runtime();
     }
 
     // -----------------------------------------------------------------------

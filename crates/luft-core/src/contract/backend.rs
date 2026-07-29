@@ -101,7 +101,7 @@ pub trait AgentBackend: Send + Sync {
 pub struct AgentCapabilities {
     pub streaming: bool,
     pub mcp_injection: bool,
-    pub structured_output: bool,
+    pub workflow_validate_schema: bool,
     /// Known model ids; empty = unknown/any.
     pub models: Vec<String>,
 }

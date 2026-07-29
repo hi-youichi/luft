@@ -88,7 +88,7 @@ enum Commands {
     },
     /// MCP server subcommand for structured output injection (internal).
     #[command(hide = true)]
-    McpStructuredOutput(commands::mcp_server::McpStructuredOutputArgs),
+    McpWorkflowValidateSchema(commands::mcp_server::McpWorkflowValidateSchemaArgs),
     /// Start the Luft MCP server (stdio JSON-RPC).
     #[command(subcommand)]
     Mcp(commands::mcp_server::McpSubcommand),
@@ -259,7 +259,7 @@ async fn dispatch(
         Commands::Phases { run_dir, json } => {
             commands::phases::phases_cmd(run_dir, commands::phases::PhasesArgs { json })?;
         }
-        Commands::McpStructuredOutput(args) => commands::mcp_server::run(args)?,
+        Commands::McpWorkflowValidateSchema(args) => commands::mcp_server::run(args)?,
         Commands::Mcp(cmd) => match cmd {
             commands::mcp_server::McpSubcommand::Serve(args) => {
                 commands::mcp_server::serve(args).await?
@@ -528,7 +528,7 @@ mod tests {
     #[tokio::test]
     async fn dispatch_mcp_no_schema_file() {
         let cli = Cli {
-            command: Commands::McpStructuredOutput(commands::mcp_server::McpStructuredOutputArgs {
+            command: Commands::McpWorkflowValidateSchema(commands::mcp_server::McpWorkflowValidateSchemaArgs {
                 schema_file: PathBuf::from("/__nonexistent__/schema.json"),
             }),
             log_level: None,

@@ -36,7 +36,7 @@ pub struct PermissionInputs {
 /// deny-list → `accept_edits` → `allow_commands` → `allow_mcp`.
 pub fn decide(policy: Option<&ToolPolicy>, input: &PermissionInputs) -> Decision {
     if let Some(tool) = &input.mcp_tool {
-        if tool == "structured_output" {
+        if tool == "workflow_validate_schema" {
             return Decision::Approve;
         }
     }
@@ -113,7 +113,7 @@ fn parse_inputs_from_json(v: &serde_json::Value) -> PermissionInputs {
     let command = find_str_field(v, "command");
     let mcp_tool = find_str_field(v, "tool")
         .or_else(|| find_str_field(v, "name"))
-        .filter(|_n| raw.contains("mcp") || raw.contains("structured_output"));
+        .filter(|_n| raw.contains("mcp") || raw.contains("workflow_validate_schema"));
     PermissionInputs {
         command,
         is_file_edit,
@@ -197,11 +197,11 @@ mod tests {
         assert!(matches!(decide(Some(&p), &bad), Decision::Deny(_)));
     }
 
-    // --- structured_output early return (lines 38-41) ---
+    // --- workflow_validate_schema early return (lines 38-41) ---
     #[test]
-    fn structured_output_approved() {
+    fn workflow_validate_schema_approved() {
         let input = PermissionInputs {
-            mcp_tool: Some("structured_output".into()),
+            mcp_tool: Some("workflow_validate_schema".into()),
             ..Default::default()
         };
         // No policy

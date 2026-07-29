@@ -2,7 +2,7 @@
 //!
 //! This binary speaks enough of the Agent Client Protocol (ACP) v1 to let
 //! Luft's `AcpAdapter` complete a one-shot session. It is used by tests
-//! that verify `structured_output` MCP tool capture and `model` config-option
+//! that verify `workflow_validate_schema` MCP tool capture and `model` config-option
 //! wiring.
 //!
 //! Wire protocol: newline-delimited JSON-RPC 2.0.
@@ -17,7 +17,7 @@
 //!   requested value (written to the file at `FAKE_ACP_MODEL_OUT`, if set) and
 //!   echoes back the updated config options.
 //! - `session/prompt` -> emits a `session/update` ToolCall notification with
-//!   title "structured_output" and the raw input supplied via `--raw-input`,
+//!   title "workflow_validate_schema" and the raw input supplied via `--raw-input`,
 //!   then returns a PromptResponse with stop_reason "end_turn".
 
 use std::io::{BufRead, Write};
@@ -146,7 +146,7 @@ fn main() {
                         "update": {
                             "sessionUpdate": "tool_call",
                             "toolCallId": "tc-structured-output",
-                            "title": "structured_output",
+                            "title": "workflow_validate_schema",
                             "rawInput": raw_input
                         }
                     }
@@ -263,7 +263,7 @@ mod tests {
                 "update": {
                     "sessionUpdate": "tool_call",
                     "toolCallId": "tc-1",
-                    "title": "structured_output",
+                    "title": "workflow_validate_schema",
                     "rawInput": {"answer": "ok"}
                 }
             }

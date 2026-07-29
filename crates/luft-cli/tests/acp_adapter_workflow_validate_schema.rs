@@ -1,4 +1,4 @@
-//! Integration test: `AcpAdapter` extracts structured_output from a fake ACP agent.
+//! Integration test: `AcpAdapter` extracts workflow_validate_schema from a fake ACP agent.
 //!
 //! This test lives in `tests/` because it needs the `fake-acp` binary target,
 //! whose path is exposed via `CARGO_BIN_EXE_fake-acp` only for integration tests.
@@ -51,7 +51,7 @@ fn test_context() -> RunContext {
 }
 
 #[tokio::test]
-async fn acp_adapter_extracts_structured_output_from_tool_call() {
+async fn acp_adapter_extracts_workflow_validate_schema_from_tool_call() {
     let expected = serde_json::json!({
         "file": "src/adapters/result_collector.rs",
         "kind": "rust",

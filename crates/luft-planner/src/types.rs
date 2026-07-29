@@ -75,7 +75,7 @@ impl From<PlanOutput> for PlannedWorkflow {
 impl PlannedWorkflow {
     /// Build a workflow from a script alone (legacy text-extraction mode).
     ///
-    /// Used when `use_structured_output = false` or extraction fails.
+    /// Used when `use_workflow_validate_schema = false` or extraction fails.
     pub fn from_script(script: String) -> Self {
         Self {
             phases: Vec::new(),

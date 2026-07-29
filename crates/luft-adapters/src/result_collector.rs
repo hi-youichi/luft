@@ -16,12 +16,12 @@ pub fn collect(
     stop_reason: &str,
     message: String,
     tokens: TokenUsage,
-    structured_output: Option<serde_json::Value>,
+    workflow_validate_schema: Option<serde_json::Value>,
 ) -> AgentResult {
     let status = status_from_stop_reason(stop_reason);
     let findings = extract_findings_from_output(&message);
-    tracing::debug!(agent_id = %task.agent_id, ?status, findings = findings.len(), tokens = tokens.total(), stop_reason, has_structured = structured_output.is_some(), "collecting agent result");
-    let output = if let Some(json) = structured_output {
+    tracing::debug!(agent_id = %task.agent_id, ?status, findings = findings.len(), tokens = tokens.total(), stop_reason, has_structured = workflow_validate_schema.is_some(), "collecting agent result");
+    let output = if let Some(json) = workflow_validate_schema {
         json
     } else if !findings.is_empty() {
         serde_json::to_value(&findings).unwrap_or(serde_json::Value::Null)
@@ -229,7 +229,7 @@ mod tests {
     }
 
     #[test]
-    fn structured_output_takes_precedence() {
+    fn workflow_validate_schema_takes_precedence() {
         let r = collect(
             &task(),
             "EndTurn",

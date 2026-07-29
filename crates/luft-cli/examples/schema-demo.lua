@@ -80,7 +80,7 @@ function main()
       "You are analyzing the Luft project contributors.",
       "List 3 fictional contributors with their name, role, programming languages, and years of experience.",
       "Be specific and realistic (Rust, Lua, TypeScript).",
-      "Return ONLY the structured output via the structured_output tool.",
+      "Return ONLY the structured output via the workflow_validate_schema tool.",
     }, "\n"),
     schema = PERSON_SCHEMA,
   })
@@ -112,7 +112,7 @@ function main()
         json.encode({ name = extract.output.name, role = extract.output.role }),
         "",
         "Return approved=true if they are suitable (yoe >= 3), score 1-10, and a short comment.",
-        "Use the structured_output tool.",
+        "Use the workflow_validate_schema tool.",
       }, "\n"),
       schema = FINDING_SCHEMA,
     }

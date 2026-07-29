@@ -61,7 +61,7 @@ struct ConfigView {
 struct CapabilitiesView {
     streaming: bool,
     mcp_injection: bool,
-    structured_output: bool,
+    workflow_validate_schema: bool,
     models: Vec<String>,
 }
 
@@ -69,7 +69,7 @@ pub fn list_backends() {
     let known_ids = &["mock", "loom-acp", "opencode", "claude-acp", "codex"];
 
     println!(
-        "     id     \u{2502} streaming \u{2502} mcp_injection \u{2502} structured_output \u{2502} models"
+        "     id     \u{2502} streaming \u{2502} mcp_injection \u{2502} workflow_validate_schema \u{2502} models"
     );
     println!(
         "\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}"
@@ -97,7 +97,7 @@ pub fn list_backends() {
                     id,
                     bool_mark(caps.streaming),
                     bool_mark(caps.mcp_injection),
-                    bool_mark(caps.structured_output),
+                    bool_mark(caps.workflow_validate_schema),
                     models,
                 );
             }
@@ -170,7 +170,7 @@ pub fn info_backend(id: Option<String>) {
                 capabilities: CapabilitiesView {
                     streaming: caps.streaming,
                     mcp_injection: caps.mcp_injection,
-                    structured_output: caps.structured_output,
+                    workflow_validate_schema: caps.workflow_validate_schema,
                     models: caps.models,
                 },
                 binary,

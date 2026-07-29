@@ -214,7 +214,7 @@ local INDEX_SCHEMA = {
 
 local function audit_prompt(idx, method, path, identifier, group_file)
   return table.concat({
-    "FINAL action: call structured_output. NEVER answer as plain text.",
+    "FINAL action: call workflow_validate_schema. NEVER answer as plain text.",
     "",
     "You are the CONFORMANCE AUDITOR for ONE opencode v2 HTTP endpoint.",
     "Your job: read BOTH the opencode contract AND the Loom implementation,",
@@ -312,7 +312,7 @@ local function audit_prompt(idx, method, path, identifier, group_file)
     "",
     "Return the JSON object. Set identifier=\"" .. identifier .. "\".",
     "",
-    "FINAL action: call structured_output. NEVER answer as plain text.",
+    "FINAL action: call workflow_validate_schema. NEVER answer as plain text.",
   }, "\n")
 end
 
@@ -364,7 +364,7 @@ local ADVERSARY_FOCI = {
 
 local function adversary_prompt(idx, angle, method, path, identifier, group_file, audit_json)
   return table.concat({
-    "FINAL action: call structured_output. NEVER answer as plain text.",
+    "FINAL action: call workflow_validate_schema. NEVER answer as plain text.",
     "",
     "You are the ADVERSARIAL REVIEWER for ONE opencode v2 HTTP endpoint.",
     "Your job: independently verify the auditor's findings by re-reading the code.",
@@ -406,14 +406,14 @@ local function adversary_prompt(idx, angle, method, path, identifier, group_file
     "Return the JSON object with your verdicts and new findings.",
     "Set identifier=\"" .. identifier .. "\", angle=\"" .. angle .. "\".",
     "",
-    "FINAL action: call structured_output. NEVER answer as plain text.",
+    "FINAL action: call workflow_validate_schema. NEVER answer as plain text.",
   }, "\n")
 end
 
 local function doc_prompt(idx, method, path, identifier, group_file, audit_json, adv_schema_json, adv_behavior_json, adv_boundary_json)
   local doc_path = DOC_DIR .. "/v2." .. identifier .. ".md"
   return table.concat({
-    "FINAL action: write the markdown file, then call structured_output.",
+    "FINAL action: write the markdown file, then call workflow_validate_schema.",
     "",
     "You are the DOC WRITER for a conformance audit report.",
     "Merge audit + adversary findings into a final report.",
@@ -502,13 +502,13 @@ local function doc_prompt(idx, method, path, identifier, group_file, audit_json,
     "",
     "Set conformance_level, deviation_count, and summary_one_line from the merged findings.",
     "",
-    "FINAL action: call structured_output. NEVER answer as plain text.",
+    "FINAL action: call workflow_validate_schema. NEVER answer as plain text.",
   }, "\n")
 end
 
 local function index_prompt(all_summaries_json)
   return table.concat({
-    "FINAL action: write the index file, then call structured_output.",
+    "FINAL action: write the index file, then call workflow_validate_schema.",
     "",
     "You are the INDEX WRITER for the conformance audit.",
     "Use the summaries JSON to build README.md.",
@@ -529,7 +529,7 @@ local function index_prompt(all_summaries_json)
     "   Link identifier to ./v2.<identifier>.md",
     "6. Cross-references to ../LOOM-TOOL-PROTOCOL-GAPS.md and ../../specs/endpoints/README.md",
     "",
-    "FINAL action: call structured_output. NEVER answer as plain text.",
+    "FINAL action: call workflow_validate_schema. NEVER answer as plain text.",
   }, "\n")
 end
 

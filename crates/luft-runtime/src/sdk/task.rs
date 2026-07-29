@@ -48,7 +48,7 @@ pub(crate) fn build_task(
         Some(_) => format!(
             "{prompt}\n\n\
              ---\n\
-             IMPORTANT: You MUST call the `structured_output` tool to submit your result.\n\
+             IMPORTANT: You MUST call the `workflow_validate_schema` tool to submit your result.\n\
              Do NOT return the result as a text message. Call the tool.",
             prompt = prompt,
         ),
@@ -170,7 +170,7 @@ mod tests {
 
         let (task, _, _) = build_task(&o, 0, &seq_counter()).unwrap();
         assert!(task.prompt.contains("IMPORTANT"));
-        assert!(task.prompt.contains("structured_output"));
+        assert!(task.prompt.contains("workflow_validate_schema"));
         assert!(task.prompt.contains("tool"));
         assert!(!task.prompt.contains("JSON Schema"));
         assert!(task.output_schema.is_some());

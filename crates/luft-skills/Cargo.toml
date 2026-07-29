@@ -9,7 +9,7 @@ categories = ["asynchronous"]
 description = "Compiled-in workflow authoring skill for Luft agents"
 
 [dependencies]
-luft-core = { path = "../luft-core", version = "0.4.1" }
+luft-core = { path = "../luft-core", version = "0.4.2" }
 const_format = "0.2"
 
 [dev-dependencies]

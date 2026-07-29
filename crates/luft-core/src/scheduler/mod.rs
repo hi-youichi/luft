@@ -266,7 +266,7 @@ impl Scheduler {
                         };
                         let validation_err = if fallback_text.is_some() {
                             Some(
-                                "agent returned text instead of calling structured_output tool"
+                                "agent returned text instead of calling workflow_validate_schema tool"
                                     .to_string(),
                             )
                         } else {
@@ -308,8 +308,8 @@ impl Scheduler {
                                 format!(
                                     "{original_prompt}\n\n\
                                      ---\n\
-                                     You returned your result as plain text instead of calling the `structured_output` tool.\n\
-                                     You MUST call the `structured_output` tool to submit your result.\n\
+                                     You returned your result as plain text instead of calling the `workflow_validate_schema` tool.\n\
+                                     You MUST call the `workflow_validate_schema` tool to submit your result.\n\
                                      Do NOT return the result as a text message.\n\
                                      \n\
                                      Your text output was:\n\
@@ -334,7 +334,7 @@ impl Scheduler {
                                      Required JSON Schema:\n\
                                      ```json\n{schema}\n```\n\
                                      \n\
-                                     Call the `structured_output` tool with a JSON object that\n\
+                                     Call the `workflow_validate_schema` tool with a JSON object that\n\
                                      matches this schema exactly. Include ALL required fields.",
                                     original_prompt = original_prompt,
                                     error = error,
@@ -886,7 +886,7 @@ mod tests {
             }
         }
         let prompt = prompt_with_feedback.expect("AgentDone event with prompt");
-        assert!(prompt.contains("structured_output"));
+        assert!(prompt.contains("workflow_validate_schema"));
         assert!(prompt.contains("Required JSON Schema"));
     }
 
