@@ -1,24 +1,8 @@
 # Luft
 
-**Lua-based multi-agent orchestration runtime that makes complex AI tasks as simple as writing scripts.**
+A Lua-based multi-agent orchestration runtime. Define complex multi-agent workflows as concise Lua scripts — the runtime handles scheduling, concurrency, checkpointing, and progress tracking automatically.
 
-## 🎯 What problem does it solve?
-
-**Pain points**:
-- Single AI agents can't handle complex multi-step tasks
-- Manually coordinating multiple agents is difficult and requires extensive code
-- Lack of unified task orchestration and progress tracking mechanisms
-- Hard to reuse and share complex workflows
-
-**Solution**:
-- **Scriptable orchestration**: Define complex multi-agent workflows with concise Lua primitives
-- **Automatic scheduling**: System handles concurrency, retries, and error recovery automatically
-- **Progress visualization**: Real-time tracking of execution status for each phase and agent
-- **Easy sharing**: Workflows are script files that can be version controlled and collaborated on
-
-## 🚀 Quick Start
-
-### Install
+## Install
 
 ```bash
 # Linux / macOS
@@ -27,24 +11,150 @@ curl -fsSL https://raw.githubusercontent.com/hi-youichi/luft/main/install.sh | s
 # Windows (PowerShell)
 irm https://raw.githubusercontent.com/hi-youichi/luft/main/install.ps1 | iex
 
-# Install a specific version
-curl -fsSL https://raw.githubusercontent.com/hi-youichi/luft/main/install.sh | sh -s -- --version v0.3.3
+# Specific version
+curl -fsSL https://raw.githubusercontent.com/hi-youichi/luft/main/install.sh | sh -s -- --version v0.4.2
+
+# From source
+cargo install luft-cli
 ```
 
-### CLI Usage
+Verify:
 
 ```bash
-# Execute example workflow
-cargo run --bin luft -- run --workflow examples/hello.lua --backend mock
-
-# Natural language task (auto-converted to workflow)
-cargo run --bin luft -- run "analyze project security" -o report.md
-
-# View run status
-cargo run --bin luft -- status
+luft --version
 ```
 
-### Library Usage
+## Quick Start
+
+Run an example workflow with the mock backend (no LLM required):
+
+```bash
+luft run --workflow examples/hello.lua --backend mock
+```
+
+Natural-language prompt — Luft generates a workflow plan via LLM, then executes it:
+
+```bash
+luft run "audit the codebase for security issues" -o report.md
+```
+
+Run a saved workflow with arguments:
+
+```bash
+luft run --workflow workflows/review_code.lua --args '{"target":"src/"}' --max-concurrency 4
+```
+
+## How It Works
+
+You write a **Lua orchestration script** that spawns AI subagents to do the real work (reading files, writing code, web search, etc.). The script itself runs in a sandbox with no filesystem or shell access — it only holds the control flow, branching, and intermediate results.
+
+```
+┌──────────────────────────────────────────┐
+│           User (CLI / Library / MCP)        │
+├──────────────────────────────────────────┤
+│         Lua Orchestration Runtime           │
+│   agent · parallel · pipeline · phase      │
+├──────────────────────────────────────────┤
+│            Service Layer                    │
+│   scheduling · checkpointing · events       │
+├──────────────────────────────────────────┤
+│            Backend Adapters                 │
+│   OpenCode · Claude · Codex · Custom        │
+└──────────────────────────────────────────┘
+```
+
+**Key properties:**
+- **Sandboxed scripts** — no `io`, `os`, `require`, or shell access from Lua
+- **Checkpoint & resume** — every run can be resumed from its last checkpoint
+- **Progress tracking** — phases, agent counts, token usage, elapsed time
+- **Backend-agnostic** — switch between AI providers without changing workflows
+- **MCP server** — control workflows programmatically via JSON-RPC
+
+## Orchestration Primitives
+
+| Primitive | Description |
+|-----------|-------------|
+| `agent(opts)` | Run a single subagent to completion — the fundamental work unit |
+| `parallel(items, fn)` | Fan-out: run agents for all items, wait for every result |
+| `pipeline{items=, stages=, max_inflight=}` | Streaming multi-stage processing with bounded concurrency |
+| `phase(name)` | Declare a progress phase for CLI display |
+| `log(msg)` | Emit a status line to CLI and event log |
+| `budget(time_ms?, max_rounds?)` | Set resource-limit hints |
+| `workflow(path, args?)` | Call another saved workflow as a sub-step |
+| `report(value)` | **Required** — set the final output (call exactly once) |
+| `json.encode(v)` / `json.decode(s)` | JSON helpers |
+
+## Example: Parallel Code Review
+
+```lua
+--------------------------------------------
+-- Goal:  Review source files in parallel
+-- Arch:  files ==> parallel-review ==> report
+-- Flow:  files[] -> results[] -> report
+--------------------------------------------
+meta = {
+    reasoning = "Fan out file review across agents, collect findings",
+    phases = {
+        { label = "review", dynamic = true },
+        { label = "report" },
+    },
+}
+
+local FILES = { "src/main.rs", "src/lib.rs", "src/cli.rs" }
+
+function main()
+    phase("review", #FILES)
+
+    local results = parallel(FILES, function(file)
+        return agent({
+            prompt = "Review " .. file .. " for security issues. "
+                .. "Report any vulnerabilities found.",
+        })
+    end)
+
+    phase("report")
+
+    local findings = {}
+    for i, r in ipairs(results) do
+        if r.ok then
+            table.insert(findings, { file = FILES[i], output = r.output })
+        end
+    end
+
+    report({
+        summary = "Reviewed " .. #FILES .. " files, "
+            .. #findings .. " returned results",
+        results = findings,
+    })
+end
+```
+
+More examples in [`examples/`](examples/):
+- [`hello.lua`](examples/hello.lua) — simplest single-agent call
+- [`parallel-demo.lua`](examples/parallel-demo.lua) — parallel fan-out
+- [`pipeline-demo.lua`](examples/pipeline-demo.lua) — streaming pipeline
+- [`schema-demo.lua`](examples/schema-demo.lua) — structured output with schemas
+
+## CLI Reference
+
+| Command | Description |
+|---------|-------------|
+| `luft run --workflow <file>` | Execute a Lua workflow script |
+| `luft run "<prompt>"` | Generate a workflow from natural language, then execute |
+| `luft run --resume` | Resume from the last checkpoint |
+| `luft run -o <file>` | Write the final report to a file |
+| `luft run --args '<json>'` | Pass arguments to the workflow |
+| `luft run --max-concurrency N` | Max parallel agents (default: 1) |
+| `luft generate "<prompt>"` | Generate a workflow script without executing |
+| `luft list` | List past runs |
+| `luft status <run-dir>` | Show run status and results |
+| `luft logs <run-dir>` | View event log for a run |
+| `luft phases <run-dir>` | Show planned phases |
+| `luft backend list` | List available AI backends |
+| `luft skill-dump <dir>` | Dump the built-in workflow skill to a directory |
+| `luft install` | Install Luft bridges for detected agents |
+
+## Embed as a Library
 
 ```rust
 use luft::Luft;
@@ -62,155 +172,45 @@ async fn main() -> Result<(), luft::LuftError> {
         end
     "#).await?;
 
-    println!("Result: {:?}", outcome.result);
+    println!("{:?}", outcome.result);
     Ok(())
 }
 ```
 
-## 📋 Core Orchestration Primitives
+## MCP Integration
 
-| Primitive | Function | Example |
-|-----------|----------|---------|
-| `agent()` | Run single agent task | `agent({ prompt = "review code" })` |
-| `parallel()` | Process multiple tasks in parallel | `parallel(files, function(f) return analyze(f) end)` |
-| `pipeline()` | Streaming pipeline processing | `pipeline(data, {"stage1", "stage2", "stage3"})` |
-| `converge()` | Multi-round consensus verification | `converge(results, { max_rounds = 3 })` |
-| `workflow()` | Call nested sub-workflow | `workflow("subtask.lua", { param = "value" })` |
-| `phase()` | Structured progress tracking | `phase("code review", #files)` |
-| `report()` | Send final output | `report({ total_issues = 5 })` |
+Luft includes a built-in MCP (Model Context Protocol) server. Any MCP-compatible agent can submit workflows, poll status, and read results:
 
-## 🏗️ Architecture Overview
-
-Luft adopts a layered architecture that decouples orchestration logic from specific AI backends:
-
-```
-┌─────────────────────────────────────┐
-│     User Layer (CLI / Library)      │
-├─────────────────────────────────────┤
-│     Orchestration Layer (Lua Runtime)│
-│   - agent/parallel/pipeline/converge│
-├─────────────────────────────────────┤
-│     Service Layer                   │
-│   - scheduling/persistence/events/  │
-│     query                           │
-├─────────────────────────────────────┤
-│     Backend Layer (Adapters)        │
-│   - OpenCode / Claude / Custom      │
-└─────────────────────────────────────┘
+```bash
+luft mcp serve
 ```
 
-**Core features**:
-- **Sandbox security**: Lua sandbox ensures workflows cannot escape execution environment
-- **Checkpoint recovery**: Any workflow can resume execution from breakpoints
-- **Real-time monitoring**: View execution progress through event streams
-- **Unified interface**: Support multiple AI backends without workflow modifications
+Available MCP tools: `workflow_execute`, `workflow_status`, `workflow_events`, `workflow_cancel`, `workflow_list_files`, `workflow_list_runs`.
 
-## 💡 Usage Examples
+## Workspace Layout
 
-### Parallel Code Review
-```lua
-local files = { "src/main.rs", "src/lib.rs", "src/cli.rs" }
+| Crate | Role |
+|-------|------|
+| `luft-core` | Core contracts: `AgentBackend` trait, event types, skill model |
+| `luft-runtime` | Lua sandbox, scheduling, pipeline, checkpoint engine |
+| `luft-storage` | SQLite-based persistence (runs, events, checkpoints) |
+| `luft-adapters` | Backend adapters (OpenCode, Claude, Codex, mock) |
+| `luft-planner` | NL-to-Lua planning via LLM |
+| `luft-skills` | Compiled-in workflow authoring skill |
+| `luft-service` | Unified API surface for CLI, MCP, and library consumers |
+| `luft-mcp` | MCP server (stdio JSON-RPC) |
+| `luft-daemon` | Background daemon for persistent workflow execution |
+| `luft-cli` | The `luft` binary |
 
-function main()
-    phase("parallel review", #files)
-    
-    local results = parallel(files, function(file)
-        return { prompt = "review security of this file: " .. file }
-    end)
-    
-    local total_issues = 0
-    for _, result in ipairs(results) do
-        total_issues = total_issues + #result.findings
-    end
-    
-    report({ total_files = #files, total_issues = total_issues })
-end
-```
+## Resources
 
-### Adversarial Verification
-```lua
-local claims = {
-    "API endpoints need RBAC authentication",
-    "Password storage uses bcrypt hashing", 
-    "Input validation covers SQL injection"
-}
+- [Architecture overview](docs/architecture.md)
+- [SDK reference](docs/sdk-reference.md)
+- [Library guide](docs/library-guide.md)
+- [Tool reference](docs/tool-reference.md)
+- [Design documents](docs/design/)
+- [Example workflows](examples/)
 
-function main()
-    phase("security verification", #claims * 2)
-    
-    local result = converge(claims, {
-        adversarial = true,
-        vote_threshold = 0.7,
-        max_rounds = 3
-    })
-    
-    report(result)
-end
-```
+## License
 
-### Streaming Data Analysis
-```lua
-local stages = {
-    function(data) return extract_features(data) end,
-    function(features) return analyze_patterns(features) end,
-    function(patterns) return generate_report(patterns) end
-}
-
-function main()
-    phase("data analysis", #stages)
-    
-    local result = pipeline(raw_data, stages)
-    report(result)
-end
-```
-
-## 🔧 Common Commands
-
-| Command | Description | Example |
-|---------|-------------|---------|
-| `run --workflow <file>` | Execute Lua workflow | `luft run --workflow audit.lua` |
-| `run "<task description>"` | Natural language to workflow | `luft run "audit security vulnerabilities"` |
-| `run --resume <dir>` | Resume from checkpoint | `luft run --resume run-20250819-xxx` |
-| `run -o <file>` | Output report to file | `luft run --workflow audit.lua -o report.md` |
-| `run --args <JSON>` | Pass arguments to workflow | `luft run --workflow audit.lua --args '{"target":"src/"}'` |
-| `list` | List all run records | `luft list` |
-| `status <dir>` | View run status | `luft status run-20250819-xxx` |
-| `logs <dir>` | View run logs | `luft logs run-20250819-xxx` |
-
-## 🚧 Development Roadmap
-
-### Near-term (v0.2)
-- [ ] Dynamic workflow topology (generate subtasks at runtime)
-- [ ] Richer backend support
-- [ ] Performance optimization and cost control
-
-### Mid-term (v1.0)  
-- [ ] Intent-driven automatic workflow generation
-- [ ] Intelligent task decomposition and strategy selection
-- [ ] Continuous monitoring workflows
-
-### Long-term Vision
-- [ ] Evolve from orchestration tool to intelligent operating system
-- [ ] Autonomous task planning and resource allocation
-- [ ] Cross-project knowledge reuse and learning
-
-## 📚 More Resources
-
-- **Detailed documentation**: [docs/](docs/)
-- **Architecture design**: [docs/architecture.md](docs/architecture.md)  
-- **API reference**: [docs/sdk-reference.md](docs/sdk-reference.md)
-- **Example collection**: [examples/](examples/)
-- **Design documents**: [docs/design/](docs/design/)
-- **Library usage guide**: [docs/library-guide.md](docs/library-guide.md)
-
-## 🤝 Contributing
-
-Contributions welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
-
-## 📄 License
-
-MIT License - see [LICENSE](LICENSE) for details
-
----
-
-**Making complex AI task orchestration as simple as scripting.**
+MIT

@@ -87,7 +87,7 @@ enum Commands {
         json: bool,
     },
     /// MCP server subcommand for structured output injection (internal).
-    #[command(hide = true)]
+    #[command(hide = true, name = "mcp-structured-output")]
     McpWorkflowValidateSchema(commands::mcp_server::McpWorkflowValidateSchemaArgs),
     /// Start the Luft MCP server (stdio JSON-RPC).
     #[command(subcommand)]
@@ -103,6 +103,11 @@ enum Commands {
     Mock(commands::mock::MockSubcommand),
     /// Install Luft bridges for detected agents.
     Install,
+    /// Dump the built-in workflow skill to a directory.
+    SkillDump {
+        #[arg(help = "Target directory to write skill files into")]
+        dir: PathBuf,
+    },
 }
 
 #[derive(Debug, clap::Args)]
@@ -278,6 +283,7 @@ async fn dispatch(
             commands::mock::MockSubcommand::Add(args) => commands::mock::mock_add(args).await?,
         },
         Commands::Install => commands::install::run_install()?,
+        Commands::SkillDump { dir } => commands::skill_dump::skill_dump(&dir)?,
     }
 
     Ok(())

@@ -17,6 +17,7 @@ pub mod phase_renderer;
 pub mod phases;
 pub mod run;
 pub mod save;
+pub mod skill_dump;
 pub mod status;
 pub mod workflows;
 
@@ -269,7 +270,7 @@ mod tests {
 
     #[test]
     #[serial_test::serial]
-    fn all_fifteen_subcommand_modules_are_declared() {
+    fn all_sixteen_subcommand_modules_are_declared() {
         #[allow(unused_imports)]
         {
             use super::artifact_writer as _aw;
@@ -285,6 +286,7 @@ mod tests {
             use super::phase_renderer as _pr;
             use super::run as _rn;
             use super::save as _sv;
+            use super::skill_dump as _sd;
             use super::status as _st;
             use super::workflows as _wf;
         }
