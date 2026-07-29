@@ -53,7 +53,7 @@ impl McpSetup {
     /// 为检测到的 agents 配置 MCP 服务器。
     ///
     /// 每个 Agent 独立配置，一个失败不影响其他。
-    /// 已存在 `luft` 条目时保留原有配置不覆盖。
+    /// 已存在 `luft` 条目时，配置不一致则覆盖。
     pub fn configure_for_agents(agents: &[AgentType]) -> Vec<(AgentType, McpConfigResult)> {
         let mut results = vec![];
         let mut processed = std::collections::HashSet::new();
@@ -119,7 +119,11 @@ impl McpSetup {
                 .get_mut("mcpServers")
                 .and_then(|v| v.as_object_mut())
             {
-                if !servers.contains_key("luft") {
+                let need_write = servers
+                    .get("luft")
+                    .map(|existing| existing != &luft_entry)
+                    .unwrap_or(true);
+                if need_write {
                     servers.insert("luft".to_string(), luft_entry);
                 }
             }
@@ -201,7 +205,11 @@ impl McpSetup {
                 obj.insert("mcp".to_string(), json!({}));
             }
             if let Some(mcp) = obj.get_mut("mcp").and_then(|v| v.as_object_mut()) {
-                if !mcp.contains_key("luft") {
+                let need_write = mcp
+                    .get("luft")
+                    .map(|existing| existing != &luft_entry)
+                    .unwrap_or(true);
+                if need_write {
                     mcp.insert("luft".to_string(), luft_entry);
                 }
             }
@@ -245,11 +253,11 @@ impl McpSetup {
             String::new()
         };
 
-        if content.contains("[mcp_servers.luft]") {
-            return McpConfigResult::Configured;
-        }
-
-        let mut new_content = content;
+        let mut new_content = if content.contains("[mcp_servers.luft]") {
+            remove_toml_section(&content, "mcp_servers.luft")
+        } else {
+            content
+        };
         if !new_content.is_empty() && !new_content.ends_with('\n') {
             new_content.push('\n');
         }
@@ -338,6 +346,40 @@ fn strip_jsonc_comments(input: &str) -> String {
     }
 
     result
+}
+
+/// Remove a TOML table section (e.g. `[mcp_servers.luft]`) and all its key-value lines.
+///
+/// Removes everything from the section header line up to (but not including)
+/// the next blank line that follows the last key-value pair, or the next
+/// `[section]` header, whichever comes first.
+fn remove_toml_section(content: &str, section_name: &str) -> String {
+    let header = format!("[{}]", section_name);
+    let lines: Vec<&str> = content.lines().collect();
+    let mut result: Vec<&str> = Vec::with_capacity(lines.len());
+    let mut skipping = false;
+
+    for line in lines {
+        let trimmed = line.trim();
+        if skipping {
+            if trimmed.starts_with('[') {
+                skipping = false;
+                result.push(line);
+            } else if trimmed.is_empty() {
+                skipping = false;
+            }
+        } else if trimmed == header {
+            skipping = true;
+        } else {
+            result.push(line);
+        }
+    }
+
+    let mut out = result.join("\n");
+    if !out.is_empty() {
+        out.push('\n');
+    }
+    out
 }
 
 #[cfg(test)]
@@ -437,7 +479,7 @@ mod tests {
     }
 
     #[test]
-    fn merge_claude_mcp_no_duplicate() {
+    fn merge_claude_mcp_overwrites_stale() {
         let mut config = json!({
             "mcpServers": {
                 "luft": {
@@ -449,8 +491,8 @@ mod tests {
 
         McpSetup::merge_claude_mcp(&mut config, "luft").unwrap();
 
-        assert_eq!(config["mcpServers"]["luft"]["command"], "old-luft");
-        assert_eq!(config["mcpServers"]["luft"]["args"], json!(["old-args"]));
+        assert_eq!(config["mcpServers"]["luft"]["command"], "luft");
+        assert_eq!(config["mcpServers"]["luft"]["args"], json!(["mcp", "serve"]));
     }
 
     #[test]
@@ -553,7 +595,7 @@ mod tests {
 
     #[test]
     #[serial]
-    fn configure_opencode_preserves_existing_luft() {
+    fn configure_opencode_overwrites_stale_luft() {
         let tmp = TempDir::new().unwrap();
         let dir = tmp.path().join(".config").join("opencode");
         fs::create_dir_all(&dir).unwrap();
@@ -569,6 +611,7 @@ mod tests {
         fs::write(dir.join("opencode.json"), existing.to_string()).unwrap();
 
         let _guard = HomeGuard::new(tmp.path());
+        let _bin = BinGuard::new("/test/luft");
         let result = McpSetup::configure_for_agents(&[AgentType::Opencode]);
         assert_eq!(result[0].1, McpConfigResult::Configured);
 
@@ -577,7 +620,7 @@ mod tests {
                 .unwrap();
         assert_eq!(
             config["mcp"]["luft"]["command"],
-            json!(["custom-luft", "--backend", "codex"])
+            json!(["/test/luft", "mcp", "serve"])
         );
     }
 
@@ -634,8 +677,9 @@ command = "docs-server"
 
     #[test]
     #[serial]
-    fn configure_codex_preserves_existing_luft() {
+    fn configure_codex_overwrites_stale_luft() {
         let tmp = TempDir::new().unwrap();
+        let _bin = BinGuard::new("/test/luft");
         let dir = tmp.path().join(".codex");
         fs::create_dir_all(&dir).unwrap();
 
@@ -651,8 +695,9 @@ args = ["custom-args"]
         assert_eq!(result[0].1, McpConfigResult::Configured);
 
         let content = std::fs::read_to_string(dir.join("config.toml")).unwrap();
-        assert!(content.contains("command = \"custom-luft\""));
-        assert!(!content.contains("args = [\"mcp\", \"serve\"]"));
+        assert!(!content.contains("custom-luft"));
+        assert!(content.contains("command = '/test/luft'"));
+        assert!(content.contains("args = [\"mcp\", \"serve\"]"));
     }
 
     // ── configure_for_agents ───────────────────────────────
@@ -724,10 +769,29 @@ args = ["custom-args"]
         assert!(config["mcpServers"]["luft"].is_object());
         assert_eq!(config["mcpServers"]["luft"]["command"], "luft");
 
-        // 二次合并不覆盖
+        // 二次合并：值一致，不应产生变化
         let original = config.clone();
         McpSetup::merge_claude_mcp(&mut config, "luft").unwrap();
         assert_eq!(config, original);
+    }
+
+    // ── remove_toml_section ──────────────────────────────────
+
+    #[test]
+    fn remove_toml_section_removes_target() {
+        let input = "model = \"x\"\n\n[mcp_servers.luft]\ncommand = \"old\"\nargs = [\"a\"]\n\n[other]\nkey = 1\n";
+        let out = remove_toml_section(input, "mcp_servers.luft");
+        assert!(!out.contains("[mcp_servers.luft]"));
+        assert!(!out.contains("command = \"old\""));
+        assert!(out.contains("model = \"x\""));
+        assert!(out.contains("[other]"));
+    }
+
+    #[test]
+    fn remove_toml_section_no_match() {
+        let input = "model = \"x\"\n";
+        let out = remove_toml_section(input, "mcp_servers.luft");
+        assert!(out.contains("model = \"x\""));
     }
 
     // ── McpConfigResult ────────────────────────────────────

@@ -49,7 +49,7 @@ type AcpTransport =
     ByteStreams<Compat<tokio::process::ChildStdin>, Compat<tokio::process::ChildStdout>>;
 
 use agent_client_protocol::schema::{
-    ContentBlock, InitializeRequest, McpServer, McpServerStdio, NewSessionRequest,
+    ContentBlock, Implementation, InitializeRequest, McpServer, McpServerStdio, NewSessionRequest,
     NewSessionResponse, PromptRequest, ProtocolVersion, RequestPermissionOutcome,
     RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome,
     SessionConfigKind, SessionConfigOptionCategory, SessionConfigSelectOptions, SessionId,
@@ -692,7 +692,12 @@ async fn run_handshake_and_prompt(
     tracing::debug!("ACP handshake: initialize");
     let init = ctx
         .conn
-        .send_request(InitializeRequest::new(ProtocolVersion::V1))
+        .send_request(
+            InitializeRequest::new(ProtocolVersion::V1).client_info(
+                Implementation::new("luft", env!("CARGO_PKG_VERSION"))
+                    .title("Luft"),
+            ),
+        )
         .block_task()
         .await?;
 
@@ -712,6 +717,11 @@ async fn run_handshake_and_prompt(
                 name: info.name.clone(),
                 version: info.version.clone(),
                 title: info.title.clone(),
+                client: luft_core::contract::ClientIdentity {
+                    name: "luft".to_string(),
+                    version: env!("CARGO_PKG_VERSION").to_string(),
+                    title: Some("Luft".to_string()),
+                },
             });
         }
         None => {

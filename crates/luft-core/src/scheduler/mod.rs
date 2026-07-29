@@ -679,6 +679,11 @@ mod tests {
             name: "beta".to_string(),
             version: "0".to_string(),
             title: None,
+            client: crate::contract::ClientIdentity {
+                name: "luft".to_string(),
+                version: "test".to_string(),
+                title: None,
+            },
         });
 
         // Omitted backend -> routes to current_backend ("beta"), not the
@@ -708,6 +713,11 @@ mod tests {
             name: "gone".to_string(),
             version: "0".to_string(),
             title: None,
+            client: crate::contract::ClientIdentity {
+                name: "luft".to_string(),
+                version: "test".to_string(),
+                title: None,
+            },
         });
         let r = sched.run_agent(run_id, mk_task("t"), None).await.unwrap();
         assert_eq!(r.output, serde_json::Value::String("alpha".to_string()));

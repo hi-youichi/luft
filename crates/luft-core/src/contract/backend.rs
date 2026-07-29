@@ -283,6 +283,18 @@ pub struct CurrentBackend {
     pub version: String,
     /// Optional human-readable title.
     pub title: Option<String>,
+    /// Client identity sent by Luft during the ACP `initialize` handshake.
+    pub client: ClientIdentity,
+}
+
+/// Luft's own identity as sent in the `client_info` field of the ACP
+/// `InitializeRequest`. Stored so downstream code can log or surface
+/// which Luft version initiated the session.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientIdentity {
+    pub name: String,
+    pub version: String,
+    pub title: Option<String>,
 }
 
 static CURRENT_BACKEND: std::sync::RwLock<Option<CurrentBackend>> =
