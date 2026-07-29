@@ -1,9 +1,10 @@
-//! Daemon auto-start: spawn a detached daemon child process when none is running.
+//! Daemon auto-start: spawn a daemon child process when none is running.
 
 use std::time::Duration;
 
 use anyhow::{bail, Result};
 use tokio::net::TcpStream;
+use tracing::{debug, warn};
 
 use crate::process;
 
@@ -16,14 +17,16 @@ pub const DEFAULT_PORT: u16 = 7878;
 pub async fn discover_or_autostart() -> Result<String> {
     if let Some(addr) = process::discover()? {
         if try_connect(&addr).await.is_ok() {
+            debug!(%addr, "discovered running daemon");
             return Ok(addr);
         }
+        warn!("stale daemon PID file, removing");
         process::remove();
     }
     autostart().await
 }
 
-/// Spawn `luft daemon` as a detached child, then poll until it's reachable.
+/// Spawn `luft daemon` as a child, then poll until it's reachable.
 async fn autostart() -> Result<String> {
     let port = std::env::var("LUFT_DAEMON_PORT")
         .ok()
@@ -32,8 +35,13 @@ async fn autostart() -> Result<String> {
     let addr = format!("127.0.0.1:{port}");
 
     let exe = std::env::current_exe()?;
+    debug!(exe = %exe.display(), port, "auto-starting daemon");
+
     let mut cmd = std::process::Command::new(&exe);
-    cmd.arg("daemon").arg("--port").arg(port.to_string());
+    cmd.arg("daemon")
+        .arg("start")
+        .arg("--port")
+        .arg(port.to_string());
 
     #[cfg(unix)]
     {
@@ -49,8 +57,7 @@ async fn autostart() -> Result<String> {
     {
         use std::os::windows::process::CommandExt;
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-        const DETACHED_PROCESS: u32 = 0x0000_0008;
-        cmd.creation_flags(CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS);
+        cmd.creation_flags(CREATE_NEW_PROCESS_GROUP);
     }
 
     cmd.stdin(std::process::Stdio::null())
@@ -59,16 +66,24 @@ async fn autostart() -> Result<String> {
 
     cmd.spawn()?;
 
-    // Poll WS connect with backoff
-    let mut delay = 10u64;
-    for _ in 0..20 {
+    // Poll with backoff: total ~10s
+    let mut delay = 50u64;
+    for i in 0..40 {
         tokio::time::sleep(Duration::from_millis(delay)).await;
-        if try_connect(&addr).await.is_ok() {
-            return Ok(addr);
+        match try_connect(&addr).await {
+            Ok(()) => {
+                debug!(%addr, attempts = i, "daemon is reachable");
+                return Ok(addr);
+            }
+            Err(_) if i < 39 => {
+                delay = (delay + 50).min(500);
+            }
+            Err(e) => {
+                warn!(error = %e, "daemon connect failed on final attempt");
+            }
         }
-        delay = (delay * 2).min(500);
     }
-    bail!("daemon failed to start within 5s")
+    bail!("daemon failed to start within 10s")
 }
 
 /// Quick TCP liveness check.
