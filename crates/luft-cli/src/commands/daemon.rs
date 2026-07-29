@@ -12,7 +12,7 @@ pub enum DaemonSubcommand {
         /// Port to listen on.
         #[arg(long, default_value_t = luft_daemon::autostart::DEFAULT_PORT)]
         port: u16,
-        /// Backend id (auto-detected if omitted).
+        /// Override the default backend (agents without explicit `backend` use this).
         #[arg(long)]
         backend: Option<String>,
     },
@@ -30,13 +30,30 @@ pub async fn run(cmd: DaemonSubcommand) -> Result<()> {
     }
 }
 
-async fn start(port: u16, backend: Option<String>) -> Result<()> {
-    let backend_id = match &backend {
-        Some(b) => b.as_str(),
-        None => backend::detect_backend(),
-    };
-    let backend = backend::create_backend(backend_id, false, None)?;
-    let luft = luft::Luft::builder().backend_arc(backend).build()?;
+async fn start(port: u16, default_backend: Option<String>) -> Result<()> {
+    // Auto-detect all available backends and register them.
+    let mut ids = backend::detect_available_backends();
+    if ids.is_empty() {
+        ids.push("mock");
+    }
+    let mut reg = luft_core::scheduler::BackendRegistry::new();
+    for id in &ids {
+        match backend::create_backend(id, false, None) {
+            Ok(b) => {
+                println!("  registered backend: {id}");
+                reg = reg.with(b);
+            }
+            Err(e) => eprintln!("  failed to create backend '{id}': {e}"),
+        }
+    }
+    // Set explicit default if requested
+    if let Some(ref id) = default_backend {
+        if let Ok(b) = backend::create_backend(id, false, None) {
+            reg = reg.with_default(b);
+        }
+    }
+    println!("Daemon backends: {}", ids.join(", "));
+    let luft = luft::Luft::builder().registry(reg).build()?;
 
     let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{port}")).await?;
     luft_daemon::serve(luft, listener).await
