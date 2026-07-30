@@ -204,7 +204,7 @@ impl McpSetup {
         let luft_entry = json!({
             "type": "local",
             "command": [luft_cmd, "mcp", "serve"]
-        });
+       });
 
         if let Some(obj) = config.as_object_mut() {
             if !obj.contains_key("mcp") {

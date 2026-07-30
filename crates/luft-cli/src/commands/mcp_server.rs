@@ -40,8 +40,8 @@ pub struct McpServeArgs {
 ///
 /// If a daemon is already running, connects to it. If not, auto-starts one.
 /// Either way, stdin/stdout JSON-RPC is forwarded to the daemon's MCP WS endpoint.
-pub async fn serve(_args: McpServeArgs) -> Result<()> {
-    let addr = luft_daemon::discover_or_autostart().await?;
+pub async fn serve(args: McpServeArgs) -> Result<()> {
+    let addr = luft_daemon::discover_or_autostart(args.backend).await?;
     luft_mcp::proxy::run_proxy(&addr).await?;
     Ok(())
 }
