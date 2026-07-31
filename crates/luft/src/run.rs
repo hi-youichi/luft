@@ -86,7 +86,6 @@ pub async fn resolve_script_with_meta(
     Ok(ResolvedScript { script, meta })
 }
 
-
 /// A fully-resolved run: everything needed to prepare execution, regardless of
 /// how it was requested.
 pub struct RunSpec {
@@ -174,14 +173,10 @@ pub fn check_resumable(run_dir_name: &str, base_dir: &Path) -> ResumeCheck {
     let checkpoint_path = run_dir.join("checkpoint.json");
     if let Ok(content) = std::fs::read_to_string(&checkpoint_path) {
         if let Ok(value) = serde_json::from_str::<serde_json::Value>(&content) {
-            if let Some(status) = value
-                .get("status")
-                .and_then(|s| serde_json::from_value::<luft_core::state::CheckpointStatus>(s.clone()).ok())
-            {
-                if matches!(
-                    status,
-                    luft_core::state::CheckpointStatus::Completed
-                ) {
+            if let Some(status) = value.get("status").and_then(|s| {
+                serde_json::from_value::<luft_core::state::CheckpointStatus>(s.clone()).ok()
+            }) {
+                if matches!(status, luft_core::state::CheckpointStatus::Completed) {
                     return ResumeCheck::NotResumable(status);
                 }
             }
@@ -199,10 +194,7 @@ pub fn resolve_resume(run_dir_name: &str, base_dir: &Path) -> Result<RunSpec> {
         .map_err(|_| anyhow::anyhow!("run {} not found", run_dir_name))?;
     let checkpoint: RunCheckpoint = serde_json::from_str(&content)?;
     if matches!(checkpoint.status, CheckpointStatus::Completed) {
-        anyhow::bail!(
-            "run {} is not resumable (status: completed)",
-            run_dir_name,
-        );
+        anyhow::bail!("run {} is not resumable (status: completed)", run_dir_name,);
     }
     let script = std::fs::read_to_string(run_dir.join("workflow.lua")).map_err(|_| {
         anyhow::anyhow!(
@@ -380,7 +372,7 @@ pub async fn prepare(
         registry,
         None,
     );
-    scheduler.init_run_with(spec.run_id, run_ctx.events.clone());
+    scheduler.init_run_with_cancel(spec.run_id, run_ctx.events.clone(), run_ctx.cancel.clone());
 
     // Forward the scheduler event stream into BOTH:
     //   1. Journal (checkpoint.json + events.jsonl) — for resume
@@ -439,7 +431,28 @@ pub async fn execute(
     runtime: Runtime,
     script: String,
 ) -> Result<std::result::Result<serde_json::Value, ScriptError>> {
+    execute_with_cancel_checkpoint(run_ctx, runtime, script, None).await
+}
+
+/// Execute a Lua script while also honoring a cancellation marker written by
+/// another process. The in-memory token is the fast path for in-process runs;
+/// the checkpoint path preserves the daemon/MCP cross-process contract.
+pub async fn execute_with_cancel_checkpoint(
+    run_ctx: &RunContext,
+    runtime: Runtime,
+    script: String,
+    checkpoint_path: Option<&Path>,
+) -> Result<std::result::Result<serde_json::Value, ScriptError>> {
     let run_id = run_ctx.run_id;
+    let cancelled = || {
+        run_ctx.cancel.is_cancelled()
+            || checkpoint_path.is_some_and(|path| {
+                std::fs::read_to_string(path)
+                    .ok()
+                    .and_then(|content| serde_json::from_str::<RunCheckpoint>(&content).ok())
+                    .is_some_and(|checkpoint| checkpoint.status == CheckpointStatus::Cancelled)
+            })
+    };
     tracing::debug!(%run_id, "execute: spawning Lua script on blocking thread");
     // mlua is not Send-safe to drive from an async worker thread, and the SDK
     // primitives call Handle::block_on internally — both require a blocking
@@ -453,7 +466,11 @@ pub async fn execute(
             tracing::error!(%run_id, error = %e, "execution task panicked");
             let _ = run_ctx.events.send(AgentEvent::RunDone {
                 run_id,
-                status: RunStatus::Failed,
+                status: if cancelled() {
+                    RunStatus::Cancelled
+                } else {
+                    RunStatus::Failed
+                },
                 total_tokens: TokenUsage::default(),
                 report: serde_json::Value::Null,
                 ts: chrono::Utc::now(),
@@ -462,7 +479,9 @@ pub async fn execute(
         }
     };
 
-    let status = if result.is_ok() {
+    let status = if cancelled() {
+        RunStatus::Cancelled
+    } else if result.is_ok() {
         RunStatus::Completed
     } else {
         RunStatus::Failed
@@ -1299,6 +1318,51 @@ mod tests {
         match result {
             Err(ScriptError::Syntax(_)) => {} // expected
             _ => panic!("expected Syntax error, got {:?}", result),
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn execute_script_error_after_cancel_emits_cancelled() {
+        let run_id = RunId::now_v7();
+        let (tx, mut rx) = tokio::sync::broadcast::channel(256);
+        let run_ctx = RunContext {
+            run_id,
+            cancel: CancellationToken::new(),
+            events: tx,
+        };
+
+        let backend = make_prepare_backend();
+        let registry = BackendRegistry::new().with(backend);
+        let scheduler = Scheduler::new(SchedulerConfig::default(), registry, None);
+        scheduler.init_run_with_cancel(
+            run_id,
+            run_ctx.events.clone(),
+            run_ctx.cancel.clone(),
+        );
+
+        let runtime = Runtime::new(
+            scheduler,
+            run_ctx.clone(),
+            serde_json::json!({}),
+            ExecLimits::default(),
+            None,
+            tokio::runtime::Handle::current(),
+        )
+        .unwrap();
+
+        // A cancellation request must win over the script-error mapping. This
+        // is the same ordering produced when an agent observes the shared
+        // token and returns a cancellation error from the blocking runtime.
+        run_ctx.cancel.cancel();
+        let result = execute(&run_ctx, runtime, "this is not valid lua @@".into())
+            .await
+            .unwrap();
+        assert!(result.is_err());
+
+        let event = rx.recv().await.unwrap();
+        match event {
+            AgentEvent::RunDone { status, .. } => assert_eq!(status, RunStatus::Cancelled),
+            other => panic!("expected RunDone, got {other:?}"),
         }
     }
 

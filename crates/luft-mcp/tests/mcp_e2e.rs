@@ -5,7 +5,8 @@
 use luft_core::{MockBackend, MockBehavior, TokenUsage};
 use luft_mcp::LuftMcpServer;
 use luft_service::request::{
-    ExecuteWorkflowRequest, GetRunEventsRequest, GetRunStatusRequest, ListRunsRequest,
+    CancelRunRequest, ExecuteWorkflowRequest, GetRunEventsRequest, GetRunStatusRequest,
+    ListRunsRequest,
 };
 use luft_service::WorkflowService;
 use std::time::Duration;
@@ -86,6 +87,106 @@ async fn e2e_single_agent_workflow() {
         })
         .unwrap();
     assert!(status.completed_agents > 0);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn e2e_execute_cancel_status_and_run_done_cancelled() {
+    let server = make_server(vec![MockBehavior::Hang]);
+    let script = r#"
+        meta = { reasoning = "cancellation", phases = { { label = "work" } } }
+        function main()
+            phase("work", 1)
+            local r = agent({ prompt = "hang", model = "mock" })
+            report(r)
+        end
+    "#;
+
+    let (exec, handle) = server
+        .service
+        .start_workflow(ExecuteWorkflowRequest {
+            script: Some(script.into()),
+            path: None,
+            resume_from_id: None,
+            args: None,
+            concurrency: Some(1),
+            backend: None,
+        })
+        .await
+        .unwrap();
+
+    let run_id = exec.run_id;
+    tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            if server
+                .service
+                .get_run_status(GetRunStatusRequest {
+                    run_id: run_id.clone(),
+                })
+                .is_ok_and(|s| s.status == "running")
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .expect("run should become observable");
+
+    let cancel = server
+        .service
+        .cancel_run(CancelRunRequest {
+            run_id: run_id.clone(),
+        })
+        .unwrap();
+    assert_eq!(cancel.result, "cancelling");
+
+    tokio::time::timeout(Duration::from_secs(5), handle.join())
+        .await
+        .expect("cancelled run should join")
+        .expect("run task should not panic");
+
+    let status = tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            let status = server
+                .service
+                .get_run_status(GetRunStatusRequest {
+                    run_id: run_id.clone(),
+                })
+                .unwrap();
+            if status.status == "cancelled" {
+                break status;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .expect("cancelled status should be persisted");
+    assert_eq!(status.status, "cancelled");
+
+    let run_done = tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            let events = server
+                .service
+                .get_run_events(GetRunEventsRequest {
+                    run_id: run_id.clone(),
+                    since_event_id: None,
+                    offset: None,
+                    events_limit: None,
+                    types: Some(vec!["run_done".into()]),
+                    agent_id: None,
+                })
+                .unwrap();
+            if events.events.iter().any(|event| {
+                event.get("type").and_then(|t| t.as_str()) == Some("run_done")
+                    && event.get("status").and_then(|s| s.as_str()) == Some("cancelled")
+            }) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await;
+    assert!(run_done.is_ok(), "cancelled RunDone should be persisted");
 }
 
 // ── Test: parallel agents workflow ───────────────────────────────────
@@ -301,7 +402,10 @@ async fn e2e_nonexistent_backend_error_lists_available() {
     let err = result.err().expect("should be an error");
     let msg = err.to_string();
     assert!(msg.contains("nonexistent"), "msg: {msg}");
-    assert!(msg.contains("mock"), "should list available backends, msg: {msg}");
+    assert!(
+        msg.contains("mock"),
+        "should list available backends, msg: {msg}"
+    );
 }
 
 // ── Test: no backend field falls back to daemon default ───────────────

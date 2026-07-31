@@ -99,11 +99,22 @@ impl Scheduler {
     /// scheduler (`AgentStarted`/`AgentDone`, plus the [`RunContext`] handed to
     /// backends) and the runtime SDK (`phase`/`log`/`pipeline`/`RunDone`).
     pub fn init_run_with(&self, run_id: RunId, events: EventSender) {
+        self.init_run_with_cancel(run_id, events, CancellationToken::new());
+    }
+
+    /// Initialise per-run state with a caller-owned cancellation token.
+    /// The runtime and scheduler then observe the same cancellation signal.
+    pub fn init_run_with_cancel(
+        &self,
+        run_id: RunId,
+        events: EventSender,
+        run_cancel: CancellationToken,
+    ) {
         self.runs.insert(
             run_id,
             RunState {
                 quota_used: Arc::new(AtomicU32::new(0)),
-                run_cancel: CancellationToken::new(),
+                run_cancel,
                 events,
                 agent_cancels: DashMap::new(),
             },

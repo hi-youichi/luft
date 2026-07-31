@@ -1,17 +1,16 @@
+use crate::run::{assign_dir_name, prepare, resolve_fresh, resolve_resume, RunSpec, ScriptSource};
 use luft_core::contract::backend::AgentBackend;
 use luft_core::contract::event::AgentEvent;
 use luft_core::contract::ids::RunId;
+use luft_core::query::{ReportStatus, StatusOutput};
 use luft_core::scheduler::BackendRegistry;
 use luft_planner::PlannerConfig;
 use luft_runtime::{ExecLimits, ScriptError};
-use luft_core::query::{ReportStatus, StatusOutput};
-use crate::run::{
-    assign_dir_name, prepare, resolve_fresh, resolve_resume, RunSpec, ScriptSource,
-};
+use std::collections::HashMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 
@@ -141,6 +140,7 @@ impl LuftBuilder {
             concurrency: self.concurrency,
             planner_config: self.planner_config,
             exec_limits: self.exec_limits,
+            active_runs: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 }
@@ -158,6 +158,8 @@ pub struct Luft {
     planner_config: PlannerConfig,
     #[allow(dead_code)]
     exec_limits: ExecLimits,
+    /// In-process cancellation tokens, shared by scoped `Luft` clones.
+    active_runs: Arc<Mutex<HashMap<String, CancellationToken>>>,
 }
 
 impl Luft {
@@ -201,21 +203,42 @@ impl Luft {
         let registry = self.registry.clone();
         let base_dir = self.base_dir.clone();
         let concurrency = self.concurrency;
+        let active_runs = Arc::clone(&self.active_runs);
+        let registry_run_dir = run_dir_name.clone();
+        active_runs
+            .lock()
+            .expect("active run registry poisoned")
+            .insert(run_dir_name.clone(), cancel.clone());
 
         let join = tokio::spawn(async move {
-            let prepared = prepare(&spec, registry, &base_dir, &run_ctx, concurrency)
+            let result = async {
+                let prepared = prepare(&spec, registry, &base_dir, &run_ctx, concurrency)
+                    .await
+                    .map_err(LuftError::Other)?;
+                let runtime = prepared.runtime;
+                let checkpoint_path =
+                    base_dir.join(&spec.run_dir_name).join("checkpoint.json");
+                crate::run::execute_with_cancel_checkpoint(
+                    &run_ctx,
+                    runtime,
+                    script,
+                    Some(&checkpoint_path),
+                )
                 .await
-                .map_err(LuftError::Other)?;
-            let runtime = prepared.runtime;
-            let result = crate::run::execute(&run_ctx, runtime, script)
-                .await
-                .map_err(LuftError::Other)?;
-            Ok(result)
+                .map_err(LuftError::Other)
+            }
+            .await;
+            active_runs
+                .lock()
+                .expect("active run registry poisoned")
+                .remove(&registry_run_dir);
+            result
         });
 
         Ok(RunHandle {
             run_id,
             run_dir_name,
+            base_dir: self.base_dir.clone(),
             join,
             cancel,
             events: tx,
@@ -320,6 +343,15 @@ impl Luft {
 
     /// Cancel an active run by signalling its cancellation token.
     pub fn cancel(&self, run_dir: &str) -> Result<(), LuftError> {
+        if let Some(token) = self
+            .active_runs
+            .lock()
+            .expect("active run registry poisoned")
+            .get(run_dir)
+            .cloned()
+        {
+            token.cancel();
+        }
         luft_core::query::cancel_run(run_dir, &self.base_dir).map_err(LuftError::Other)?;
         Ok(())
     }
@@ -339,6 +371,7 @@ impl Luft {
             concurrency: Some(n),
             planner_config: self.planner_config.clone(),
             exec_limits: self.exec_limits.clone(),
+            active_runs: Arc::clone(&self.active_runs),
         }
     }
 
@@ -353,6 +386,7 @@ impl Luft {
             concurrency: self.concurrency,
             planner_config: self.planner_config.clone(),
             exec_limits: self.exec_limits.clone(),
+            active_runs: Arc::clone(&self.active_runs),
         })
     }
 
@@ -384,6 +418,7 @@ impl Luft {
 pub struct RunHandle {
     run_id: RunId,
     run_dir_name: String,
+    base_dir: PathBuf,
     join: tokio::task::JoinHandle<Result<Result<serde_json::Value, ScriptError>, LuftError>>,
     cancel: CancellationToken,
     events: broadcast::Sender<AgentEvent>,
@@ -413,6 +448,10 @@ impl RunHandle {
     /// [`BackendError::Cancelled`]: luft_core::contract::backend::BackendError::Cancelled
     pub fn cancel(&self) {
         self.cancel.cancel();
+        // Persist the terminal marker immediately as well as signalling the
+        // in-process token. This makes status() deterministic after join and
+        // supports observers that only have the run directory.
+        let _ = luft_core::query::cancel_run(&self.run_dir_name, &self.base_dir);
     }
 
     /// Await run completion and return the final [`RunOutcome`].
@@ -1042,5 +1081,3 @@ mod tests {
         );
     }
 }
-
-

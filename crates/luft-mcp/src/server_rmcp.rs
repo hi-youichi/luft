@@ -9,7 +9,7 @@ use luft_service::request::{
     CancelRunRequest, ExecuteWorkflowRequest, GetRunEventsRequest, GetRunStatusRequest,
     ListRunsRequest,
 };
-use luft_service::{WorkflowServiceImpl, WorkflowService};
+use luft_service::{WorkflowService, WorkflowServiceImpl};
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::*,
@@ -112,15 +112,22 @@ impl LuftMcpServer {
         Parameters(mut req): Parameters<ExecuteWorkflowRequest>,
     ) -> Result<String, String> {
         if req.backend.is_none() {
-            if let Some(ref name) = self.client_name.get() {
+            if let Some(name) = self.client_name.get() {
                 req.backend = infer_backend_from_client_name(name);
             }
         }
-        let (resp, _handle) = self
+        let (resp, handle) = self
             .service
             .start_workflow(req)
             .await
             .map_err(|e| e.to_string())?;
+        // Keep ownership of the join handle in the daemon task. Dropping the
+        // MCP call's handle detaches the run before its terminal outcome is
+        // observed, while cancellation still needs to remain cooperative for
+        // spawn_blocking-based execution.
+        tokio::spawn(async move {
+            let _ = handle.join().await;
+        });
         serde_json::to_string(&resp).map_err(|e| e.to_string())
     }
 
@@ -244,9 +251,7 @@ impl ServerHandler for LuftMcpServer {
                     uri: "workflow://schema".into(),
                     name: "Workflow DSL Reference".into(),
                     title: None,
-                    description: Some(
-                        "Complete Lua DSL syntax for writing Luft workflows".into(),
-                    ),
+                    description: Some("Complete Lua DSL syntax for writing Luft workflows".into()),
                     mime_type: Some("text/markdown".into()),
                     size: None,
                     icons: None,
@@ -294,14 +299,11 @@ impl ServerHandler for LuftMcpServer {
     ) -> Result<ReadResourceResult, McpError> {
         let uri = &request.uri;
         let parsed = crate::resources::WorkflowUri::parse(uri).ok_or_else(|| {
-            McpError::resource_not_found(
-                "unknown_uri",
-                Some(serde_json::json!({ "uri": uri })),
-            )
+            McpError::resource_not_found("unknown_uri", Some(serde_json::json!({ "uri": uri })))
         })?;
 
-        let content =
-            crate::resources::read_resource(&parsed, self.service.search_dirs()).map_err(|e| {
+        let content = crate::resources::read_resource(&parsed, self.service.search_dirs())
+            .map_err(|e| {
                 McpError::internal_error(
                     "read_failed",
                     Some(serde_json::json!({ "error": e.to_string() })),
@@ -385,10 +387,7 @@ mod tests {
             let server = make_server();
             simulate_handshake(&server, name);
             assert_eq!(server.client_name(), Some(name));
-            assert!(
-                !server.is_codex(),
-                "{name:?} must not be detected as codex"
-            );
+            assert!(!server.is_codex(), "{name:?} must not be detected as codex");
         }
     }
 
@@ -410,13 +409,25 @@ mod tests {
         assert_eq!(server.client_name(), Some("codex"));
 
         let server2 = server.with_fresh_client_name();
-        assert_eq!(server2.client_name(), None, "fresh clone should have no client_name");
-        assert_eq!(server.client_name(), Some("codex"), "original should be unchanged");
+        assert_eq!(
+            server2.client_name(),
+            None,
+            "fresh clone should have no client_name"
+        );
+        assert_eq!(
+            server.client_name(),
+            Some("codex"),
+            "original should be unchanged"
+        );
 
         // The fresh clone can capture a different identity.
         simulate_handshake(&server2, "opencode");
         assert_eq!(server2.client_name(), Some("opencode"));
-        assert_eq!(server.client_name(), Some("codex"), "original must not be affected");
+        assert_eq!(
+            server.client_name(),
+            Some("codex"),
+            "original must not be affected"
+        );
     }
 
     #[test]
@@ -433,18 +444,42 @@ mod tests {
 
     #[test]
     fn infer_backend_codex() {
-        assert_eq!(infer_backend_from_client_name("codex"), Some("codex".into()));
-        assert_eq!(infer_backend_from_client_name("CODEX"), Some("codex".into()));
-        assert_eq!(infer_backend_from_client_name("Codex"), Some("codex".into()));
-        assert_eq!(infer_backend_from_client_name("codex-mcp-client"), Some("codex".into()));
-        assert_eq!(infer_backend_from_client_name("codex_cli"), Some("codex".into()));
+        assert_eq!(
+            infer_backend_from_client_name("codex"),
+            Some("codex".into())
+        );
+        assert_eq!(
+            infer_backend_from_client_name("CODEX"),
+            Some("codex".into())
+        );
+        assert_eq!(
+            infer_backend_from_client_name("Codex"),
+            Some("codex".into())
+        );
+        assert_eq!(
+            infer_backend_from_client_name("codex-mcp-client"),
+            Some("codex".into())
+        );
+        assert_eq!(
+            infer_backend_from_client_name("codex_cli"),
+            Some("codex".into())
+        );
     }
 
     #[test]
     fn infer_backend_opencode() {
-        assert_eq!(infer_backend_from_client_name("opencode"), Some("opencode".into()));
-        assert_eq!(infer_backend_from_client_name("OpenCode"), Some("opencode".into()));
-        assert_eq!(infer_backend_from_client_name("opencode-acp"), Some("opencode".into()));
+        assert_eq!(
+            infer_backend_from_client_name("opencode"),
+            Some("opencode".into())
+        );
+        assert_eq!(
+            infer_backend_from_client_name("OpenCode"),
+            Some("opencode".into())
+        );
+        assert_eq!(
+            infer_backend_from_client_name("opencode-acp"),
+            Some("opencode".into())
+        );
     }
 
     #[test]

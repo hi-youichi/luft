@@ -94,7 +94,6 @@ pub struct AgentResultCache {
     pub role: Option<String>,
 }
 
-
 /// Persistence store for a single run.
 #[derive(Debug)]
 pub struct RunStore {
@@ -309,12 +308,32 @@ impl RunStore {
                     total_tokens,
                     ..
                 } => {
-                    checkpoint.status = match status {
-                        crate::contract::event::RunStatus::Completed => CheckpointStatus::Completed,
-                        crate::contract::event::RunStatus::Failed => CheckpointStatus::Failed,
-                        crate::contract::event::RunStatus::Cancelled => CheckpointStatus::Cancelled,
-                        crate::contract::event::RunStatus::Partial => CheckpointStatus::Running,
-                    };
+                    // Cancellation is monotonic: a late RunDone or other
+                    // event from the blocking executor must not resurrect a
+                    // run that was already cancelled through the disk/API path.
+                    let cancelled_on_disk =
+                        fs::read_to_string(self.run_dir.join("checkpoint.json"))
+                            .ok()
+                            .and_then(|content| {
+                                serde_json::from_str::<RunCheckpoint>(&content).ok()
+                            })
+                            .is_some_and(|disk_checkpoint| {
+                                disk_checkpoint.status == CheckpointStatus::Cancelled
+                            });
+                    if cancelled_on_disk {
+                        checkpoint.status = CheckpointStatus::Cancelled;
+                    } else if checkpoint.status != CheckpointStatus::Cancelled {
+                        checkpoint.status = match status {
+                            crate::contract::event::RunStatus::Completed => {
+                                CheckpointStatus::Completed
+                            }
+                            crate::contract::event::RunStatus::Failed => CheckpointStatus::Failed,
+                            crate::contract::event::RunStatus::Cancelled => {
+                                CheckpointStatus::Cancelled
+                            }
+                            crate::contract::event::RunStatus::Partial => CheckpointStatus::Running,
+                        };
+                    }
                     // Only overwrite if a real total was supplied; otherwise keep
                     // the figure accumulated from AgentDone events.
                     let t = total_tokens.total();
@@ -337,7 +356,20 @@ impl RunStore {
     fn write_checkpoint_to_disk(&self, checkpoint: &RunCheckpoint) -> Result<(), std::io::Error> {
         let checkpoint_path = self.run_dir.join("checkpoint.json");
         let temp_path = self.run_dir.join("checkpoint.json.tmp");
-        let content = serde_json::to_string_pretty(checkpoint)
+        // Cancellation may be requested by another process while this store
+        // is applying a late event. Preserve the terminal marker when merging
+        // such a write; otherwise a stale RunDone(Completed/Failed) can
+        // resurrect a cancelled run on disk.
+        let mut checkpoint_to_write = checkpoint.clone();
+        if let Ok(existing) = std::fs::read_to_string(&checkpoint_path) {
+            if serde_json::from_str::<RunCheckpoint>(&existing)
+                .ok()
+                .is_some_and(|cp| cp.status == CheckpointStatus::Cancelled)
+            {
+                checkpoint_to_write.status = CheckpointStatus::Cancelled;
+            }
+        }
+        let content = serde_json::to_string_pretty(&checkpoint_to_write)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         std::fs::write(&temp_path, &content)?;
         std::fs::rename(&temp_path, &checkpoint_path)?;
@@ -457,14 +489,12 @@ impl RunStore {
         if let Some(ref mut checkpoint) = *guard {
             checkpoint.status = CheckpointStatus::Cancelled;
             checkpoint.updated_at = current_timestamp();
+            let checkpoint = checkpoint.clone();
             drop(guard);
-            let guard = self.checkpoint.read().unwrap();
-            if let Some(ref c) = *guard {
-                let checkpoint_path = self.run_dir.join("checkpoint.json");
-                let content = serde_json::to_string_pretty(c)
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-                fs::write(&checkpoint_path, content)?;
-            }
+            // Use the same atomic write path as event updates. This keeps the
+            // cross-process cancellation marker durable even if the running
+            // process is concurrently flushing a late event.
+            self.write_checkpoint_to_disk(&checkpoint)?;
         }
         Ok(())
     }
@@ -949,11 +979,7 @@ mod tests {
             started_agent_ids: vec![],
         };
         let cp_path = dir.path().join("checkpoint.json");
-        std::fs::write(
-            &cp_path,
-            serde_json::to_string_pretty(&cp).unwrap(),
-        )
-        .unwrap();
+        std::fs::write(&cp_path, serde_json::to_string_pretty(&cp).unwrap()).unwrap();
 
         // Fresh RunStore — cache is None, exactly like a query-only process.
         let store = RunStore::new(dir.path()).unwrap();
@@ -962,7 +988,9 @@ mod tests {
         store.cancel().expect("cancel must succeed cross-process");
 
         // In-memory cache is now populated with the cancelled checkpoint.
-        let cached = store.get_checkpoint().expect("cache populated after cancel");
+        let cached = store
+            .get_checkpoint()
+            .expect("cache populated after cancel");
         assert_eq!(cached.status, CheckpointStatus::Cancelled);
 
         // Disk reflects the same terminal status — observable to any process.
@@ -1014,6 +1042,36 @@ mod tests {
             Some("hash-1")
         );
         assert_eq!(after.total_tokens, before.total_tokens);
+    }
+
+    #[test]
+    fn late_event_from_another_process_cannot_resurrect_cancelled_run() {
+        let dir = tempdir().unwrap();
+        let run_id = uuid::Uuid::now_v7();
+        let writer = RunStore::new(dir.path()).unwrap();
+        writer.init_run(run_id, "cross process race").unwrap();
+
+        // A second process/store cancels the run after the first store has
+        // loaded its running checkpoint into memory.
+        let canceller = RunStore::new(dir.path()).unwrap();
+        canceller.cancel().unwrap();
+
+        writer
+            .append_event(&AgentEvent::RunDone {
+                run_id,
+                status: crate::contract::event::RunStatus::Completed,
+                total_tokens: TokenUsage::default(),
+                report: serde_json::Value::Null,
+                ts: chrono::Utc::now(),
+            })
+            .unwrap();
+
+        let restored = RunStore::new(dir.path())
+            .unwrap()
+            .open_run(run_id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(restored.status, CheckpointStatus::Cancelled);
     }
 
     // ----- AgentDone -> AgentResultCache.status (F5) ---------------------
