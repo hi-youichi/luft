@@ -63,8 +63,10 @@ pub(super) fn register(lua: &Lua, cx: &SdkContext) -> mlua::Result<()> {
 
                 if let Some(ref j) = journal {
                     if let Some(c) = j.get_cached(&cache_key) {
-                        slots[idx] = Some(slot_from_cache(c));
-                        continue;
+                        if c.status == "ok" {
+                            slots[idx] = Some(slot_from_cache(c));
+                            continue;
+                        }
                     }
                 }
                 pending.push(Pending { idx, cache_key, agent_id: task.agent_id, task, backend });

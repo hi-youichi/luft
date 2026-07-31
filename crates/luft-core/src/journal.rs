@@ -179,7 +179,7 @@ impl JournalStore {
 
         if matches!(
             checkpoint.status,
-            crate::state::CheckpointStatus::Completed | crate::state::CheckpointStatus::Cancelled
+            crate::state::CheckpointStatus::Completed
         ) {
             return Err(JournalError::NotResumable {
                 status: format!("{:?}", checkpoint.status),
@@ -369,6 +369,13 @@ impl JournalStore {
     /// Mark the run as cancelled.
     pub fn cancel(&self) -> Result<(), JournalError> {
         self.inner.cancel()?;
+        Ok(())
+    }
+
+    /// Reset checkpoint status to `Running`. Used when resuming a
+    /// failed/cancelled run.
+    pub fn reset_status_to_running(&self) -> Result<(), JournalError> {
+        self.inner.reset_status_to_running()?;
         Ok(())
     }
 }

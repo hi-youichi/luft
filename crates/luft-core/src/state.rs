@@ -403,6 +403,34 @@ impl RunStore {
         )
     }
 
+    /// Reset checkpoint status to `Running`. Used when resuming a
+    /// failed/cancelled run — the terminal status is replaced so that
+    /// status queries reflect the active execution and a crash leaves a
+    /// resumable checkpoint.
+    pub fn reset_status_to_running(&self) -> Result<(), std::io::Error> {
+        let mut guard = self.checkpoint.write().unwrap();
+
+        if guard.is_none() {
+            let checkpoint_path = self.run_dir.join("checkpoint.json");
+            if !checkpoint_path.exists() {
+                return Ok(());
+            }
+            let content = fs::read_to_string(&checkpoint_path)?;
+            let cp: RunCheckpoint = serde_json::from_str(&content)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+            *guard = Some(cp);
+        }
+
+        if let Some(ref mut checkpoint) = *guard {
+            checkpoint.status = CheckpointStatus::Running;
+            checkpoint.updated_at = current_timestamp();
+            let cp_clone = checkpoint.clone();
+            drop(guard);
+            self.write_checkpoint_to_disk(&cp_clone)?;
+        }
+        Ok(())
+    }
+
     /// Mark run as cancelled.
     pub fn cancel(&self) -> Result<(), std::io::Error> {
         tracing::info!("cancelling run");

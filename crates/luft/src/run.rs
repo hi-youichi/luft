@@ -181,8 +181,6 @@ pub fn check_resumable(run_dir_name: &str, base_dir: &Path) -> ResumeCheck {
                 if matches!(
                     status,
                     luft_core::state::CheckpointStatus::Completed
-                        | luft_core::state::CheckpointStatus::Cancelled
-                        | luft_core::state::CheckpointStatus::Failed
                 ) {
                     return ResumeCheck::NotResumable(status);
                 }
@@ -200,14 +198,10 @@ pub fn resolve_resume(run_dir_name: &str, base_dir: &Path) -> Result<RunSpec> {
     let content = std::fs::read_to_string(run_dir.join("checkpoint.json"))
         .map_err(|_| anyhow::anyhow!("run {} not found", run_dir_name))?;
     let checkpoint: RunCheckpoint = serde_json::from_str(&content)?;
-    if matches!(
-        checkpoint.status,
-        CheckpointStatus::Completed | CheckpointStatus::Cancelled | CheckpointStatus::Failed
-    ) {
+    if matches!(checkpoint.status, CheckpointStatus::Completed) {
         anyhow::bail!(
-            "run {} is not resumable (status: {:?})",
+            "run {} is not resumable (status: completed)",
             run_dir_name,
-            checkpoint.status
         );
     }
     let script = std::fs::read_to_string(run_dir.join("workflow.lua")).map_err(|_| {
@@ -258,7 +252,7 @@ pub fn find_resumable_by_task(task: &str, base_dir: &Path) -> Result<Option<Prev
             Ok(c) => c,
             Err(_) => continue,
         };
-        if cp.task == task && matches!(cp.status, CheckpointStatus::Running) {
+        if cp.task == task && !matches!(cp.status, CheckpointStatus::Completed) {
             return Ok(Some(PreviousRun {
                 run_dir_name: dir.clone(),
                 checkpoint: cp,
@@ -329,6 +323,9 @@ pub async fn prepare(
         journal
             .open(spec.run_id)
             .map_err(|e| anyhow::anyhow!("failed to open journal for resume: {}", e))?;
+        journal
+            .reset_status_to_running()
+            .map_err(|e| anyhow::anyhow!("failed to reset checkpoint status for resume: {}", e))?;
     } else {
         std::fs::write(run_dir.join("workflow.lua"), &spec.script)?;
         match &spec.workflow_meta {
@@ -881,34 +878,6 @@ mod tests {
     }
 
     #[test]
-    fn resume_check_cancelled() {
-        let dir = tempfile::tempdir().unwrap();
-        let run_dir = dir.path().join("test_123");
-        std::fs::create_dir_all(&run_dir).unwrap();
-        write_checkpoint(&run_dir, CheckpointStatus::Cancelled);
-
-        let result = check_resumable("test_123", dir.path());
-        assert!(matches!(
-            result,
-            ResumeCheck::NotResumable(CheckpointStatus::Cancelled)
-        ));
-    }
-
-    #[test]
-    fn resume_check_failed() {
-        let dir = tempfile::tempdir().unwrap();
-        let run_dir = dir.path().join("test_123");
-        std::fs::create_dir_all(&run_dir).unwrap();
-        write_checkpoint(&run_dir, CheckpointStatus::Failed);
-
-        let result = check_resumable("test_123", dir.path());
-        assert!(matches!(
-            result,
-            ResumeCheck::NotResumable(CheckpointStatus::Failed)
-        ));
-    }
-
-    #[test]
     fn resume_check_invalid_json() {
         let dir = tempfile::tempdir().unwrap();
         let run_dir = dir.path().join("test_123");
@@ -971,11 +940,22 @@ mod tests {
     }
 
     #[test]
-    fn resume_check_running() {
+    fn resume_check_cancelled() {
         let dir = tempfile::tempdir().unwrap();
         let run_dir = dir.path().join("test_123");
         std::fs::create_dir_all(&run_dir).unwrap();
-        write_checkpoint(&run_dir, CheckpointStatus::Running);
+        write_checkpoint(&run_dir, CheckpointStatus::Cancelled);
+
+        let result = check_resumable("test_123", dir.path());
+        assert!(matches!(result, ResumeCheck::CanResume));
+    }
+
+    #[test]
+    fn resume_check_failed() {
+        let dir = tempfile::tempdir().unwrap();
+        let run_dir = dir.path().join("test_123");
+        std::fs::create_dir_all(&run_dir).unwrap();
+        write_checkpoint(&run_dir, CheckpointStatus::Failed);
 
         let result = check_resumable("test_123", dir.path());
         assert!(matches!(result, ResumeCheck::CanResume));
@@ -1067,35 +1047,31 @@ mod tests {
     }
 
     #[test]
-    fn resolve_resume_not_resumable_cancelled() {
+    fn resolve_resume_cancelled_succeeds() {
         let dir = tempfile::tempdir().unwrap();
         let run_dir = dir.path().join("my_run");
         std::fs::create_dir_all(&run_dir).unwrap();
-        make_checkpoint_json(&run_dir, RunId::now_v7(), "cancelled", "t");
+        let run_id = RunId::now_v7();
+        make_checkpoint_json(&run_dir, run_id, "cancelled", "t");
         write_workflow_lua(&run_dir, "x");
 
-        let err = format!("{}", resolve_resume("my_run", dir.path()).err().unwrap());
-        assert!(
-            err.contains("not resumable"),
-            "expected 'not resumable' error, got: {}",
-            err
-        );
+        let spec = resolve_resume("my_run", dir.path()).unwrap();
+        assert!(spec.resuming);
+        assert_eq!(spec.run_id, run_id);
     }
 
     #[test]
-    fn resolve_resume_not_resumable_failed() {
+    fn resolve_resume_failed_succeeds() {
         let dir = tempfile::tempdir().unwrap();
         let run_dir = dir.path().join("my_run");
         std::fs::create_dir_all(&run_dir).unwrap();
-        make_checkpoint_json(&run_dir, RunId::now_v7(), "failed", "t");
+        let run_id = RunId::now_v7();
+        make_checkpoint_json(&run_dir, run_id, "failed", "t");
         write_workflow_lua(&run_dir, "x");
 
-        let err = format!("{}", resolve_resume("my_run", dir.path()).err().unwrap());
-        assert!(
-            err.contains("not resumable"),
-            "expected 'not resumable' error, got: {}",
-            err
-        );
+        let spec = resolve_resume("my_run", dir.path()).unwrap();
+        assert!(spec.resuming);
+        assert_eq!(spec.run_id, run_id);
     }
 
     #[test]
@@ -1398,6 +1374,30 @@ mod tests {
         let result = find_resumable_by_task("scripts/clean.lua", dir.path()).unwrap();
         assert!(result.is_some());
         assert_eq!(result.unwrap().run_dir_name, "clean_200");
+    }
+
+    #[test]
+    fn find_resumable_by_task_includes_failed() {
+        let dir = tempfile::tempdir().unwrap();
+        let run_dir = dir.path().join("clean_100");
+        std::fs::create_dir_all(&run_dir).unwrap();
+        make_checkpoint_with_task(&run_dir, "scripts/clean.lua", "failed");
+
+        let result = find_resumable_by_task("scripts/clean.lua", dir.path()).unwrap();
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().run_dir_name, "clean_100");
+    }
+
+    #[test]
+    fn find_resumable_by_task_includes_cancelled() {
+        let dir = tempfile::tempdir().unwrap();
+        let run_dir = dir.path().join("clean_100");
+        std::fs::create_dir_all(&run_dir).unwrap();
+        make_checkpoint_with_task(&run_dir, "scripts/clean.lua", "cancelled");
+
+        let result = find_resumable_by_task("scripts/clean.lua", dir.path()).unwrap();
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().run_dir_name, "clean_100");
     }
 
     #[test]
