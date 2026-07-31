@@ -49,11 +49,12 @@ type AcpTransport =
     ByteStreams<Compat<tokio::process::ChildStdin>, Compat<tokio::process::ChildStdout>>;
 
 use agent_client_protocol::schema::{
-    ContentBlock, Implementation, InitializeRequest, McpServer, McpServerStdio, NewSessionRequest,
-    NewSessionResponse, PromptRequest, ProtocolVersion, RequestPermissionOutcome,
-    RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome,
-    SessionConfigKind, SessionConfigOptionCategory, SessionConfigSelectOptions, SessionId,
-    SessionNotification, SetSessionConfigOptionRequest, StopReason, TextContent,
+    AuthenticateRequest, ContentBlock, Implementation, InitializeRequest, McpServer,
+    McpServerStdio, NewSessionRequest, NewSessionResponse, PromptRequest, ProtocolVersion,
+    RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
+    SelectedPermissionOutcome, SessionConfigKind, SessionConfigOptionCategory,
+    SessionConfigSelectOptions, SessionId, SessionNotification, SetSessionConfigOptionRequest,
+    StopReason, TextContent,
 };
 use agent_client_protocol::{Agent, ByteStreams, Client, ConnectionTo, Responder};
 
@@ -292,7 +293,7 @@ impl AgentBackend for AcpAdapter {
 #[tracing::instrument(
     name = "backend",
     skip_all,
-    fields(run_id = %run_id, agent_id = %task.agent_id, backend = "opencode")
+    fields(run_id = %run_id, agent_id = %task.agent_id, backend = config.id)
 )]
 async fn run_acp_session(
     config: AcpConfig,
@@ -729,6 +730,12 @@ async fn run_handshake_and_prompt(
         }
     }
 
+    // If the agent advertised authentication methods, complete the
+    // `auth/authenticate` step before attempting `session/new`.
+    if !init.auth_methods.is_empty() {
+        authenticate(ctx.conn, &init.auth_methods).await?;
+    }
+
     tracing::debug!("ACP handshake: session/new");
     let ns = session_new(
         ctx.conn,
@@ -745,6 +752,38 @@ async fn run_handshake_and_prompt(
     tracing::debug!("ACP handshake: session/prompt");
     let pr = send_prompt(ctx.conn, ns.session_id, ctx.prompt.to_string()).await?;
     record_prompt_result(&pr, ctx.stop_holder, ctx.acc);
+    Ok(())
+}
+
+/// Complete the ACP `auth/authenticate` step.
+///
+/// Selects the first offered auth method (preferring `chat-gpt` for Codex
+/// subscription users). The agent (e.g. `codex-acp`) resolves credentials
+/// from its own config files — Luft does not handle tokens directly.
+async fn authenticate(
+    conn: &ConnectionTo<Agent>,
+    methods: &[agent_client_protocol::schema::AuthMethod],
+) -> Result<(), agent_client_protocol::Error> {
+    let preferred = ["chat-gpt", "api-key"];
+    let selected = preferred
+        .iter()
+        .find_map(|pref| {
+            methods
+                .iter()
+                .find(|m| m.id().0.as_ref().eq_ignore_ascii_case(pref))
+                .map(|m| m.id().clone())
+        })
+        .or_else(|| methods.first().map(|m| m.id().clone()));
+
+    let Some(method_id) = selected else {
+        tracing::warn!("agent advertised auth_methods but none were selectable");
+        return Ok(());
+    };
+
+    tracing::info!(method = %method_id.0, "ACP auth/authenticate");
+    let req = AuthenticateRequest::new(method_id);
+    let _resp = conn.send_request(req).block_task().await?;
+    tracing::info!("ACP auth complete");
     Ok(())
 }
 

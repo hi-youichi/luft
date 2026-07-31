@@ -341,6 +341,26 @@ impl Luft {
             exec_limits: self.exec_limits.clone(),
         }
     }
+
+    /// Return a new `Luft` whose registry default is switched to `id`.
+    /// The registry is shallow-cloned (Arc-backed), so this is cheap.
+    pub fn with_default_backend(&self, id: &str) -> Result<Luft, LuftError> {
+        let mut registry = self.registry.clone();
+        registry.set_default(id)?;
+        Ok(Luft {
+            registry,
+            base_dir: self.base_dir.clone(),
+            concurrency: self.concurrency,
+            planner_config: self.planner_config.clone(),
+            exec_limits: self.exec_limits.clone(),
+        })
+    }
+
+    /// Sorted list of all registered backend ids.
+    #[must_use]
+    pub fn available_backend_ids(&self) -> Vec<&'static str> {
+        self.registry.available_ids()
+    }
 }
 
 /// Async handle to a running orchestration.

@@ -135,12 +135,6 @@ impl Scheduler {
         let backend = match backend_id {
             Some(id) => self.registry.get(id)?,
             None => {
-                // Default routing: prefer the ACP-captured "current backend",
-                // resolved via its registry id. Falls back to the registry's
-                // designated default when no handshake has captured one yet
-                // (the first agent of a run, or a mock / non-ACP backend that
-                // never handshakes), or when the captured id is no longer
-                // registered.
                 let from_current = crate::contract::current_backend()
                     .and_then(|cb| self.registry.get(&cb.id).ok());
                 match from_current {

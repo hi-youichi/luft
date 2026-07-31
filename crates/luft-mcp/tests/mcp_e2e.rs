@@ -67,6 +67,7 @@ async fn e2e_single_agent_workflow() {
             resume_from_id: None,
             args: None,
             concurrency: Some(1),
+            backend: None,
         })
         .await
         .unwrap();
@@ -130,6 +131,7 @@ async fn e2e_parallel_workflow() {
             resume_from_id: None,
             args: None,
             concurrency: Some(4),
+            backend: None,
         })
         .await
         .unwrap();
@@ -173,6 +175,7 @@ async fn e2e_events_after_completion() {
             resume_from_id: None,
             args: None,
             concurrency: Some(1),
+            backend: None,
         })
         .await
         .unwrap();
@@ -217,6 +220,7 @@ async fn e2e_list_runs_after_completion() {
             resume_from_id: None,
             args: None,
             concurrency: Some(1),
+            backend: None,
         })
         .await
         .unwrap();
@@ -239,4 +243,117 @@ async fn e2e_list_runs_after_completion() {
         outcome.run_id,
         list.runs.iter().map(|r| &r.run_id).collect::<Vec<_>>()
     );
+}
+
+// ── Test: explicit backend override ───────────────────────────────────
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn e2e_explicit_backend_runs_successfully() {
+    let server = make_server(ok_behaviors(1));
+
+    let script = r#"
+        meta = { reasoning = "backend test", phases = {} }
+        function main()
+            local r = agent({ prompt = "hi", model = "mock" })
+            report({ ok = r.ok })
+        end
+    "#;
+
+    let (exec, handle) = server
+        .service
+        .start_workflow(ExecuteWorkflowRequest {
+            script: Some(script.into()),
+            path: None,
+            resume_from_id: None,
+            args: None,
+            concurrency: Some(1),
+            backend: Some("mock".into()),
+        })
+        .await
+        .unwrap();
+    assert_eq!(exec.status, "running");
+
+    let outcome = handle.join().await.unwrap();
+    let report = outcome.result.unwrap();
+    assert_eq!(report["ok"], true);
+}
+
+// ── Test: nonexistent backend returns error with available list ───────
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn e2e_nonexistent_backend_error_lists_available() {
+    let server = make_server(ok_behaviors(1));
+
+    let script = "meta = { reasoning = \"t\", phases = {} } function main() report({}) end";
+
+    let result = server
+        .service
+        .start_workflow(ExecuteWorkflowRequest {
+            script: Some(script.into()),
+            path: None,
+            resume_from_id: None,
+            args: None,
+            concurrency: None,
+            backend: Some("nonexistent".into()),
+        })
+        .await;
+
+    let err = result.err().expect("should be an error");
+    let msg = err.to_string();
+    assert!(msg.contains("nonexistent"), "msg: {msg}");
+    assert!(msg.contains("mock"), "should list available backends, msg: {msg}");
+}
+
+// ── Test: no backend field falls back to daemon default ───────────────
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn e2e_no_backend_uses_daemon_default() {
+    let server = make_server(ok_behaviors(1));
+
+    let script = r#"
+        meta = { reasoning = "default backend", phases = {} }
+        function main()
+            local r = agent({ prompt = "hi", model = "mock" })
+            report({ ok = r.ok })
+        end
+    "#;
+
+    let (_exec, handle) = server
+        .service
+        .start_workflow(ExecuteWorkflowRequest {
+            script: Some(script.into()),
+            path: None,
+            resume_from_id: None,
+            args: None,
+            concurrency: Some(1),
+            backend: None,
+        })
+        .await
+        .unwrap();
+    let outcome = handle.join().await.unwrap();
+    assert!(outcome.result.is_ok());
+}
+
+// ── Test: empty backend string is rejected ────────────────────────────
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn e2e_empty_backend_rejected() {
+    let server = make_server(ok_behaviors(1));
+
+    let script = "meta = { reasoning = \"t\", phases = {} } function main() report({}) end";
+
+    let result = server
+        .service
+        .start_workflow(ExecuteWorkflowRequest {
+            script: Some(script.into()),
+            path: None,
+            resume_from_id: None,
+            args: None,
+            concurrency: None,
+            backend: Some("   ".into()),
+        })
+        .await;
+
+    let err = result.err().expect("empty backend should be rejected");
+    assert!(err.to_string().contains("backend"), "msg: {err}");
 }

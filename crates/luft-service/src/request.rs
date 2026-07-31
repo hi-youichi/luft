@@ -15,6 +15,9 @@ pub struct ExecuteWorkflowRequest {
     pub resume_from_id: Option<String>,
     pub args: Option<Value>,
     pub concurrency: Option<u64>,
+    /// Override the daemon default backend for this run (e.g. "codex", "opencode").
+    /// Must be a registered backend id. Ignored when resuming.
+    pub backend: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -69,6 +72,14 @@ impl ExecuteWorkflowRequest {
                 return Err(ServiceError::InvalidParam(format!(
                     "'concurrency' must be between {MIN_CONCURRENCY} and {MAX_CONCURRENCY}, got {c}"
                 )));
+            }
+        }
+
+        if let Some(ref b) = self.backend {
+            if b.trim().is_empty() {
+                return Err(ServiceError::InvalidParam(
+                    "'backend' must be non-empty".into(),
+                ));
             }
         }
 

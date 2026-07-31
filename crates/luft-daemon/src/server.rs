@@ -39,7 +39,7 @@ pub async fn serve(luft: Luft, listener: TcpListener) -> Result<()> {
                         continue;
                     }
                 };
-                let server = (*mcp_server).clone();
+                let server = mcp_server.with_fresh_client_name();
                 tokio::spawn(async move {
                     if let Err(e) = handle_connection(stream, peer, server).await {
                         warn!(%peer, error = %e, "connection ended with error");

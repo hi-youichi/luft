@@ -312,6 +312,11 @@ pub async fn prepare(
     run_ctx: &RunContext,
     max_concurrency: Option<usize>,
 ) -> Result<PreparedRun> {
+    // Clear any stale ACP-captured backend from a previous run.
+    // Each run should resolve its backend from the scoped registry default,
+    // not from process-global state leaked by an earlier run's handshake.
+    luft_core::contract::clear_current_backend();
+
     let run_dir = base_dir.join(&spec.run_dir_name);
 
     // Journal: fresh runs init + persist the script (so they can be resumed);

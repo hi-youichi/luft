@@ -97,16 +97,33 @@ impl WorkflowService for WorkflowServiceImpl {
         req.validate()?;
 
         let concurrency = req.concurrency.map(|c| c as usize);
+        let resume_from_id = req.resume_from_id.as_deref().filter(|s| !s.is_empty());
+
+        let backend_scoped;
+        let after_backend: &Luft = match (&req.backend, resume_from_id.is_some()) {
+            (Some(b), false) => {
+                backend_scoped = self.luft.with_default_backend(b).map_err(|e| {
+                    let available = self.luft.available_backend_ids();
+                    ServiceError::InvalidParam(format!(
+                        "backend '{}' not registered: {}. Available: [{}]",
+                        b,
+                        e,
+                        available.join(", ")
+                    ))
+                })?;
+                &backend_scoped
+            }
+            _ => &self.luft,
+        };
+
         let scoped_luft;
         let luft: &Luft = match concurrency {
             Some(n) => {
-                scoped_luft = self.luft.with_concurrency(n);
+                scoped_luft = after_backend.with_concurrency(n);
                 &scoped_luft
             }
-            None => &self.luft,
+            None => after_backend,
         };
-
-        let resume_from_id = req.resume_from_id.as_deref().filter(|s| !s.is_empty());
 
         if let Some(id) = resume_from_id {
             let handle = luft
@@ -955,6 +972,7 @@ mod tests {
             resume_from_id: None,
             args: None,
             concurrency: None,
+            backend: None,
         };
         assert!(impl_.start_workflow(req).await.is_err());
     }
@@ -968,6 +986,7 @@ mod tests {
             resume_from_id: None,
             args: None,
             concurrency: None,
+            backend: None,
         };
         assert!(impl_
             .start_workflow(req)
@@ -984,6 +1003,7 @@ mod tests {
             resume_from_id: Some("some-id".into()),
             args: None,
             concurrency: None,
+            backend: None,
         };
         assert!(impl_
             .start_workflow(req)
@@ -1000,6 +1020,7 @@ mod tests {
             resume_from_id: None,
             args: None,
             concurrency: Some(99),
+            backend: None,
         };
         assert!(impl_
             .start_workflow(req)

@@ -95,6 +95,13 @@ impl BackendRegistry {
     pub fn default_id(&self) -> Option<&'static str> {
         self.default_id
     }
+
+    /// Sorted list of all registered backend ids.
+    pub fn available_ids(&self) -> Vec<&'static str> {
+        let mut ids: Vec<&'static str> = self.backends.keys().copied().collect();
+        ids.sort_unstable();
+        ids
+    }
 }
 
 #[cfg(test)]
