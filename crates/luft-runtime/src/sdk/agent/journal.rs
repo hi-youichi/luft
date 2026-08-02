@@ -12,10 +12,10 @@ use luft_core::journal::{AgentCacheKey, JournalStore};
 use luft_core::state::AgentResultCache;
 use std::sync::Arc;
 
-/// Display parts of an agent result — `(status, output, tokens, findings)` —
+/// Display parts of an agent result — `(status, output, tokens, findings, session_id)` —
 /// the exact tuple [`build_result_table`](crate::sdk::task::build_result_table)
 /// consumes.
-pub(super) type Slot = (String, serde_json::Value, u64, Vec<Finding>);
+pub(super) type Slot = (String, serde_json::Value, u64, Vec<Finding>, Option<String>);
 
 /// Reduce an owned scheduler result to its display parts.
 pub(super) fn slot_from_result(result: AgentResult) -> Slot {
@@ -24,13 +24,23 @@ pub(super) fn slot_from_result(result: AgentResult) -> Slot {
         result.output,
         result.tokens_used.total(),
         result.findings,
+        result.session_id,
     )
 }
 
 /// Reduce a cached (resumed) result to its display parts. The cache already
 /// stores `status` as a string and `tokens` as a total.
-pub(super) fn slot_from_cache(cached: AgentResultCache) -> Slot {
-    (cached.status, cached.output, cached.tokens, cached.findings)
+pub(super) fn slot_from_cache(
+    cached: AgentResultCache,
+    session_id: Option<String>,
+) -> Slot {
+    (
+        cached.status,
+        cached.output,
+        cached.tokens,
+        cached.findings,
+        session_id,
+    )
 }
 
 /// Record a completed agent result into the journal. No-op when no journal is
@@ -53,6 +63,17 @@ pub(super) fn record(
             result.findings.clone(),
             result.tokens_used,
         );
+        if let Some(session_id) = result.session_id.clone() {
+            // A backend that returns a session identifier opts into the
+            // session contract. ACP still validates capability and falls
+            // back to `session/new` when the saved conversation is gone.
+            j.record_session(
+                agent_id,
+                session_id,
+                result.status.as_str(),
+                true,
+            );
+        }
     }
 }
 
@@ -76,13 +97,13 @@ mod tests {
             },
             artifacts: vec![],
             logs: Default::default(),
-            thread_id: None,
+            session_id: None,
         }
     }
 
     #[test]
     fn slot_from_result_lowercases_status_and_totals_tokens() {
-        let (status, output, tokens, findings) = slot_from_result(sample_result());
+        let (status, output, tokens, findings, _) = slot_from_result(sample_result());
         assert_eq!(status, "ok");
         assert_eq!(output, serde_json::json!({ "r": 1 }));
         assert_eq!(tokens, 15); // total() = input + output
@@ -103,7 +124,7 @@ mod tests {
             description: None,
             role: None,
         };
-        let (status, output, tokens, _) = slot_from_cache(cached);
+        let (status, output, tokens, _, _) = slot_from_cache(cached, None);
         assert_eq!(status, "error");
         assert_eq!(output, serde_json::json!("x"));
         assert_eq!(tokens, 99);
@@ -142,7 +163,7 @@ mod tests {
             },
             artifacts: vec![],
             logs: Default::default(),
-            thread_id: None,
+            session_id: None,
         }
     }
 
@@ -158,7 +179,7 @@ mod tests {
             (AgentStatus::TimedOut, "timed_out"),
         ];
         for (status, expected) in &cases {
-            let (slot_status, _, _, _) = slot_from_result(result_with_status(status.clone()));
+            let (slot_status, _, _, _, _) = slot_from_result(result_with_status(status.clone()));
             assert_eq!(
                 slot_status, *expected,
                 "slot_from_result({status:?}) must produce snake_case status {expected:?}; \
@@ -173,7 +194,7 @@ mod tests {
         // produce "timed_out" (snake_case) — NOT "timedout" (Debug lowercased).
         // The buggy form would silently break downstream consumers that
         // branch on the exact string "timed_out".
-        let (slot_status, _, _, _) = slot_from_result(result_with_status(AgentStatus::TimedOut));
+        let (slot_status, _, _, _, _) = slot_from_result(result_with_status(AgentStatus::TimedOut));
         assert_eq!(
             slot_status, "timed_out",
             "slot_from_result(TimedOut) must produce \"timed_out\"; got {slot_status:?}"
@@ -188,7 +209,7 @@ mod tests {
     fn slot_from_result_ok_lowercases_and_totals_tokens() {
         // The existing happy-path test, kept as a baseline for the simplest
         // variant. The string here must be the same as `Ok.as_str()`.
-        let (status, _, tokens, _) = slot_from_result(result_with_status(AgentStatus::Ok));
+        let (status, _, tokens, _, _) = slot_from_result(result_with_status(AgentStatus::Ok));
         assert_eq!(status, AgentStatus::Ok.as_str());
         assert_eq!(status, "ok");
         assert_eq!(tokens, 0);
@@ -196,7 +217,7 @@ mod tests {
 
     #[test]
     fn slot_from_result_error_uses_snake_case() {
-        let (status, _, _, _) = slot_from_result(result_with_status(AgentStatus::Error));
+        let (status, _, _, _, _) = slot_from_result(result_with_status(AgentStatus::Error));
         assert_eq!(status, "error");
         // Distinguish from Buggy: should NOT be "Error" or any case-mismatched form.
         assert_ne!(status, "Error");
@@ -205,7 +226,7 @@ mod tests {
 
     #[test]
     fn slot_from_result_cancelled_uses_snake_case() {
-        let (status, _, _, _) = slot_from_result(result_with_status(AgentStatus::Cancelled));
+        let (status, _, _, _, _) = slot_from_result(result_with_status(AgentStatus::Cancelled));
         assert_eq!(status, "cancelled");
         assert_eq!(status, AgentStatus::Cancelled.as_str());
     }
@@ -223,7 +244,7 @@ mod tests {
             AgentStatus::TimedOut,
         ];
         for variant in &variants {
-            let (slot_status, _, _, _) = slot_from_result(result_with_status(variant.clone()));
+            let (slot_status, _, _, _, _) = slot_from_result(result_with_status(variant.clone()));
             assert_eq!(
                 slot_status,
                 variant.as_str(),
@@ -250,9 +271,9 @@ mod tests {
             },
             artifacts: vec![],
             logs: Default::default(),
-            thread_id: None,
+            session_id: None,
         };
-        let (status, output, tokens, findings) = slot_from_result(r);
+            let (status, output, tokens, findings, _) = slot_from_result(r);
         assert_eq!(status, "timed_out");
         assert_eq!(output, serde_json::json!({"value": 42}));
         assert_eq!(tokens, 7 + 11); // total() = input + output, excludes cache

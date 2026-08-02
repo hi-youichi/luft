@@ -155,6 +155,11 @@ impl Scheduler {
             }
         };
 
+        if task.session_id.is_some() && !backend.capabilities().session_resume {
+            tracing::debug!(backend = backend.id(), "backend does not support session resume; ignoring supplied session");
+            task.session_id = None;
+        }
+
         // Snapshot per-run handles without holding the DashMap guard across await.
         let (quota_used, run_cancel, events) = {
             let rs = self
@@ -260,6 +265,14 @@ impl Scheduler {
 
             match res {
                 Ok(result) => {
+                    // Keep schema retries in the same backend conversation. ACP
+                    // adapters return the session established by the first
+                    // invocation; feed it into the next task before applying
+                    // validation feedback so the adapter can issue
+                    // `session/resume` instead of creating a new conversation.
+                    if result.session_id.is_some() {
+                        task.session_id = result.session_id.clone();
+                    }
                     if let Some(ref schema) = task.output_schema {
                         let fallback_text = match &result.output {
                             serde_json::Value::String(s) => Some(s.clone()),
@@ -493,6 +506,7 @@ mod tests {
     use crate::mock_backend::{FailKind, MockBackend, MockBehavior};
     use std::path::PathBuf;
     use std::sync::atomic::AtomicUsize;
+    use std::sync::Mutex;
     use std::time::Duration;
     use uuid::Uuid;
 
@@ -526,7 +540,7 @@ mod tests {
             role: None,
             name: None,
             agent_seq: 0,
-            thread_id: None,
+            session_id: None,
         }
     }
 
@@ -558,7 +572,7 @@ mod tests {
             tokens_used: TokenUsage::default(),
             artifacts: vec![],
             logs: LogRef::default(),
-            thread_id: None,
+            session_id: None,
         }
     }
 
@@ -629,7 +643,7 @@ mod tests {
                 tokens_used: TokenUsage::default(),
                 artifacts: vec![],
                 logs: LogRef::default(),
-                thread_id: None,
+                session_id: None,
             })
         }
     }
@@ -921,6 +935,72 @@ mod tests {
         let r = sched.run_agent(run_id, task, None).await;
         assert!(r.is_ok(), "{r:?}");
         assert_eq!(probe.call_count(), 2);
+    }
+
+    struct SessionRetryBackend {
+        calls: Arc<Mutex<Vec<Option<String>>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl AgentBackend for SessionRetryBackend {
+        fn id(&self) -> &'static str {
+            "session-retry"
+        }
+
+        fn capabilities(&self) -> AgentCapabilities {
+            AgentCapabilities {
+                session_resume: true,
+                ..Default::default()
+            }
+        }
+
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+
+        async fn run(
+            &self,
+            task: AgentTask,
+            _ctx: RunContext,
+        ) -> Result<AgentResult, BackendError> {
+            let mut calls = self.calls.lock().unwrap();
+            let attempt = calls.len();
+            calls.push(task.session_id.clone());
+            Ok(AgentResult {
+                agent_id: task.agent_id,
+                status: AgentStatus::Ok,
+                output: if attempt == 0 {
+                    serde_json::json!({"wrong": "field"})
+                } else {
+                    serde_json::json!({"answer": "ok"})
+                },
+                findings: vec![],
+                tokens_used: TokenUsage::default(),
+                artifacts: vec![],
+                logs: LogRef::default(),
+                session_id: Some("acp-session-1".to_string()),
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn schema_retry_reuses_returned_session_id() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let backend = Arc::new(SessionRetryBackend {
+            calls: calls.clone(),
+        });
+        let sched = sched_with(backend, fast_config(4, 1000));
+        let run_id = Uuid::now_v7();
+        let _rx = sched.init_run(run_id, 64);
+
+        let result = sched
+            .run_agent(run_id, mk_task_with_schema("respond"), None)
+            .await;
+        assert!(result.is_ok(), "{result:?}");
+        assert_eq!(
+            *calls.lock().unwrap(),
+            vec![None, Some("acp-session-1".to_string())]
+        );
     }
 
     #[tokio::test]

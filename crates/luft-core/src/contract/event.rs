@@ -67,6 +67,17 @@ pub enum AgentEvent {
         /// The ACP `SessionUpdate`, serialized verbatim.
         raw: serde_json::Value,
     },
+    /// ACP client request sent to the agent, surfaced for protocol
+    /// observability. Unlike [`AcpRaw`], this is a request-direction event
+    /// and is persisted with the normal event stream.
+    AcpRequest {
+        run_id: RunId,
+        agent_id: AgentId,
+        /// ACP method name, for example `session/resume` or `session/prompt`.
+        method: String,
+        /// Serialized ACP request parameters.
+        raw: serde_json::Value,
+    },
     AgentDone {
         run_id: RunId,
         agent_id: AgentId,
@@ -623,6 +634,26 @@ mod tests {
             AgentEvent::AcpRaw { kind, raw, .. } => {
                 assert_eq!(kind, "agent_message_chunk");
                 assert_eq!(raw, json!({"chunk": "hi"}));
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn event_acp_request_roundtrip() {
+        let ev = AgentEvent::AcpRequest {
+            run_id: run_id(),
+            agent_id: agent_id(),
+            method: "session/prompt".into(),
+            raw: json!({"sessionId": "s-1", "prompt": [{"text": "continue"}]}),
+        };
+        let s = serde_json::to_string(&ev).unwrap();
+        assert!(s.contains("\"type\":\"acp_request\""));
+        let back: AgentEvent = serde_json::from_str(&s).unwrap();
+        match back {
+            AgentEvent::AcpRequest { method, raw, .. } => {
+                assert_eq!(method, "session/prompt");
+                assert_eq!(raw["sessionId"], "s-1");
             }
             _ => panic!("wrong variant"),
         }

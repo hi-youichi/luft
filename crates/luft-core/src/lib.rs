@@ -47,6 +47,7 @@ pub mod contract;
 pub mod journal;
 pub mod run_dir;
 pub mod scheduler;
+pub mod session;
 pub mod state;
 
 pub mod json_to_lua;
@@ -68,8 +69,8 @@ pub use scheduler::{
     BackendRegistry, JournalCallback, RetryPolicy, Scheduler, SchedulerConfig, SchedulerError,
 };
 pub use state::{
-    get_run_store, list_runs, AgentResultCache, CheckpointStatus, PhaseSummary, RunCheckpoint,
-    RunStore,
+    get_run_store, list_runs, AgentResultCache, AgentSessionCheckpoint, CheckpointStatus,
+    PhaseSummary, RunCheckpoint, RunStore,
 };
 
 #[cfg(feature = "testing")]

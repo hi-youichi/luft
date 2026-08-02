@@ -21,7 +21,8 @@ use crate::contract::event::{AgentEvent, EventSender};
 use crate::contract::finding::Finding;
 use crate::contract::ids::{AgentId, PhaseId, RunId, TokenUsage};
 use crate::scheduler::{BackendRegistry, SchedulerConfig};
-use crate::state::{AgentResultCache, RunCheckpoint, RunStore};
+use crate::session::{resolve_session, restore_session};
+use crate::state::{AgentResultCache, AgentSessionCheckpoint, RunCheckpoint, RunStore};
 use blake3::Hasher;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -312,6 +313,52 @@ impl JournalStore {
         if let Err(e) = self.inner.upsert_agent_result(&cache) {
             tracing::warn!(%agent_id, error = %e, "failed to persist agent result");
         }
+    }
+
+    /// Persist the session id returned by a backend for later diagnostics and
+    /// same-run resume. The id is opaque to the journal; backend-specific
+    /// conversation state is not serialized here.
+    pub fn record_session(
+        &self,
+        agent_id: AgentId,
+        session_id: String,
+        status: &str,
+        resumable: bool,
+    ) {
+        let backend_id = crate::contract::current_backend().map(|backend| backend.id);
+        let protocol_session_id = backend_id
+            .as_deref()
+            .and_then(|backend| resolve_session(&session_id, backend))
+            .map(|record| record.protocol_session_id)
+            .or_else(|| Some(session_id.clone()));
+        let session = AgentSessionCheckpoint {
+            agent_id,
+            backend_id,
+            protocol_session_id,
+            session_id,
+            status: status.to_string(),
+            updated_at: current_timestamp(),
+            resumable,
+        };
+        if let Err(e) = self.inner.upsert_agent_session(&session) {
+            tracing::warn!(%agent_id, error = %e, "failed to persist agent session");
+        }
+    }
+
+    /// Return the persisted session metadata for an agent, if any.
+    pub fn get_session(&self, agent_id: AgentId) -> Option<AgentSessionCheckpoint> {
+        let session = self
+            .inner
+            .get_checkpoint()
+            .and_then(|checkpoint| checkpoint.agent_sessions.get(&agent_id).cloned());
+        if let Some(ref session) = session {
+            if let (Some(backend_id), Some(protocol_id)) =
+                (session.backend_id.as_deref(), session.protocol_session_id.as_deref())
+            {
+                restore_session(&session.session_id, backend_id, protocol_id);
+            }
+        }
+        session
     }
 
     /// Access the underlying run store (shared persistence engine).

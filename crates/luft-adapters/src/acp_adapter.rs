@@ -1,8 +1,9 @@
 //! `AcpAdapter` — drives an `opencode acp` subprocess as an ACP **client**.
 //!
-//! One [`AgentBackend::run`] call = one one-shot ACP session: spawn opencode,
-//! `initialize` → `session/new` → `session/prompt`, stream `session/update`
-//! notifications into Luft progress events, then collect the result.
+//! One [`AgentBackend::run`] call spawns an ACP client process, performs
+//! `initialize` → `session/new` or `session/resume` → `session/prompt`, streams
+//! `session/update` notifications into Luft progress events, then collects the
+//! result.
 //!
 //! ## Threading
 //! The `agent-client-protocol` connection future is `!Send` (it drives a
@@ -24,8 +25,8 @@
 //!     `docs/design/skill-implementation.md` §4.
 //!  4. [`drive_connection`] — build the `Client` builder and wire up
 //!     notification/permission handlers.
-//!  5. [`run_handshake_and_prompt`] — `initialize` → `session/new` (with
-//!     optional `set_config_option`) → `session/prompt`.
+//!  5. [`run_handshake_and_prompt`] — `initialize` → `session/new`/`resume`
+//!     (with optional `set_config_option`) → `session/prompt`.
 //!  6. [`collect_session_result`] — assemble the final [`AgentResult`].
 
 use super::{permission, result_collector, update_mapper};
@@ -34,6 +35,7 @@ use luft_core::contract::backend::{
     AgentBackend, AgentCapabilities, AgentResult, AgentTask, BackendError, RunContext, ToolPolicy,
 };
 use luft_core::contract::event::EventSender;
+use luft_core::session::{register_session, resolve_session};
 #[cfg(feature = "unstable_end_turn_token_usage")]
 use luft_core::contract::ids::TokenUsage;
 use luft_core::contract::ids::{AgentId, RunId};
@@ -52,9 +54,9 @@ use agent_client_protocol::schema::{
     AuthenticateRequest, ContentBlock, Implementation, InitializeRequest, McpServer,
     McpServerStdio, NewSessionRequest, NewSessionResponse, PromptRequest, ProtocolVersion,
     RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
-    SelectedPermissionOutcome, SessionConfigKind, SessionConfigOptionCategory,
-    SessionConfigSelectOptions, SessionId, SessionNotification, SetSessionConfigOptionRequest,
-    StopReason, TextContent,
+    ResumeSessionRequest, SelectedPermissionOutcome, SessionConfigKind,
+    SessionConfigOptionCategory, SessionConfigSelectOptions, SessionId, SessionNotification,
+    SetSessionConfigOptionRequest, StopReason, TextContent,
 };
 use agent_client_protocol::{Agent, ByteStreams, Client, ConnectionTo, Responder};
 
@@ -107,6 +109,9 @@ struct SessionState {
     policy: Option<ToolPolicy>,
     prompt: String,
     cwd: PathBuf,
+    session_id: Arc<Mutex<Option<String>>>,
+    resume_session_id: Option<String>,
+    requested_session_id: Option<String>,
 }
 
 /// ACP backend configuration.
@@ -258,6 +263,7 @@ impl AgentBackend for AcpAdapter {
             streaming: true,
             mcp_injection: true,
             workflow_validate_schema: true,
+            session_resume: true,
             models: vec![],
         }
     }
@@ -325,6 +331,14 @@ async fn run_acp_session(
         policy: task.allowlist.clone(),
         prompt: task.prompt.clone(),
         cwd: std::fs::canonicalize(&task.workdir).unwrap_or_else(|_| task.workdir.clone()),
+        session_id: Arc::new(Mutex::new(task.session_id.clone())),
+        resume_session_id: task
+            .session_id
+            .as_deref()
+            .and_then(|id| resolve_session(id, config.id))
+            .map(|record| record.protocol_session_id)
+            .or_else(|| task.session_id.clone()),
+        requested_session_id: task.session_id.clone(),
     };
 
     // Write the workflow-authoring skill into the spawned backend's own
@@ -521,6 +535,9 @@ fn drive_connection(
     let acc = state.acc.clone();
     let events = state.events.clone();
     let stop_holder = state.stop_holder.clone();
+    let session_id = state.session_id.clone();
+    let resume_session_id = state.resume_session_id.clone();
+    let requested_session_id = state.requested_session_id.clone();
     let activity_tx = state.activity_tx.clone();
     let submit_signal = state.submit_signal.clone();
     let run_id = state.run_id;
@@ -582,6 +599,8 @@ fn drive_connection(
                 let stop_holder_for_prompt = stop_holder_for_prompt.clone();
                 let model = model.clone();
                 let luft_binary = luft_binary.clone();
+                let resume_session_id = resume_session_id.clone();
+                let requested_session_id = requested_session_id.clone();
                 async move {
                     run_handshake_and_prompt(HandshakePromptContext {
                         conn: &conn,
@@ -591,7 +610,13 @@ fn drive_connection(
                         model: model.as_deref(),
                         prompt: &prompt,
                         acc: &acc_for_prompt,
+                        events: &events,
+                        run_id,
+                        agent_id,
                         stop_holder: &stop_holder_for_prompt,
+                        session_id: &session_id,
+                        resume_session_id: resume_session_id.as_deref(),
+                        requested_session_id: requested_session_id.as_deref(),
                         backend_id,
                     })
                     .await?;
@@ -681,7 +706,13 @@ struct HandshakePromptContext<'a> {
     model: Option<&'a str>,
     prompt: &'a str,
     acc: &'a Arc<update_mapper::Accumulator>,
+    events: &'a EventSender,
+    run_id: RunId,
+    agent_id: AgentId,
     stop_holder: &'a Arc<Mutex<Option<String>>>,
+    session_id: &'a Arc<Mutex<Option<String>>>,
+    resume_session_id: Option<&'a str>,
+    requested_session_id: Option<&'a str>,
     /// Registry key of this backend (`config.id`), captured into
     /// [`CurrentBackend::id`] during the handshake.
     backend_id: &'a str,
@@ -736,21 +767,96 @@ async fn run_handshake_and_prompt(
         authenticate(ctx.conn, &init.auth_methods).await?;
     }
 
-    tracing::debug!("ACP handshake: session/new");
-    let ns = session_new(
-        ctx.conn,
-        ctx.cwd.to_path_buf(),
-        ctx.schema_file_path,
-        ctx.luft_binary,
-    )
-    .await?;
-
-    if let Some(model_name) = ctx.model {
-        validate_and_set_model(ctx.conn, &ns, model_name).await?;
-    }
+    let (session_id, resumed_existing) = if let Some(existing_id) = ctx.resume_session_id {
+        if init.agent_capabilities.session_capabilities.resume.is_some() {
+            tracing::debug!(session_id = existing_id, "ACP handshake: session/resume");
+            match session_resume(
+                ctx.conn,
+                existing_id,
+                ctx.cwd.to_path_buf(),
+                ctx.schema_file_path,
+                ctx.luft_binary,
+                ctx.events,
+                ctx.run_id,
+                ctx.agent_id,
+            )
+            .await
+            {
+                Ok(()) => (SessionId::from(existing_id.to_string()), true),
+                Err(error) => {
+                    // A checkpoint can outlive an ACP agent's in-memory
+                    // conversation. Recover by opening a fresh session rather
+                    // than making the whole workflow permanently fail.
+                    tracing::warn!(
+                        session_id = existing_id,
+                        error = %error,
+                        "ACP session/resume failed; falling back to session/new"
+                    );
+                    let ns = session_new(
+                        ctx.conn,
+                        ctx.cwd.to_path_buf(),
+                        ctx.schema_file_path,
+                        ctx.luft_binary,
+                    )
+                    .await?;
+                    if let Some(model_name) = ctx.model {
+                        validate_and_set_model(ctx.conn, &ns, model_name).await?;
+                    }
+                    (ns.session_id, false)
+                }
+            }
+        } else {
+            tracing::debug!(
+                session_id = existing_id,
+                "ACP agent does not support session/resume; creating session/new"
+            );
+            let ns = session_new(
+                ctx.conn,
+                ctx.cwd.to_path_buf(),
+                ctx.schema_file_path,
+                ctx.luft_binary,
+            )
+            .await?;
+            if let Some(model_name) = ctx.model {
+                validate_and_set_model(ctx.conn, &ns, model_name).await?;
+            }
+            (ns.session_id, false)
+        }
+    } else {
+        tracing::debug!("ACP handshake: session/new");
+        let ns = session_new(
+            ctx.conn,
+            ctx.cwd.to_path_buf(),
+            ctx.schema_file_path,
+            ctx.luft_binary,
+        )
+        .await?;
+        if let Some(model_name) = ctx.model {
+            validate_and_set_model(ctx.conn, &ns, model_name).await?;
+        }
+        (ns.session_id, false)
+    };
+    let protocol_session_id = session_id.to_string();
+    let logical_session_id = if resumed_existing {
+        ctx.requested_session_id
+            .filter(|id| resolve_session(id, ctx.backend_id).is_some())
+            .map(str::to_string)
+            .unwrap_or_else(|| register_session(ctx.backend_id, &protocol_session_id))
+    } else {
+        register_session(ctx.backend_id, &protocol_session_id)
+    };
+    *ctx.session_id.lock().unwrap() = Some(logical_session_id);
 
     tracing::debug!("ACP handshake: session/prompt");
-    let pr = send_prompt(ctx.conn, ns.session_id, ctx.prompt.to_string()).await?;
+    let pr = send_prompt(
+        ctx.conn,
+        session_id,
+        ctx.prompt.to_string(),
+        ctx.events,
+        ctx.run_id,
+        ctx.agent_id,
+    )
+    .await?;
     record_prompt_result(&pr, ctx.stop_holder, ctx.acc);
     Ok(())
 }
@@ -799,8 +905,41 @@ async fn session_new(
     schema_file_path: Option<&str>,
     luft_binary: Option<&std::path::Path>,
 ) -> Result<NewSessionResponse, agent_client_protocol::Error> {
-    let req = NewSessionRequest::new(cwd);
-    let req = match schema_file_path {
+    let mut req = NewSessionRequest::new(cwd);
+    let mcp_servers = structured_mcp_servers(schema_file_path, luft_binary);
+    if !mcp_servers.is_empty() {
+        req = req.mcp_servers(mcp_servers);
+    }
+    conn.send_request(req).block_task().await
+}
+
+/// Resume an existing ACP session in a newly spawned adapter process.
+#[allow(clippy::too_many_arguments)]
+async fn session_resume(
+    conn: &ConnectionTo<Agent>,
+    session_id: &str,
+    cwd: PathBuf,
+    schema_file_path: Option<&str>,
+    luft_binary: Option<&std::path::Path>,
+    events: &EventSender,
+    run_id: RunId,
+    agent_id: AgentId,
+) -> Result<(), agent_client_protocol::Error> {
+    let mut req = ResumeSessionRequest::new(session_id.to_string(), cwd);
+    let mcp_servers = structured_mcp_servers(schema_file_path, luft_binary);
+    if !mcp_servers.is_empty() {
+        req = req.mcp_servers(mcp_servers);
+    }
+    emit_acp_request(events, run_id, agent_id, "session/resume", &req);
+    conn.send_request(req).block_task().await?;
+    Ok(())
+}
+
+fn structured_mcp_servers(
+    schema_file_path: Option<&str>,
+    luft_binary: Option<&std::path::Path>,
+) -> Vec<McpServer> {
+    match schema_file_path {
         Some(sf) => {
             let luft_bin = luft_binary
                 .map(std::path::Path::to_path_buf)
@@ -812,11 +951,10 @@ async fn session_new(
                 "--schema-file".to_string(),
                 sf.to_string(),
             ]);
-            req.mcp_servers(vec![McpServer::Stdio(mcp)])
+            vec![McpServer::Stdio(mcp)]
         }
-        None => req,
-    };
-    conn.send_request(req).block_task().await
+        None => vec![],
+    }
 }
 
 /// Validate the requested `model_name` against the agent's advertised
@@ -885,13 +1023,34 @@ async fn send_prompt(
     conn: &ConnectionTo<Agent>,
     session_id: SessionId,
     prompt: String,
+    events: &EventSender,
+    run_id: RunId,
+    agent_id: AgentId,
 ) -> Result<agent_client_protocol::schema::PromptResponse, agent_client_protocol::Error> {
-    conn.send_request(PromptRequest::new(
+    let req = PromptRequest::new(
         session_id,
         vec![ContentBlock::Text(TextContent::new(prompt))],
-    ))
+    );
+    emit_acp_request(events, run_id, agent_id, "session/prompt", &req);
+    conn.send_request(req)
     .block_task()
     .await
+}
+
+fn emit_acp_request<T: serde::Serialize>(
+    events: &EventSender,
+    run_id: RunId,
+    agent_id: AgentId,
+    method: &str,
+    request: &T,
+) {
+    let raw = serde_json::to_value(request).unwrap_or(serde_json::Value::Null);
+    let _ = events.send(luft_core::contract::event::AgentEvent::AcpRequest {
+        run_id,
+        agent_id,
+        method: method.to_string(),
+        raw,
+    });
 }
 
 /// Persist a `PromptResponse` into shared state: the `StopReason` is stored
@@ -1028,7 +1187,9 @@ fn collect_session_result(task: &AgentTask, state: &SessionState) -> AgentResult
     let message = std::mem::take(&mut *state.acc.message.lock().unwrap());
     let tokens = *state.acc.tokens.lock().unwrap();
     let structured = state.acc.workflow_validate_schema.lock().unwrap().take();
-    result_collector::collect(task, &stop, message, tokens, structured)
+    let mut result = result_collector::collect(task, &stop, message, tokens, structured);
+    result.session_id = state.session_id.lock().unwrap().clone();
+    result
 }
 
 /// Completes after `idle` elapses with **no** signal on `rx`.
@@ -1148,6 +1309,14 @@ mod tests {
             servers.is_none_or(|s| s.is_empty()),
             "expected no servers, got: {json}"
         );
+    }
+
+    #[test]
+    fn session_resume_request_serializes_existing_session() {
+        let req = ResumeSessionRequest::new("session-123", PathBuf::from("/work"));
+        let json = serde_json::to_value(&req).expect("request serializes");
+        assert_eq!(json["sessionId"], "session-123");
+        assert_eq!(json["cwd"], "/work");
     }
 
     // ── skill_dirs_for_backend / write_workflow_skill_files ──────────

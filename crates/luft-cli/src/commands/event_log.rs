@@ -84,6 +84,7 @@ pub fn format_event_line(evt: &AgentEvent) -> String {
         }
         AgentProgress { agent_id, delta, .. } => format!("agent {agent_id} · {}", format_delta(delta)),
         AcpRaw { kind, .. } => format!("acp raw: {kind}"),
+        AcpRequest { method, .. } => format!("acp request: {method}"),
 AgentDone { agent_id, status, tokens, elapsed_ms, name, retry_count, .. } => {
             let fallback = agent_id.to_string();
             let label = name.as_deref().unwrap_or(&fallback);

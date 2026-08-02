@@ -34,7 +34,7 @@ fn test_task() -> AgentTask {
         role: None,
         name: None,
         agent_seq: 0,
-        thread_id: None,
+        session_id: None,
     }
 }
 

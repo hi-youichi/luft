@@ -51,7 +51,7 @@ pub fn collect(
         tokens_used: tokens,
         artifacts: vec![],
         logs: Default::default(),
-        thread_id: None,
+        session_id: task.session_id.clone(),
     }
 }
 
@@ -165,7 +165,7 @@ mod tests {
             mcp_endpoint: None,
             timeout: None,
             output_schema: None,
-            thread_id: None,
+            session_id: None,
             workdir_override: None,
             description: None,
             role: None,

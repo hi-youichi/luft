@@ -62,6 +62,7 @@ struct CapabilitiesView {
     streaming: bool,
     mcp_injection: bool,
     workflow_validate_schema: bool,
+    session_resume: bool,
     models: Vec<String>,
 }
 
@@ -69,7 +70,7 @@ pub fn list_backends() {
     let known_ids = &["mock", "loom-acp", "opencode", "claude-acp", "codex"];
 
     println!(
-        "     id     \u{2502} streaming \u{2502} mcp_injection \u{2502} workflow_validate_schema \u{2502} models"
+        "     id     \u{2502} streaming \u{2502} mcp_injection \u{2502} workflow_validate_schema \u{2502} session_resume \u{2502} models"
     );
     println!(
         "\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}"
@@ -93,11 +94,12 @@ pub fn list_backends() {
                     caps.models.join(",")
                 };
                 println!(
-                    "  {:<9}\u{2502}       {}   \u{2502}           {}   \u{2502}                {}  \u{2502} {}",
+                    "  {:<9}\u{2502}       {}   \u{2502}           {}   \u{2502}                {}  \u{2502}          {}   \u{2502} {}",
                     id,
                     bool_mark(caps.streaming),
                     bool_mark(caps.mcp_injection),
                     bool_mark(caps.workflow_validate_schema),
+                    bool_mark(caps.session_resume),
                     models,
                 );
             }
@@ -171,6 +173,7 @@ pub fn info_backend(id: Option<String>) {
                     streaming: caps.streaming,
                     mcp_injection: caps.mcp_injection,
                     workflow_validate_schema: caps.workflow_validate_schema,
+                    session_resume: caps.session_resume,
                     models: caps.models,
                 },
                 binary,

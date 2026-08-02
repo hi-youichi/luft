@@ -17,8 +17,8 @@ use std::time::Duration;
 
 /// Build an [`AgentTask`] (+ cache key + optional backend id) from a Lua opts
 /// table. Recognised keys: `prompt` (required), `model`, `schema`, `backend`,
-/// `name`, `timeout_ms` (idle timeout: max silence from the agent before the
-/// session is killed).
+/// `name`, `session_id`, `timeout_ms` (idle timeout: max silence from the agent
+/// before the session is killed).
 pub(crate) fn build_task(
     opts: &Table,
     phase_id: PhaseId,
@@ -32,6 +32,7 @@ pub(crate) fn build_task(
     let description: Option<String> = opts.get::<Option<String>>("description").ok().flatten();
     let role: Option<String> = opts.get::<Option<String>>("role").ok().flatten();
     let name: Option<String> = opts.get::<Option<String>>("name").ok().flatten();
+    let session_id: Option<String> = opts.get::<Option<String>>("session_id").ok().flatten();
     let timeout = opts
         .get::<i64>("timeout_ms")
         .ok()
@@ -78,19 +79,20 @@ pub(crate) fn build_task(
         timeout,
         output_schema,
         workdir_override,
-        thread_id: None,
+        session_id,
     };
     Ok((task, cache_key, backend))
 }
 
 /// Build the Lua result table returned to workflows by `agent()`/`parallel()`.
-/// Fields: `status`, `ok`, `output`, `tokens`, `findings`.
+/// Fields: `status`, `ok`, `output`, `tokens`, `findings`, `session_id`.
 pub(crate) fn build_result_table(
     lua: &Lua,
     status: &str,
     output: serde_json::Value,
     tokens: u64,
     findings: &[Finding],
+    session_id: Option<&str>,
 ) -> mlua::Result<Table> {
     let t = lua.create_table()?;
     t.set("status", status)?;
@@ -107,6 +109,9 @@ pub(crate) fn build_result_table(
         ft.set(i + 1, e)?;
     }
     t.set("findings", ft)?;
+    if let Some(session_id) = session_id {
+        t.set("session_id", session_id)?;
+    }
     Ok(t)
 }
 
@@ -137,6 +142,7 @@ mod tests {
         o.set("prompt", "do it").unwrap();
         o.set("model", "claude-x").unwrap();
         o.set("backend", "acp").unwrap();
+        o.set("session_id", "session-123").unwrap();
         o.set("timeout_ms", 5000).unwrap();
         let (task, _key, backend) = build_task(&o, 7, &seq_counter()).unwrap();
         assert_eq!(task.prompt, "do it");
@@ -144,6 +150,7 @@ mod tests {
         assert_eq!(task.phase_id, 7);
         assert_eq!(task.timeout, Some(Duration::from_millis(5000)));
         assert_eq!(backend.as_deref(), Some("acp"));
+        assert_eq!(task.session_id.as_deref(), Some("session-123"));
     }
 
     #[test]
@@ -213,9 +220,18 @@ mod tests {
             data: serde_json::Value::Null,
         }];
         let t =
-            build_result_table(&lua, "ok", serde_json::json!({ "x": 1 }), 42, &findings).unwrap();
+            build_result_table(
+                &lua,
+                "ok",
+                serde_json::json!({ "x": 1 }),
+                42,
+                &findings,
+                Some("session-1"),
+            )
+            .unwrap();
         assert_eq!(t.get::<String>("status").unwrap(), "ok");
         assert!(t.get::<bool>("ok").unwrap());
+        assert_eq!(t.get::<String>("session_id").unwrap(), "session-1");
         assert_eq!(t.get::<i64>("tokens").unwrap(), 42);
         let ft: Table = t.get("findings").unwrap();
         assert_eq!(ft.raw_len(), 1);
@@ -227,7 +243,7 @@ mod tests {
     #[test]
     fn result_table_ok_false_for_non_ok_status() {
         let lua = Lua::new();
-        let t = build_result_table(&lua, "error", serde_json::Value::Null, 0, &[]).unwrap();
+        let t = build_result_table(&lua, "error", serde_json::Value::Null, 0, &[], None).unwrap();
         assert!(!t.get::<bool>("ok").unwrap());
     }
 }

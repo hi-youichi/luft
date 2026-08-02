@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use anyhow::{bail, Result};
-use tokio::net::TcpStream;
+use tokio_tungstenite::connect_async;
 use tracing::{debug, warn};
 
 use crate::process;
@@ -92,8 +92,18 @@ async fn autostart(backend: Option<String>) -> Result<String> {
     bail!("daemon failed to start within 10s")
 }
 
-/// Quick TCP liveness check.
+/// Perform a real WebSocket handshake against the MCP endpoint.
+///
+/// A raw TCP probe is not sufficient here: the daemon accepts the connection
+/// as WebSocket immediately, so a TCP-only probe that closes the socket is
+/// logged by the daemon as `Handshake not finished`. More importantly, TCP
+/// readiness does not prove that the MCP endpoint is ready for the proxy.
 async fn try_connect(addr: &str) -> Result<()> {
-    tokio::time::timeout(Duration::from_millis(500), TcpStream::connect(addr)).await??;
+    let url = format!("ws://{addr}/mcp");
+    let (mut ws, _response) =
+        tokio::time::timeout(Duration::from_millis(750), connect_async(&url)).await??;
+    // Complete the probe with a WebSocket close frame so the daemon observes
+    // a normal short-lived probe rather than an unfinished handshake.
+    let _ = ws.close(None).await;
     Ok(())
 }

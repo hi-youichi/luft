@@ -47,7 +47,7 @@
 //!             tokens_used: Default::default(),
 //!             artifacts: vec![],
 //!             logs: LogRef::default(),
-//!             thread_id: None,
+//!             session_id: None,
 //!         })
 //!     }
 //!
@@ -102,6 +102,10 @@ pub struct AgentCapabilities {
     pub streaming: bool,
     pub mcp_injection: bool,
     pub workflow_validate_schema: bool,
+    /// Whether the backend can attempt to continue a supplied session.
+    /// Backends may still reject an expired session at runtime.
+    #[serde(default)]
+    pub session_resume: bool,
     /// Known model ids; empty = unknown/any.
     pub models: Vec<String>,
 }
@@ -138,7 +142,7 @@ pub struct AgentTask {
 
     /// Thread ID for cross-process conversation resume (Loom SqliteSaver).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub thread_id: Option<String>,
+    pub session_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -157,7 +161,7 @@ pub struct AgentResult {
 
     /// Thread ID used during execution, echoed back for checkpoint linking.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub thread_id: Option<String>,
+    pub session_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

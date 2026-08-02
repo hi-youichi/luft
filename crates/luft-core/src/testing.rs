@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex};
 pub struct CallRecord {
     pub seq: u64,
     pub agent_name: Option<String>,
-    pub thread_id: Option<String>,
+    pub session_id: Option<String>,
     pub prompt: String,
 }
 
@@ -47,6 +47,7 @@ impl AgentBackend for CrashBackend {
             streaming: true,
             mcp_injection: false,
             workflow_validate_schema: false,
+            session_resume: false,
             models: vec![],
         }
     }
@@ -64,7 +65,7 @@ impl AgentBackend for CrashBackend {
             agent_id: task.agent_id,
             status: AgentStatus::Ok,
             output: self.canned.clone(),
-            thread_id: task.thread_id.clone(),
+            session_id: task.session_id.clone(),
             findings: vec![],
             tokens_used: TokenUsage::default(),
             artifacts: vec![],
@@ -105,6 +106,7 @@ impl AgentBackend for CountingBackend {
             streaming: true,
             mcp_injection: false,
             workflow_validate_schema: false,
+            session_resume: false,
             models: vec![],
         }
     }
@@ -117,7 +119,7 @@ impl AgentBackend for CountingBackend {
             agent_id: task.agent_id,
             status: AgentStatus::Ok,
             output: self.canned.clone(),
-            thread_id: task.thread_id.clone(),
+            session_id: task.session_id.clone(),
             findings: vec![],
             tokens_used: TokenUsage::default(),
             artifacts: vec![],
@@ -164,6 +166,7 @@ impl AgentBackend for SharedBackend {
             streaming: true,
             mcp_injection: false,
             workflow_validate_schema: false,
+            session_resume: false,
             models: vec![],
         }
     }
@@ -172,7 +175,7 @@ impl AgentBackend for SharedBackend {
         self.calls.lock().unwrap().push(CallRecord {
             seq,
             agent_name: task.name.clone(),
-            thread_id: task.thread_id.clone(),
+            session_id: task.session_id.clone(),
             prompt: task.prompt.clone(),
         });
         if self
@@ -198,7 +201,7 @@ impl AgentBackend for SharedBackend {
             agent_id: task.agent_id,
             status: AgentStatus::Ok,
             output: self.canned.clone(),
-            thread_id: task.thread_id.clone(),
+            session_id: task.session_id.clone(),
             findings: vec![],
             tokens_used: TokenUsage::default(),
             artifacts: vec![],

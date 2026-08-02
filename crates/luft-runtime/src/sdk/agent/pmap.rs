@@ -172,8 +172,15 @@ pub(super) fn register(lua: &Lua, cx: &SdkContext) -> mlua::Result<()> {
                 // Build result table for the coroutine
                 let result_table = match result {
                     Ok(r) => {
-                        let (status, output, tokens, findings) = slot_from_result(r);
-                        build_result_table(lua, &status, output, tokens, &findings)?
+                        let (status, output, tokens, findings, session_id) = slot_from_result(r);
+                        build_result_table(
+                            lua,
+                            &status,
+                            output,
+                            tokens,
+                            &findings,
+                            session_id.as_deref(),
+                        )?
                     }
                     Err(e) => {
                         tracing::warn!(co_idx, error = %e, "pmap: agent task failed");
@@ -183,6 +190,7 @@ pub(super) fn register(lua: &Lua, cx: &SdkContext) -> mlua::Result<()> {
                             serde_json::json!({"error": e.to_string()}),
                             0,
                             &[],
+                            None,
                         )?
                     }
                 };

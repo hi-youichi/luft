@@ -340,6 +340,9 @@ impl EventWriter {
             // AcpRaw is intentionally not persisted (live observability stream,
             // not durable history). See docs/design/acp-raw-events.md.
             AgentEvent::AcpRaw { .. } => {}
+            // ACP request events are durable audit records, but do not map to
+            // a dedicated relational table.
+            | AgentEvent::AcpRequest { .. } => {}
             // Phase span events are structural metadata; captured in audit log
             // and checkpoint, no dedicated SQL table needed.
             | AgentEvent::PlanPreview { .. }
@@ -759,6 +762,7 @@ fn audit_metadata(event: &AgentEvent) -> (Option<RunId>, &'static str) {
         AgentEvent::AgentStarted { run_id, .. } => (Some(*run_id), "agent_started"),
         AgentEvent::AgentProgress { run_id, .. } => (Some(*run_id), "agent_progress"),
         AgentEvent::AcpRaw { run_id, .. } => (Some(*run_id), "acp_raw"),
+        AgentEvent::AcpRequest { run_id, .. } => (Some(*run_id), "acp_request"),
         AgentEvent::AgentDone { run_id, .. } => (Some(*run_id), "agent_done"),
         AgentEvent::PhaseDone { run_id, .. } => (Some(*run_id), "phase_done"),
         AgentEvent::RunDone { run_id, .. } => (Some(*run_id), "run_done"),

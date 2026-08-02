@@ -269,7 +269,7 @@ async fn generate_findings(
                 timeout: None,
                 output_schema: None,
                 workdir_override: None,
-                thread_id: None,
+                session_id: None,
             };
             tasks.push((task, None::<String>));
         }
@@ -332,7 +332,7 @@ async fn verify_findings(
                 timeout: None,
                 output_schema: None,
                 workdir_override: None,
-                thread_id: None,
+                session_id: None,
             };
 
             let result = scheduler.run_agent(run_ctx.run_id, task, None).await;
@@ -1531,7 +1531,7 @@ mod tests {
                 tokens_used: TokenUsage::default(),
                 artifacts: vec![],
                 logs: LogRef::default(),
-                thread_id: None,
+                session_id: None,
             })
         }
     }
@@ -1566,7 +1566,7 @@ mod tests {
                 tokens_used: TokenUsage::default(),
                 artifacts: vec![],
                 logs: LogRef::default(),
-                thread_id: None,
+                session_id: None,
             })
         }
     }
@@ -1601,7 +1601,7 @@ mod tests {
                 tokens_used: TokenUsage::default(),
                 artifacts: vec![],
                 logs: LogRef::default(),
-                thread_id: None,
+                session_id: None,
             })
         }
     }

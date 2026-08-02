@@ -39,6 +39,7 @@ pub(super) fn register(lua: &Lua, cx: &SdkContext) -> mlua::Result<()> {
         if let Some(ref j) = journal {
             if let Some(cached) = j.get_cached(&cache_key) {
                 if cached.status == "ok" {
+                    let cached_agent_id = cached.agent_id;
                     let _ = events.send(AgentEvent::Log {
                         run_id,
                         agent_id: None,
@@ -48,8 +49,19 @@ pub(super) fn register(lua: &Lua, cx: &SdkContext) -> mlua::Result<()> {
                             &cache_key.hash[..8.min(cache_key.hash.len())]
                         ),
                     });
-                    let (status, output, tokens, findings) = slot_from_cache(cached);
-                    return build_result_table(lua, &status, output, tokens, &findings);
+                    let session_id = j
+                        .get_session(cached_agent_id)
+                        .map(|session| session.session_id);
+                    let (status, output, tokens, findings, _) =
+                        slot_from_cache(cached, session_id.clone());
+                    return build_result_table(
+                        lua,
+                        &status,
+                        output,
+                        tokens,
+                        &findings,
+                        session_id.as_deref(),
+                    );
                 }
             }
         }
@@ -92,8 +104,17 @@ pub(super) fn register(lua: &Lua, cx: &SdkContext) -> mlua::Result<()> {
             tracing::debug!(%agent_id, "agent() completed");
             record(&journal, &cache_key, agent_id, phase_id, &result);
 
-            let (status, output, tokens, findings) = slot_from_result(result);
-            build_result_table(lua, &status, output, tokens, &findings)
+            let session_id = result.session_id.clone();
+            let (status, output, tokens, findings, session_id_from_slot) =
+                slot_from_result(result);
+            build_result_table(
+                lua,
+                &status,
+                output,
+                tokens,
+                &findings,
+                session_id_from_slot.as_deref().or(session_id.as_deref()),
+            )
         }
     })?;
     globals.set("agent", agent_fn)?;

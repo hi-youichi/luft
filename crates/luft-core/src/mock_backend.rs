@@ -115,7 +115,7 @@ impl AgentBackend for MockBackend {
                     tokens_used: *tokens,
                     artifacts: vec![],
                     logs: LogRef::default(),
-                    thread_id: None,
+                    session_id: None,
                 })
             }
             MockBehavior::Fail { kind, delay } => {
@@ -172,7 +172,7 @@ mod tests {
             timeout: None,
             output_schema: None,
             workdir_override: None,
-            thread_id: None,
+            session_id: None,
         }
     }
 

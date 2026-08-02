@@ -64,7 +64,8 @@ pub(super) fn register(lua: &Lua, cx: &SdkContext) -> mlua::Result<()> {
                 if let Some(ref j) = journal {
                     if let Some(c) = j.get_cached(&cache_key) {
                         if c.status == "ok" {
-                            slots[idx] = Some(slot_from_cache(c));
+                            let session_id = j.get_session(c.agent_id).map(|s| s.session_id);
+                            slots[idx] = Some(slot_from_cache(c, session_id));
                             continue;
                         }
                     }
@@ -89,7 +90,13 @@ pub(super) fn register(lua: &Lua, cx: &SdkContext) -> mlua::Result<()> {
                         }
                         Err(e) => {
                             tracing::warn!(agent_id = %p.agent_id, error = %e, "parallel() agent failed");
-                            ("error".to_string(), serde_json::json!({ "error": e.to_string() }), 0, vec![])
+                            (
+                                "error".to_string(),
+                                serde_json::json!({ "error": e.to_string() }),
+                                0,
+                                vec![],
+                                None,
+                            )
                         }
                     };
                     slots[p.idx] = Some(slot);
@@ -97,16 +104,18 @@ pub(super) fn register(lua: &Lua, cx: &SdkContext) -> mlua::Result<()> {
             }
 
             // Aggregate full per-item results + counts for ParallelDone (E).
-            let default: Slot = ("error".into(), serde_json::Value::Null, 0, vec![]);
+            let default: Slot = ("error".into(), serde_json::Value::Null, 0, vec![], None);
             let results_json: Vec<serde_json::Value> = slots
                 .iter()
                 .map(|s| {
-                    let (status, output, tokens, findings) = s.as_ref().unwrap_or(&default);
+                    let (status, output, tokens, findings, session_id) =
+                        s.as_ref().unwrap_or(&default);
                     serde_json::json!({
                         "status": status,
                         "output": output,
                         "tokens": tokens,
                         "findings": findings,
+                        "session_id": session_id,
                     })
                 })
                 .collect();
@@ -115,9 +124,20 @@ pub(super) fn register(lua: &Lua, cx: &SdkContext) -> mlua::Result<()> {
 
             let arr = lua.create_table()?;
             for (i, slot) in slots.into_iter().enumerate() {
-                let (status, output, tokens, findings) =
-                    slot.unwrap_or_else(|| ("error".into(), serde_json::Value::Null, 0, vec![]));
-                arr.set(i + 1, build_result_table(lua, &status, output, tokens, &findings)?)?;
+                let (status, output, tokens, findings, session_id) = slot.unwrap_or_else(|| {
+                    ("error".into(), serde_json::Value::Null, 0, vec![], None)
+                });
+                arr.set(
+                    i + 1,
+                    build_result_table(
+                        lua,
+                        &status,
+                        output,
+                        tokens,
+                        &findings,
+                        session_id.as_deref(),
+                    )?,
+                )?;
             }
             Ok((arr, ok, failed, serde_json::Value::Array(results_json)))
         })();

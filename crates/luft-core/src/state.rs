@@ -29,6 +29,10 @@ pub struct RunCheckpoint {
     pub current_phase: u32,
     pub completed_phases: Vec<PhaseSummary>,
     pub agent_results: HashMap<AgentId, AgentResultCache>,
+    /// Session metadata keyed by agent id. The session id is Luft-owned; the
+    /// backend may attach additional resumability state outside this file.
+    #[serde(default)]
+    pub agent_sessions: HashMap<AgentId, AgentSessionCheckpoint>,
     pub findings: Vec<Finding>,
     pub total_tokens: u64,
     pub created_at: u64,
@@ -94,6 +98,23 @@ pub struct AgentResultCache {
     pub role: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentSessionCheckpoint {
+    pub agent_id: AgentId,
+    /// Luft/backend routing identity associated with this session.
+    #[serde(default)]
+    pub backend_id: Option<String>,
+    /// Backend protocol identifier. Kept separate so a future Luft-owned
+    /// opaque session id does not have to be exposed as the wire id.
+    #[serde(default)]
+    pub protocol_session_id: Option<String>,
+    pub session_id: String,
+    pub status: String,
+    pub updated_at: u64,
+    #[serde(default)]
+    pub resumable: bool,
+}
+
 /// Persistence store for a single run.
 #[derive(Debug)]
 pub struct RunStore {
@@ -136,6 +157,27 @@ impl RunStore {
         Ok(())
     }
 
+    /// Insert or update an agent session in the checkpoint.
+    pub fn upsert_agent_session(
+        &self,
+        session: &AgentSessionCheckpoint,
+    ) -> Result<(), std::io::Error> {
+        let mut guard = self.checkpoint.write().unwrap();
+        if let Some(ref mut checkpoint) = *guard {
+            checkpoint
+                .agent_sessions
+                .insert(session.agent_id, session.clone());
+            checkpoint.updated_at = current_timestamp();
+            let cp = checkpoint.clone();
+            drop(guard);
+            let cp_path = self.run_dir.join("checkpoint.json");
+            let content = serde_json::to_string_pretty(&cp)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+            fs::write(&cp_path, content)?;
+        }
+        Ok(())
+    }
+
     /// Initialize a new run.
     pub fn init_run(&self, run_id: RunId, task: &str) -> Result<(), std::io::Error> {
         tracing::info!(%run_id, %task, "initializing run store");
@@ -146,6 +188,7 @@ impl RunStore {
             current_phase: 0,
             completed_phases: vec![],
             agent_results: HashMap::new(),
+            agent_sessions: HashMap::new(),
             findings: vec![],
             total_tokens: 0,
             created_at: current_timestamp(),
@@ -188,6 +231,7 @@ impl RunStore {
             current_phase: 0,
             completed_phases: vec![],
             agent_results: HashMap::new(),
+            agent_sessions: HashMap::new(),
             findings: vec![],
             total_tokens: 0,
             created_at: current_timestamp(),
@@ -748,6 +792,40 @@ mod tests {
     }
 
     #[test]
+    fn upsert_agent_session_persists_and_reloads() {
+        let dir = tempdir().unwrap();
+        let run_id = uuid::Uuid::now_v7();
+        let store = RunStore::new(dir.path()).unwrap();
+        store.init_run(run_id, "session checkpoint test").unwrap();
+
+        let agent_id = uuid::Uuid::now_v7();
+        store
+            .upsert_agent_session(&AgentSessionCheckpoint {
+                agent_id,
+                backend_id: Some("mock".into()),
+                protocol_session_id: Some("luft-session-1".into()),
+                session_id: "luft-session-1".into(),
+                status: "ok".into(),
+                updated_at: 1_700_000_000,
+                resumable: true,
+            })
+            .unwrap();
+
+        let raw = read_raw_checkpoint(dir.path());
+        assert_eq!(
+            raw["agent_sessions"][agent_id.to_string()]["session_id"],
+            "luft-session-1"
+        );
+
+        drop(store);
+        let reopened = RunStore::new(dir.path()).unwrap();
+        let restored = reopened.open_run(run_id).unwrap().unwrap();
+        let session = restored.agent_sessions.get(&agent_id).unwrap();
+        assert_eq!(session.session_id, "luft-session-1");
+        assert!(session.resumable);
+    }
+
+    #[test]
     fn upsert_agent_result_updates_existing_entry() {
         // F1: re-upserting the same agent_id overwrites the prior entry,
         // mirroring the HashMap semantics of agent_results.
@@ -971,6 +1049,7 @@ mod tests {
             current_phase: 0,
             completed_phases: vec![],
             agent_results: HashMap::new(),
+            agent_sessions: HashMap::new(),
             findings: vec![],
             total_tokens: 0,
             created_at: current_timestamp(),

@@ -203,7 +203,7 @@ async fn run_planner_agent(
         timeout: None,
         output_schema: None,
         workdir_override: None,
-        thread_id: None,
+        session_id: None,
     };
     backend
         .run(task, ctx)

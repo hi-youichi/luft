@@ -272,6 +272,7 @@ mod tests {
             current_phase: 1,
             completed_phases: vec![],
             agent_results: HashMap::new(),
+            agent_sessions: HashMap::new(),
             findings: vec![],
             total_tokens: 0,
             created_at: 1719000000,
@@ -329,6 +330,7 @@ mod tests {
                 role: None,
             }],
             agent_results,
+            agent_sessions: HashMap::new(),
             findings: vec![],
             total_tokens: 500,
             created_at: 1719000000,
@@ -380,6 +382,7 @@ mod tests {
             current_phase: 1,
             completed_phases: vec![],
             agent_results: HashMap::new(),
+            agent_sessions: HashMap::new(),
             findings: vec![Finding {
                 kind: "disk-only".into(),
                 severity: Severity::Medium,
