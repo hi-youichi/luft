@@ -21,8 +21,8 @@ pub fn collect(
     let status = status_from_stop_reason(stop_reason);
     let findings = extract_findings_from_output(&message);
     tracing::debug!(agent_id = %task.agent_id, ?status, findings = findings.len(), tokens = tokens.total(), stop_reason, has_structured = workflow_validate_schema.is_some(), "collecting agent result");
-    let output = if let Some(json) = workflow_validate_schema {
-        json
+let output = if let Some(json) = workflow_validate_schema {
+        normalize_structured_output(json)
     } else if !findings.is_empty() {
         serde_json::to_value(&findings).unwrap_or(serde_json::Value::Null)
     } else if let Ok(json) = serde_json::from_str::<serde_json::Value>(&message) {
@@ -64,6 +64,18 @@ fn status_from_stop_reason(s: &str) -> AgentStatus {
         // MaxTokens / MaxTurns / Refused / unknown → treat as error.
         AgentStatus::Error
     }
+}
+
+fn normalize_structured_output(value: serde_json::Value) -> serde_json::Value {
+    if value.get("schema").is_some() {
+        if let Some(input) = value.get("input").cloned() {
+            if !input.is_null() {
+                tracing::debug!("extracted input from MCP wrapper, discarding schema envelope");
+                return input;
+            }
+        }
+    }
+    value
 }
 
 /// Parse structured findings out of agent text (raw JSON or fenced code block).
@@ -228,7 +240,7 @@ mod tests {
         );
     }
 
-    #[test]
+#[test]
     fn workflow_validate_schema_takes_precedence() {
         let r = collect(
             &task(),
@@ -238,5 +250,54 @@ mod tests {
             Some(serde_json::json!({"result": "structured"})),
         );
         assert_eq!(r.output["result"], "structured");
+    }
+
+    #[test]
+    fn normalize_mcp_wrapper_extracts_input() {
+        let r = collect(
+            &task(),
+            "EndTurn",
+            "ignored text".into(),
+            TokenUsage::default(),
+            Some(serde_json::json!({
+                "input": {"endpoint": "GET /health", "summary": "ok"},
+                "schema": {"type": "object", "required": ["endpoint"]}
+            })),
+        );
+        assert_eq!(r.output["endpoint"], "GET /health");
+        assert_eq!(r.output["summary"], "ok");
+        assert!(r.output.get("schema").is_none());
+    }
+
+    #[test]
+    fn normalize_business_object_with_input_field_preserved() {
+        let r = collect(
+            &task(),
+            "EndTurn",
+            "ignored text".into(),
+            TokenUsage::default(),
+            Some(serde_json::json!({
+                "input": "some value",
+                "output": "another value"
+            })),
+        );
+        assert_eq!(r.output["input"], "some value");
+        assert_eq!(r.output["output"], "another value");
+    }
+
+    #[test]
+    fn normalize_wrapper_with_null_input_returns_original() {
+        let r = collect(
+            &task(),
+            "EndTurn",
+            "ignored text".into(),
+            TokenUsage::default(),
+            Some(serde_json::json!({
+                "input": null,
+                "schema": {"type": "null"}
+            })),
+        );
+        assert_eq!(r.output["input"], serde_json::Value::Null);
+        assert!(r.output.get("schema").is_some());
     }
 }

@@ -107,10 +107,13 @@ pub fn discover() -> Result<Option<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn pid_file_missing() {
-        // SAFETY: we set LUFT_HOME to a temp dir, so the PID file won't exist
+        let _lock = ENV_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir().unwrap();
         std::env::set_var("LUFT_HOME", tmp.path());
         assert!(read().unwrap().is_none());
@@ -119,6 +122,7 @@ mod tests {
 
     #[test]
     fn pid_file_write_read_roundtrip() {
+        let _lock = ENV_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir().unwrap();
         std::env::set_var("LUFT_HOME", tmp.path());
         write(99999, "127.0.0.1:9999").unwrap();
@@ -129,9 +133,9 @@ mod tests {
 
     #[test]
     fn pid_file_stale_removed_on_discover() {
+        let _lock = ENV_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir().unwrap();
         std::env::set_var("LUFT_HOME", tmp.path());
-        // PID 99999 is almost certainly not running
         write(99999, "127.0.0.1:9999").unwrap();
         assert!(pid_file_path().exists());
         let result = discover().unwrap();
@@ -141,6 +145,7 @@ mod tests {
 
     #[test]
     fn pid_file_corrupt_json() {
+        let _lock = ENV_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir().unwrap();
         std::env::set_var("LUFT_HOME", tmp.path());
         std::fs::write(pid_file_path(), "not json").unwrap();
