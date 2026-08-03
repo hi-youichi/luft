@@ -19,6 +19,15 @@ export function eventToDisplay(event: AgentEvent): EventDisplay {
       return { ts: event.ts, indent: 2, icon: '→', iconColor: 'text-muted-foreground', text: `${event.agent_id} started`, detail: event.role }
     case 'AgentProgress':
       return { ts: event.ts, indent: 2, icon: '·', iconColor: 'text-muted-foreground', text: `${event.agent_id} progress` }
+    case 'AcpRequest':
+      return {
+        ts: event.ts ?? '',
+        indent: 2,
+        icon: '⇢',
+        iconColor: 'text-cyan-400',
+        text: `${event.agent_id} ACP request`,
+        detail: event.method,
+      }
     case 'AgentDone':
       return {
         ts: event.ts, indent: 2,

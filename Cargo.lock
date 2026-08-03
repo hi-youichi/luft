@@ -1684,6 +1684,8 @@ dependencies = [
  "luft-mcp",
  "luft-skills",
  "mlua",
+ "rmcp",
+ "schemars 0.8.22",
  "serde",
  "serde_json",
  "serial_test",

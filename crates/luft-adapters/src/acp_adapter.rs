@@ -16,9 +16,7 @@
 //! dedicated helper:
 //!  1. [`spawn_agent`] — fork `opencode acp` and wire up stdin/stdout.
 //!  2. (inline) — assemble shared `Arc`s and channels.
-//!  3. [`prepare_schema_mcp`] — write a temp JSON Schema file when an
-//!     `output_schema` is present.
-//!     Alongside this, [`write_workflow_skill_files`] writes the Luft
+//!  3. [`write_workflow_skill_files`] writes the Luft
 //!     workflow-authoring skill (`luft_skills::WORKFLOW_SKILL`) into
 //!     whichever skill-directory convention matches the backend actually
 //!     being spawned (see `skill_dirs_for_backend`) — see
@@ -346,13 +344,10 @@ async fn run_acp_session(
     // see `write_workflow_skill_files`.
     write_workflow_skill_files(config.id, &state.cwd);
 
-    // 3. Optional structured-output MCP server: serialise the JSON Schema to
-    //    a temp file so the `luft mcp-structured-output` subprocess can
-    //    validate the agent's final payload.
-    let schema_guard = prepare_schema_mcp(task.output_schema.as_ref())?;
-    let schema_file_path = schema_guard
-        .as_ref()
-        .map(|g| g.0.path().to_string_lossy().into_owned());
+    // 3. Optional structured-output MCP server: spawn the subprocess when
+    //    the workflow defines an output schema. The schema is passed as a
+    //    tool parameter at runtime.
+    let has_output_schema = task.output_schema.is_some();
 
     // 4. Build the connection future, then race it against cancel + idle
     //    timeout. The watchdog's `submit_signal` is a clone of the one
@@ -361,7 +356,7 @@ async fn run_acp_session(
     let conn_fut = drive_connection(
         &state,
         transport,
-        schema_file_path,
+        has_output_schema,
         // Per-task model overrides the backend's configured default model,
         // so `agent({backend = "codex", model = "o4-mini"})` actually uses
         // o4-mini for that call. Falls back to the backend's `config.model`.
@@ -443,31 +438,6 @@ fn spawn_agent(config: &AcpConfig) -> Result<(tokio::process::Child, AcpTranspor
     Ok((child, transport))
 }
 
-// ─── Phase 3: schema MCP ────────────────────────────────────────────────────
-
-/// If a JSON Schema was supplied, serialise it to a temp file and return a
-/// guard that deletes the file when dropped. The file path is later injected
-/// into the `session/new` request as the `--schema-file` arg of a
-/// `luft mcp-structured-output` subprocess.
-fn prepare_schema_mcp(
-    schema: Option<&serde_json::Value>,
-) -> Result<Option<SchemaFileGuard>, BackendError> {
-    let Some(schema) = schema else {
-        return Ok(None);
-    };
-    let schema_json = serde_json::to_string(schema)
-        .map_err(|e| BackendError::Execution(format!("schema serialize: {e}")))?;
-    let schema_file = tempfile::NamedTempFile::new()
-        .map_err(|e| BackendError::Execution(format!("schema temp file: {e}")))?;
-    std::fs::write(&schema_file, &schema_json)
-        .map_err(|e| BackendError::Execution(format!("schema temp write: {e}")))?;
-    let path = schema_file.path().to_string_lossy().into_owned();
-    tracing::debug!(schema_file = %path, "prepared MCP structured-output server");
-    Ok(Some(SchemaFileGuard(schema_file)))
-}
-
-struct SchemaFileGuard(tempfile::NamedTempFile);
-
 // ─── Phase 3b: workflow skill files ─────────────────────────────────────────
 
 /// Maps a backend id to its skill-directory convention, relative to the
@@ -527,7 +497,7 @@ fn write_workflow_skill_files(backend_id: &str, working_folder: &Path) {
 fn drive_connection(
     state: &SessionState,
     transport: AcpTransport,
-    schema_file_path: Option<String>,
+    has_output_schema: bool,
     model: Option<String>,
     luft_binary: Option<PathBuf>,
     backend_id: &'static str,
@@ -605,7 +575,7 @@ fn drive_connection(
                     run_handshake_and_prompt(HandshakePromptContext {
                         conn: &conn,
                         cwd: &cwd,
-                        schema_file_path: schema_file_path.as_deref(),
+                        has_output_schema,
                         luft_binary: luft_binary.as_deref(),
                         model: model.as_deref(),
                         prompt: &prompt,
@@ -701,7 +671,7 @@ async fn decide_permission(
 struct HandshakePromptContext<'a> {
     conn: &'a ConnectionTo<Agent>,
     cwd: &'a std::path::Path,
-    schema_file_path: Option<&'a str>,
+    has_output_schema: bool,
     luft_binary: Option<&'a std::path::Path>,
     model: Option<&'a str>,
     prompt: &'a str,
@@ -774,7 +744,7 @@ async fn run_handshake_and_prompt(
                 ctx.conn,
                 existing_id,
                 ctx.cwd.to_path_buf(),
-                ctx.schema_file_path,
+                ctx.has_output_schema,
                 ctx.luft_binary,
                 ctx.events,
                 ctx.run_id,
@@ -795,7 +765,7 @@ async fn run_handshake_and_prompt(
                     let ns = session_new(
                         ctx.conn,
                         ctx.cwd.to_path_buf(),
-                        ctx.schema_file_path,
+                        ctx.has_output_schema,
                         ctx.luft_binary,
                     )
                     .await?;
@@ -813,7 +783,7 @@ async fn run_handshake_and_prompt(
             let ns = session_new(
                 ctx.conn,
                 ctx.cwd.to_path_buf(),
-                ctx.schema_file_path,
+                ctx.has_output_schema,
                 ctx.luft_binary,
             )
             .await?;
@@ -827,7 +797,7 @@ async fn run_handshake_and_prompt(
         let ns = session_new(
             ctx.conn,
             ctx.cwd.to_path_buf(),
-            ctx.schema_file_path,
+            ctx.has_output_schema,
             ctx.luft_binary,
         )
         .await?;
@@ -902,11 +872,11 @@ async fn authenticate(
 async fn session_new(
     conn: &ConnectionTo<Agent>,
     cwd: PathBuf,
-    schema_file_path: Option<&str>,
+    has_output_schema: bool,
     luft_binary: Option<&std::path::Path>,
 ) -> Result<NewSessionResponse, agent_client_protocol::Error> {
     let mut req = NewSessionRequest::new(cwd);
-    let mcp_servers = structured_mcp_servers(schema_file_path, luft_binary);
+    let mcp_servers = structured_mcp_servers(has_output_schema, luft_binary);
     if !mcp_servers.is_empty() {
         req = req.mcp_servers(mcp_servers);
     }
@@ -919,14 +889,14 @@ async fn session_resume(
     conn: &ConnectionTo<Agent>,
     session_id: &str,
     cwd: PathBuf,
-    schema_file_path: Option<&str>,
+    has_output_schema: bool,
     luft_binary: Option<&std::path::Path>,
     events: &EventSender,
     run_id: RunId,
     agent_id: AgentId,
 ) -> Result<(), agent_client_protocol::Error> {
     let mut req = ResumeSessionRequest::new(session_id.to_string(), cwd);
-    let mcp_servers = structured_mcp_servers(schema_file_path, luft_binary);
+    let mcp_servers = structured_mcp_servers(has_output_schema, luft_binary);
     if !mcp_servers.is_empty() {
         req = req.mcp_servers(mcp_servers);
     }
@@ -936,24 +906,20 @@ async fn session_resume(
 }
 
 fn structured_mcp_servers(
-    schema_file_path: Option<&str>,
+    has_output_schema: bool,
     luft_binary: Option<&std::path::Path>,
 ) -> Vec<McpServer> {
-    match schema_file_path {
-        Some(sf) => {
-            let luft_bin = luft_binary
-                .map(std::path::Path::to_path_buf)
-                .unwrap_or_else(|| {
-                    std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("luft"))
-                });
-            let mcp = McpServerStdio::new("luft-structured-output", luft_bin).args(vec![
-                "mcp-structured-output".to_string(),
-                "--schema-file".to_string(),
-                sf.to_string(),
-            ]);
-            vec![McpServer::Stdio(mcp)]
-        }
-        None => vec![],
+    if has_output_schema {
+        let luft_bin = luft_binary
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_else(|| {
+                std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("luft"))
+            });
+        let mcp = McpServerStdio::new("luft-structured-output", luft_bin)
+            .args(vec!["mcp-structured-output".to_string()]);
+        vec![McpServer::Stdio(mcp)]
+    } else {
+        vec![]
     }
 }
 
@@ -1268,13 +1234,11 @@ mod tests {
     // plain-text fallback result that looks like a model failure rather than
     // a wiring bug.
 
-    #[test]
+#[test]
     fn session_new_request_serializes_mcp_server() {
         let mcp =
             McpServerStdio::new("luft-structured-output", PathBuf::from("luft.exe")).args(vec![
                 "mcp-structured-output".to_string(),
-                "--schema-file".to_string(),
-                "/tmp/schema.json".to_string(),
             ]);
         let req =
             NewSessionRequest::new(PathBuf::from("/work")).mcp_servers(vec![McpServer::Stdio(mcp)]);
@@ -1288,7 +1252,7 @@ mod tests {
         assert_eq!(servers[0]["name"], "luft-structured-output");
         assert_eq!(servers[0]["command"], "luft.exe");
         assert_eq!(servers[0]["args"][0], "mcp-structured-output");
-        assert_eq!(servers[0]["args"][1], "--schema-file");
+        assert_eq!(servers[0]["args"].as_array().map(|a| a.len()), Some(1));
         // Per the ACP schema, the `Stdio` variant of `McpServer` is
         // `#[serde(untagged)]` — unlike `Http`/`Sse`, a stdio server carries
         // NO `"type"` discriminator on the wire. Asserted explicitly because

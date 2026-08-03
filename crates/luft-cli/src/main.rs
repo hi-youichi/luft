@@ -264,7 +264,7 @@ async fn dispatch(
         Commands::Phases { run_dir, json } => {
             commands::phases::phases_cmd(run_dir, commands::phases::PhasesArgs { json })?;
         }
-        Commands::McpWorkflowValidateSchema(args) => commands::mcp_server::run(args)?,
+        Commands::McpWorkflowValidateSchema(args) => commands::mcp_server::run(args).await?,
         Commands::Mcp(cmd) => match cmd {
             commands::mcp_server::McpSubcommand::Serve(args) => {
                 commands::mcp_server::serve(args).await?
@@ -529,31 +529,5 @@ mod tests {
             "expected 'not found' error, got: {}",
             err
         );
-    }
-
-    #[tokio::test]
-    async fn dispatch_mcp_no_schema_file() {
-        let cli = Cli {
-            command: Commands::McpWorkflowValidateSchema(commands::mcp_server::McpWorkflowValidateSchemaArgs {
-                schema_file: PathBuf::from("/__nonexistent__/schema.json"),
-            }),
-            log_level: None,
-            log_file: None,
-        };
-        let err = dispatch(
-            cli,
-            tokio_util::sync::CancellationToken::new(),
-            tokio::sync::broadcast::channel::<signal::SignalInfo>(16).0,
-        )
-        .await
-        .unwrap_err();
-        assert!(
-            err.to_string().contains("No such file")
-                || err.to_string().contains("os error 2")
-                || err.to_string().contains("os error 3")
-                || err.to_string().contains("cannot find the path"),
-            "expected filesystem error, got: {}",
-            err
-        );
-    }
+}
 }

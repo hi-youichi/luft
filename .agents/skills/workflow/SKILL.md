@@ -144,34 +144,6 @@ Full signatures, options, and examples: `references/primitives.md`. Quick index:
 - Graceful degradation: when a stage fails, feed a minimal/default prompt to the
   next stage rather than crashing the pipeline.
 
-# Result Reporting
-
-`report()` is the ONLY value the user sees. Structure it so the output is
-self-explanatory without needing to read the Lua script.
-
-Recommended fields (all optional except `summary`):
-- `summary`  — **required**: one-line conclusion in the user's language
-- `results`  — array of per-item outcomes (successes); each item should have a
-               human-readable `name` or `module` field
-- `errors`   — array of failed/skipped items with `name` and `reason`
-- `stats`    — optional: `{ items_total, items_ok, items_failed }`
-
-Partial success is normal — report it honestly:
-```lua
--- 8 of 10 modules refactored, 2 failed
-report({
-  summary = "重构完成 8/10 模块，2 个失败",
-  results = successes,
-  errors = failures,
-  stats = { items_total = 10, items_ok = 8, items_failed = 2 }
-})
-```
-
-Do NOT:
-- Report only errors and silently drop successful results.
-- Dump raw agent output — distill it into the structure above.
-- Omit `summary` — the user reads this field first.
-
 # MCP Tools — Monitoring Running Workflows
 
 After you submit a Lua script via `workflow_execute`, it returns a `run_id`
@@ -202,7 +174,7 @@ workflow_status(run_id)  ──►  status: "running" | "completed" | "failed" |
   Also supports `resume_from_id` to resume a checkpointed run.
 - **`workflow_status`** (`{ run_id }`) — rich status: overall status, per-phase
   breakdown (label, completed/total agents), token usage, elapsed time, and a
-  bounded result preview when finished. **Use adaptive polling (see below).**
+  bounded result preview when finished. **Poll this every few seconds.**
 - **`workflow_events`** (`{ run_id, offset?, events_limit?, types?, agent_id? }`) —
   paginated event log for detailed tracing (agent started, log lines, errors,
   phase transitions). Use `since_event_id` or `offset` for incremental reads.
@@ -219,33 +191,14 @@ workflow_status(run_id)  ──►  status: "running" | "completed" | "failed" |
 ## Progress Reporting Guidelines
 
 1. After `workflow_execute`, immediately tell the user the `run_id`.
-2. Use **adaptive polling** — start fast, then back off:
-   - First 3 polls: every **2s** (catch quick failures, show immediate progress)
-   - Next 5 polls: every **5s** (track active phases)
-   - Thereafter: every **10–15s** (long-running agents rarely change state faster)
-   - Reset to 2s interval if a new phase starts or after receiving partial results
-3. **In-progress reporting** — on each poll, report:
-   - Current **phase label** and **position** (e.g. "phase 2/4: analyze")
-   - **Agent activity**: what agents are currently doing — use their `name` /
-     `description` fields (e.g. "analyzing auth module…", "refactoring db layer…")
-   - **Progress ratio**: completed/total agents within the current phase
-   - **Elapsed time** and any notable `log()` lines from the workflow
-   - If an agent **failed mid-run** (visible via `workflow_events`), notify the
-     user immediately — do not wait for terminal status. Briefly state what
-     failed and whether the workflow is retrying / skipping / continuing.
-4. **Terminal reporting** — when status becomes `completed` / `failed` / `cancelled`:
-   - Read the `report()` result from `workflow_status` (or `workflow_validate_schema`).
-   - Structure the final summary as:
-     1. **One-line conclusion** — what was accomplished (from `report.summary`)
-     2. **Key results** — list notable items from `report.results` (truncate to ~10;
-        suggest `workflow_events` for full details)
-     3. **Failures** — if `report.errors` is non-empty, list each with its `reason`
-     4. **Metrics** — total elapsed time, token usage, agents run
-   - If `failed`, call `workflow_events` with `types: ["error"]` to extract error
-     details. Present the error in plain language, not stack traces or raw JSON.
-   - For partial success, lead with the completion ratio: "8/10 modules refactored,
-     2 failed: …"
-   - Truncate long output; tell the user they can use `workflow_events` for details.
+2. Poll `workflow_status` every 3–5 seconds (avoid tight loops).
+3. On each poll, summarize the **current phase label**, **completed/total
+   agents**, and **elapsed time** — present this in human-readable form.
+4. When status becomes terminal (`completed` / `failed` / `cancelled`):
+   - Read the result preview from `workflow_status`.
+   - If `failed`, optionally call `workflow_events` with `types: ["error"]` to
+     extract error details for the user.
+   - Present a concise summary, not raw JSON.
 5. If the workflow takes longer than expected, inform the user and offer to
    `workflow_cancel`.
 

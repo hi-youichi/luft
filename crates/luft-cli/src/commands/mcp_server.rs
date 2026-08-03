@@ -1,19 +1,20 @@
-//! MCP Server subcommand: `luft mcp-structured-output --schema-file <path>`.
+//! MCP Server subcommand: `luft mcp-structured-output`.
 //!
-//! Speaks minimal MCP (JSON-RPC over stdio) with a single `workflow_validate_schema`
-//! tool whose `inputSchema` is the workflow-provided JSON Schema.
+//! Validates a JSON object against a JSON Schema (Draft 7) via MCP tool.
 //! opencode spawns this as a subprocess via `NewSessionRequest.mcp_servers`.
 //!
 //! Also hosts the full MCP server (`luft mcp serve`) which exposes workflow
 //! authoring resources and execution tools via the [`luft_mcp`] crate.
 
 use anyhow::Result;
+use rmcp::{
+    handler::server::{router::tool::ToolRouter, wrapper::Parameters},
+    schemars,
+    tool, tool_handler, tool_router,
+    ServerHandler, ServiceExt,
+};
 use serde::Deserialize;
 use serde_json::Value;
-use std::io::{self, BufRead, Write};
-#[cfg(all(unix, test))]
-use std::io::{BufReader, Seek};
-use std::path::PathBuf;
 
 // ── `luft mcp serve` — full MCP server ───────────────────────────────
 
@@ -33,28 +34,18 @@ pub struct McpServeArgs {
 }
 
 /// Entry point for `luft mcp serve`.
-///
-/// Constructs a Luft instance with the requested (or auto-detected) backend,
-/// wraps it in an [`luft_mcp::LuftMcpServer`], and runs the stdio loop.
-/// `luft mcp serve` — proxy stdio ↔ daemon WebSocket.
-///
-/// If a daemon is already running, connects to it. If not, auto-starts one.
-/// Either way, stdin/stdout JSON-RPC is forwarded to the daemon's MCP WS endpoint.
 pub async fn serve(args: McpServeArgs) -> Result<()> {
     let addr = luft_daemon::discover_or_autostart(args.backend).await?;
     luft_mcp::proxy::run_proxy(&addr).await?;
     Ok(())
 }
 
-// ── `luft mcp-structured-output` — internal schema validator ─────────
+// ── `luft mcp-structured-output` — schema validator ─────────────────
 
 #[derive(Debug, clap::Args)]
-pub struct McpWorkflowValidateSchemaArgs {
-    #[arg(long, help = "Path to JSON Schema file")]
-    pub schema_file: PathBuf,
-}
+pub struct McpWorkflowValidateSchemaArgs;
 
-pub fn run(args: McpWorkflowValidateSchemaArgs) -> Result<()> {
+pub async fn run(_args: McpWorkflowValidateSchemaArgs) -> Result<()> {
     let log_path = std::env::var("LUFT_MCP_LOG").unwrap_or_else(|_| {
         let dir = std::env::temp_dir();
         dir.join(format!("luft-mcp-{}.log", std::process::id()))
@@ -73,116 +64,46 @@ pub fn run(args: McpWorkflowValidateSchemaArgs) -> Result<()> {
         .with_writer(log_file)
         .try_init();
 
-    tracing::info!(schema_file = %args.schema_file.display(), log = %log_path, "MCP structured-output server starting");
-    let schema: Value = serde_json::from_str(&std::fs::read_to_string(&args.schema_file)?)?;
-    serve_mcp(&schema)
-}
+    tracing::info!(log = %log_path, "MCP structured-output server starting");
 
-fn serve_mcp(schema: &Value) -> Result<()> {
-    let stdin = io::stdin();
-    let stdout = io::stdout();
-    let mut stdout = stdout.lock();
-
-    for line in stdin.lock().lines() {
-        let line = line?;
-        if line.is_empty() {
-            continue;
-        }
-
-        tracing::debug!(line = %line, "MCP recv");
-
-        let msg: JsonRpcMessage = match serde_json::from_str(&line) {
-            Ok(m) => m,
-            Err(e) => {
-                tracing::warn!(error = %e, line = %line, "MCP parse error");
-                continue;
-            }
-        };
-
-        let method = msg.method.as_deref();
-        let id = msg.id.clone();
-
-        match (method, id) {
-            (Some("initialize"), Some(id)) => {
-                let result = serde_json::json!({
-                    "protocolVersion": "2024-11-05",
-                    "capabilities": { "tools": {} },
-                    "serverInfo": { "name": "luft-structured-output", "version": env!("CARGO_PKG_VERSION") }
-                });
-                write_response(&mut stdout, id, &result)?;
-            }
-            (Some("notifications/initialized"), _) => {}
-            (Some("tools/list"), Some(id)) => {
-                let result = serde_json::json!({
-                    "tools": [{
-                        "name": "workflow_validate_schema",
-                        "description": format!(
-                            "Call this tool to submit your final result.\n\
-                             The result MUST be a JSON object matching this schema:\n\n\
-                             {schema}\n\n\
-                             Do NOT return the result as a text message. \
-                             You MUST call this tool.",
-                            schema = serde_json::to_string_pretty(schema).unwrap_or_default()
-                        ),
-                        "inputSchema": schema,
-                    }]
-                });
-                write_response(&mut stdout, id, &result)?;
-            }
-            (Some("tools/call"), Some(id)) => {
-                tracing::info!(params = ?msg.params, "MCP tools/call");
-                let result = handle_tool_call(&msg.params, schema);
-                tracing::info!(
-                    is_error = result
-                        .get("isError")
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(false),
-                    "MCP tools/call response"
-                );
-                write_response(&mut stdout, id, &result)?;
-            }
-            (_, Some(id)) => {
-                write_error(&mut stdout, id, -32601, "Method not found")?;
-            }
-            _ => {}
-        }
-    }
-
+    let mut server = ValidateSchemaServer {
+        tool_router: ToolRouter::default(),
+    };
+    server.tool_router = ValidateSchemaServer::tool_router();
+    let (reader, writer) = rmcp::transport::io::stdio();
+    let service = server.serve((reader, writer)).await?;
+    service.waiting().await?;
     Ok(())
 }
 
-fn handle_tool_call(params: &Option<Value>, schema: &Value) -> Value {
-    let name = params
-        .as_ref()
-        .and_then(|p| p.get("name"))
-        .and_then(|n| n.as_str())
-        .unwrap_or("");
+// ── RMCP server ─────────────────────────────────────────────────────
 
-    if name != "workflow_validate_schema" {
-        return serde_json::json!({
-            "content": [{ "type": "text", "text": format!("Unknown tool: {name}") }],
-            "isError": true
-        });
+#[derive(Debug)]
+struct ValidateSchemaServer {
+    tool_router: ToolRouter<Self>,
+}
+
+#[tool_router]
+impl ValidateSchemaServer {
+    #[tool(description = "Validate a JSON object against a JSON Schema (Draft 7).\n\nBoth `input` and `schema` are required.")]
+    fn workflow_validate_schema(
+        Parameters(params): Parameters<WorkflowValidateSchemaInput>,
+    ) -> Result<String, String> {
+        validate_against_schema(&params.input, &params.schema)
+            .map(|_| "Result accepted.".to_string())
+            .map_err(|e| format!("Schema validation failed: {e}\nPlease correct your output and call this tool again."))
     }
+}
 
-    let input = params
-        .as_ref()
-        .and_then(|p| p.get("arguments"))
-        .cloned()
-        .unwrap_or(Value::Null);
+#[tool_handler]
+impl ServerHandler for ValidateSchemaServer {}
 
-    match validate_against_schema(&input, schema) {
-        Ok(()) => serde_json::json!({
-            "content": [{ "type": "text", "text": "Result accepted." }],
-            "isError": false
-        }),
-        Err(msg) => serde_json::json!({
-            "content": [{ "type": "text", "text": format!(
-                "Schema validation failed: {msg}\nPlease correct your output and call this tool again."
-            )}],
-            "isError": true
-        }),
-    }
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct WorkflowValidateSchemaInput {
+    /// The data to validate.
+    input: Value,
+    /// JSON Schema (Draft 7) to validate against.
+    schema: Value,
 }
 
 fn validate_against_schema(input: &Value, schema: &Value) -> std::result::Result<(), String> {
@@ -204,149 +125,16 @@ fn validate_against_schema(input: &Value, schema: &Value) -> std::result::Result
     }
 }
 
-fn write_response(stdout: &mut impl Write, id: Value, result: &Value) -> Result<()> {
-    let resp = serde_json::json!({ "jsonrpc": "2.0", "id": id, "result": result });
-    tracing::debug!(response = %resp, "MCP send");
-    writeln!(stdout, "{}", resp)?;
-    stdout.flush()?;
-    Ok(())
-}
-
-fn write_error(stdout: &mut impl Write, id: Value, code: i32, message: &str) -> Result<()> {
-    let resp = serde_json::json!({ "jsonrpc": "2.0", "id": id, "error": { "code": code, "message": message } });
-    writeln!(stdout, "{}", resp)?;
-    stdout.flush()?;
-    Ok(())
-}
-
-#[derive(Deserialize)]
-struct JsonRpcMessage {
-    method: Option<String>,
-    id: Option<Value>,
-    params: Option<Value>,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(unix)]
-    use serial_test::serial;
-    #[cfg(unix)]
-    use std::sync::Mutex;
+    use serde_json::json;
 
-    /// Serialises fd-redirection tests so parallel runs don't race on fd 0/1.
-    #[cfg(unix)]
-    static IO_LOCK: Mutex<()> = Mutex::new(());
-
-    // --- Raw FFI helpers for fd redirection (macOS / Linux) -------------------
-
-    #[cfg(unix)]
-    mod ffi {
-        #![allow(dead_code)]
-        pub unsafe fn dup(fd: std::os::raw::c_int) -> std::os::raw::c_int {
-            extern "C" {
-                fn dup(fd: std::os::raw::c_int) -> std::os::raw::c_int;
-            }
-            dup(fd)
-        }
-        pub unsafe fn dup2(oldfd: std::os::raw::c_int, newfd: std::os::raw::c_int) {
-            extern "C" {
-                fn dup2(
-                    oldfd: std::os::raw::c_int,
-                    newfd: std::os::raw::c_int,
-                ) -> std::os::raw::c_int;
-            }
-            dup2(oldfd, newfd);
-        }
-        pub unsafe fn close(fd: std::os::raw::c_int) {
-            extern "C" {
-                fn close(fd: std::os::raw::c_int) -> std::os::raw::c_int;
-            }
-            close(fd);
-        }
-    }
-
-    // --- Helpers -------------------------------------------------------------
-
-    /// Run `f` with stdin / stdout redirected from / to temporary files.
-    /// Returns `(f()'s return value, lines written to stdout)`.
-    /// **MUST** be called while holding `IO_LOCK`.
-    #[cfg(unix)]
-    fn json_lines(lines: &[String]) -> Vec<serde_json::Value> {
-        lines
-            .iter()
-            .filter_map(|l| serde_json::from_str(l).ok())
-            .collect()
-    }
-
-    #[cfg(unix)]
-    fn with_redirected_io<R>(input: &str, f: impl FnOnce() -> R) -> (R, Vec<String>) {
-        let mut in_file = tempfile::tempfile().expect("tempfile in");
-        in_file.write_all(input.as_bytes()).unwrap();
-        in_file.flush().unwrap();
-        in_file.seek(std::io::SeekFrom::Start(0)).unwrap();
-
-        let out_file = tempfile::tempfile().expect("tempfile out");
-        let out_read = out_file.try_clone().expect("try_clone");
-
-        use std::os::unix::io::IntoRawFd;
-        let in_fd = in_file.into_raw_fd();
-        let out_fd = out_file.into_raw_fd();
-        let out_read_fd = out_read.into_raw_fd();
-
-        unsafe {
-            let saved_stdin = ffi::dup(0);
-            let saved_stdout = ffi::dup(1);
-
-            ffi::dup2(in_fd, 0);
-            ffi::close(in_fd);
-            ffi::dup2(out_fd, 1);
-            ffi::close(out_fd);
-
-            let result = f();
-
-            ffi::dup2(saved_stdin, 0);
-            ffi::close(saved_stdin);
-            ffi::dup2(saved_stdout, 1);
-            ffi::close(saved_stdout);
-
-            // Read captured output
-            use std::os::unix::io::FromRawFd;
-            let mut out_file = std::fs::File::from_raw_fd(out_read_fd);
-            out_file.seek(std::io::SeekFrom::Start(0)).unwrap();
-            let reader = BufReader::new(out_file);
-            let lines: Vec<String> = reader
-                .lines()
-                .map(|l| l.unwrap())
-                .filter(|l| !l.is_empty())
-                .collect();
-
-            (result, lines)
-        }
-    }
-
-    #[cfg(unix)]
-    fn run_serve_mcp(input_lines: &[&str], schema: &Value) -> Vec<String> {
-        let input = if input_lines.is_empty() {
-            String::new()
-        } else {
-            input_lines.join("\n") + "\n"
-        };
-        let _lock = IO_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let (_, out_lines) = with_redirected_io(&input, || {
-            let _ = serve_mcp(schema);
-        });
-        out_lines
-    }
-
-    // ------------------------------------------------------------------
-    //  validate_against_schema
-    // ------------------------------------------------------------------
+    // ── validate_against_schema unit tests ───────────────────────────────
 
     #[test]
     fn validate_valid_input() {
-        let schema =
-            serde_json::json!({"type": "object", "properties": {"x": {"type": "integer"}}});
+        let schema = serde_json::json!({"type": "object", "properties": {"x": {"type": "integer"}}});
         let input = serde_json::json!({"x": 42});
         assert!(validate_against_schema(&input, &schema).is_ok());
     }
@@ -388,106 +176,23 @@ mod tests {
         let semicolons = err.matches(';').count();
         assert!(
             semicolons <= 2,
-            "expected ≤2 separators (≤3 errors), got {semicolons}"
+            "expected \u{2264}2 separators (\u{2264}3 errors), got {semicolons}"
         );
     }
 
     #[test]
     fn validate_schema_compile_error() {
-        // `type` expects a string or array of strings, not an integer.
         let schema = serde_json::json!({"type": 123});
         let input = serde_json::json!("hello");
-        let result = validate_against_schema(&input, &schema);
-        assert!(result.is_err(), "expected compile error for invalid schema");
-    }
-
-    // ------------------------------------------------------------------
-    //  handle_tool_call
-    // ------------------------------------------------------------------
-
-    #[test]
-    fn tool_call_unknown_tool() {
-        let schema = serde_json::json!({"type": "object"});
-        let params = serde_json::json!({"name": "unknown_tool", "arguments": {}});
-        let result = handle_tool_call(&Some(params), &schema);
-        assert_eq!(result["isError"], true);
-        assert!(result["content"][0]["text"]
-            .as_str()
-            .unwrap()
-            .contains("Unknown tool: unknown_tool"));
+        let err = validate_against_schema(&input, &schema).unwrap_err();
+        assert!(
+            err.starts_with("schema compile error:"),
+            "expected 'schema compile error:' prefix, got: {err}"
+        );
     }
 
     #[test]
-    fn tool_call_no_params() {
-        let schema = serde_json::json!({"type": "object"});
-        let result = handle_tool_call(&None, &schema);
-        assert_eq!(result["isError"], true);
-        assert!(result["content"][0]["text"]
-            .as_str()
-            .unwrap()
-            .contains("Unknown tool: "));
-    }
-
-    #[test]
-    fn tool_call_no_name_field() {
-        let schema = serde_json::json!({"type": "object"});
-        let params = serde_json::json!({"arguments": {}});
-        let result = handle_tool_call(&Some(params), &schema);
-        assert_eq!(result["isError"], true);
-        assert!(result["content"][0]["text"]
-            .as_str()
-            .unwrap()
-            .contains("Unknown tool: "));
-    }
-
-    #[test]
-    fn tool_call_valid_arguments() {
-        let schema = serde_json::json!({
-            "type": "object",
-            "properties": {"result": {"type": "string"}},
-            "required": ["result"]
-        });
-        let params =
-            serde_json::json!({"name": "workflow_validate_schema", "arguments": {"result": "ok"}});
-        let result = handle_tool_call(&Some(params), &schema);
-        assert_eq!(result["isError"], false);
-        assert_eq!(result["content"][0]["text"], "Result accepted.");
-    }
-
-    #[test]
-    fn tool_call_invalid_arguments() {
-        let schema = serde_json::json!({
-            "type": "object",
-            "properties": {"result": {"type": "string"}},
-            "required": ["result"]
-        });
-        let params = serde_json::json!({"name": "workflow_validate_schema", "arguments": {"result": 42}});
-        let result = handle_tool_call(&Some(params), &schema);
-        assert_eq!(result["isError"], true);
-        assert!(result["content"][0]["text"]
-            .as_str()
-            .unwrap()
-            .contains("Schema validation failed"));
-    }
-
-    #[test]
-    fn tool_call_missing_arguments() {
-        let schema = serde_json::json!({
-            "type": "object",
-            "properties": {"result": {"type": "string"}},
-            "required": ["result"]
-        });
-        let params = serde_json::json!({"name": "workflow_validate_schema"});
-        let result = handle_tool_call(&Some(params), &schema);
-        assert_eq!(result["isError"], true);
-        assert!(result["content"][0]["text"]
-            .as_str()
-            .unwrap()
-            .contains("Schema validation failed"));
-    }
-
-    #[test]
-    fn tool_call_with_file_kind_summary_schema() {
+    fn validate_against_custom_schema() {
         let schema = serde_json::json!({
             "type": "object",
             "properties": {
@@ -498,344 +203,133 @@ mod tests {
             "required": ["file", "kind", "summary"]
         });
 
-        let params = serde_json::json!({
-            "name": "workflow_validate_schema",
-            "arguments": {
-                "file": "src/adapters/result_collector.rs",
-                "kind": "rust",
-                "summary": "collects agent results"
-            }
+        let valid = serde_json::json!({
+            "file": "src/main.rs",
+            "kind": "rust",
+            "summary": "entry point"
         });
-        let result = handle_tool_call(&Some(params), &schema);
-        assert_eq!(result["isError"], false);
-        assert_eq!(result["content"][0]["text"], "Result accepted.");
+        assert!(validate_against_schema(&valid, &schema).is_ok());
 
-        let missing = serde_json::json!({
-            "name": "workflow_validate_schema",
-            "arguments": {
-                "file": "src/adapters/result_collector.rs",
-                "kind": "rust"
-            }
+        let invalid = serde_json::json!({
+            "file": "src/main.rs",
+            "kind": "rust"
         });
-        let result = handle_tool_call(&Some(missing), &schema);
-        assert_eq!(result["isError"], true);
-        assert!(result["content"][0]["text"]
-            .as_str()
-            .unwrap()
-            .contains("Schema validation failed"));
+        assert!(validate_against_schema(&invalid, &schema).is_err());
     }
 
-    // ------------------------------------------------------------------
-    //  write_response / write_error
-    // ------------------------------------------------------------------
+    // ── WorkflowValidateSchemaInput deserialization ─────────────────────
 
     #[test]
-    fn write_response_numeric_id() {
-        let mut buf = Vec::new();
-        let id = serde_json::json!(42);
-        let result = serde_json::json!({"ok": true});
-        write_response(&mut buf, id, &result).unwrap();
-        let resp: Value = serde_json::from_slice(&buf).unwrap();
-        assert_eq!(resp["jsonrpc"], "2.0");
-        assert_eq!(resp["id"], 42);
-        assert_eq!(resp["result"]["ok"], true);
-    }
-
-    #[test]
-    fn write_response_string_id() {
-        let mut buf = Vec::new();
-        let id = serde_json::json!("req-1");
-        let result = serde_json::json!({"ok": true});
-        write_response(&mut buf, id, &result).unwrap();
-        let resp: Value = serde_json::from_slice(&buf).unwrap();
-        assert_eq!(resp["id"], "req-1");
-    }
-
-    #[test]
-    fn write_error_ok() {
-        let mut buf = Vec::new();
-        let id = serde_json::json!(1);
-        write_error(&mut buf, id, -32601, "Method not found").unwrap();
-        let resp: Value = serde_json::from_slice(&buf).unwrap();
-        assert_eq!(resp["jsonrpc"], "2.0");
-        assert_eq!(resp["id"], 1);
-        assert_eq!(resp["error"]["code"], -32601);
-        assert_eq!(resp["error"]["message"], "Method not found");
-    }
-
-    // ------------------------------------------------------------------
-    //  JsonRpcMessage deserialization
-    // ------------------------------------------------------------------
-
-    #[test]
-    fn json_rpc_message_full() {
-        let msg: JsonRpcMessage =
-            serde_json::from_str(r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#)
-                .unwrap();
-        assert_eq!(msg.method.as_deref(), Some("initialize"));
-        assert_eq!(msg.id, Some(serde_json::json!(1)));
-        assert!(msg.params.is_some());
-    }
-
-    #[test]
-    fn json_rpc_message_notification() {
-        let msg: JsonRpcMessage =
-            serde_json::from_str(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
-                .unwrap();
-        assert_eq!(msg.method.as_deref(), Some("notifications/initialized"));
-        assert!(msg.id.is_none());
-        assert!(msg.params.is_none());
-    }
-
-    #[test]
-    fn json_rpc_message_no_id_no_method() {
-        let msg: JsonRpcMessage = serde_json::from_str(r#"{"jsonrpc":"2.0"}"#).unwrap();
-        assert!(msg.method.is_none());
-        assert!(msg.id.is_none());
-        assert!(msg.params.is_none());
-    }
-
-    // ------------------------------------------------------------------
-    //  serve_mcp — integration via fd redirection
-    // ------------------------------------------------------------------
-
-    #[cfg(unix)]
-    #[serial]
-    #[test]
-    fn serve_mcp_initialize() {
-        let schema = serde_json::json!({"type": "object"});
-        let lines = run_serve_mcp(
-            &[r#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#],
-            &schema,
-        );
-        let json = json_lines(&lines);
-        assert_eq!(json.len(), 1);
-        assert_eq!(json[0]["id"], 1);
+    fn input_deserializes_from_full_params() {
+        let params = json!({
+            "input": {"x": 42},
+            "schema": {"type": "object", "properties": {"x": {"type": "integer"}}}
+        });
+        let input: WorkflowValidateSchemaInput = serde_json::from_value(params).unwrap();
+        assert_eq!(input.input, json!({"x": 42}));
         assert_eq!(
-            json[0]["result"]["serverInfo"]["name"],
-            "luft-structured-output"
+            input.schema,
+            json!({"type": "object", "properties": {"x": {"type": "integer"}}})
         );
     }
 
-    #[cfg(unix)]
-    #[serial]
     #[test]
-    fn serve_mcp_notification_initialized() {
-        let schema = serde_json::json!({"type": "object"});
-        let lines = run_serve_mcp(
-            &[r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#],
-            &schema,
-        );
-        assert!(json_lines(&lines).is_empty());
+    fn input_deserializes_input_as_null() {
+        let params = json!({
+            "input": null,
+            "schema": {"type": "null"}
+        });
+        let input: WorkflowValidateSchemaInput = serde_json::from_value(params).unwrap();
+        assert_eq!(input.input, Value::Null);
     }
 
-    #[cfg(unix)]
-    #[serial]
     #[test]
-    fn serve_mcp_tools_list() {
-        let schema = serde_json::json!({"type": "object", "properties": {"x": {"type": "string"}}});
-        let lines = run_serve_mcp(
-            &[r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#],
-            &schema,
-        );
-        let json = json_lines(&lines);
-        assert_eq!(json.len(), 1);
-        assert_eq!(json[0]["id"], 2);
-        assert_eq!(json[0]["result"]["tools"][0]["name"], "workflow_validate_schema");
-        assert_eq!(json[0]["result"]["tools"][0]["inputSchema"], schema);
+    fn input_deserializes_schema_as_any_json() {
+        let params = json!({
+            "input": "hello",
+            "schema": {"type": "string"}
+        });
+        let input: WorkflowValidateSchemaInput = serde_json::from_value(params).unwrap();
+        assert_eq!(input.input, "hello");
     }
 
-    #[cfg(unix)]
-    #[serial]
     #[test]
-    fn serve_mcp_tools_call_valid() {
-        let schema = serde_json::json!({
+    fn input_fails_on_missing_fields() {
+        let params = json!({"input": {}});
+        let result: Result<WorkflowValidateSchemaInput, _> = serde_json::from_value(params);
+        assert!(result.is_err(), "expected deserialization error for missing schema");
+    }
+
+    // ── validate_against_schema edge cases ──────────────────────────────
+
+    #[test]
+    fn validate_edge_empty_string() {
+        let schema = json!({"type": "string"});
+        assert!(validate_against_schema(&json!(""), &schema).is_ok());
+    }
+
+    #[test]
+    fn validate_edge_null_value() {
+        let schema = json!({"type": "null"});
+        assert!(validate_against_schema(&Value::Null, &schema).is_ok());
+    }
+
+    #[test]
+    fn validate_edge_nested_object() {
+        let schema = json!({
             "type": "object",
-            "properties": {"result": {"type": "string"}},
-            "required": ["result"]
+            "properties": {
+                "data": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "integer"},
+                        "name": {"type": "string"}
+                    },
+                    "required": ["id"]
+                }
+            },
+            "required": ["data"]
         });
-        let lines = run_serve_mcp(
-            &[
-                r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"workflow_validate_schema","arguments":{"result":"done"}}}"#,
-            ],
-            &schema,
-        );
-        let json = json_lines(&lines);
-        assert_eq!(json.len(), 1);
-        assert_eq!(json[0]["id"], 3);
-        assert_eq!(json[0]["result"]["isError"], false);
-        assert_eq!(json[0]["result"]["content"][0]["text"], "Result accepted.");
+        let valid = json!({"data": {"id": 1, "name": "test"}});
+        let invalid = json!({"data": {"name": "no-id"}});
+        assert!(validate_against_schema(&valid, &schema).is_ok());
+        assert!(validate_against_schema(&invalid, &schema).is_err());
     }
 
-    #[cfg(unix)]
-    #[serial]
     #[test]
-    fn serve_mcp_tools_call_invalid() {
-        let schema = serde_json::json!({
-            "type": "object",
-            "properties": {"result": {"type": "string"}},
-            "required": ["result"]
+    fn validate_edge_array_items() {
+        let schema = json!({
+            "type": "array",
+            "items": {"type": "integer"},
+            "minItems": 1
         });
-        let lines = run_serve_mcp(
-            &[
-                r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"workflow_validate_schema","arguments":{"result":42}}}"#,
-            ],
-            &schema,
-        );
-        let json = json_lines(&lines);
-        assert_eq!(json.len(), 1);
-        assert_eq!(json[0]["id"], 4);
-        assert_eq!(json[0]["result"]["isError"], true);
-        assert!(json[0]["result"]["content"][0]["text"]
-            .as_str()
-            .unwrap()
-            .contains("Schema validation failed"));
+        let valid = json!([1, 2, 3]);
+        let invalid = json!(["a", "b"]);
+        let empty = json!([]);
+        assert!(validate_against_schema(&valid, &schema).is_ok());
+        assert!(validate_against_schema(&invalid, &schema).is_err());
+        assert!(validate_against_schema(&empty, &schema).is_err());
     }
 
-    #[cfg(unix)]
-    #[serial]
     #[test]
-    fn serve_mcp_unknown_method_with_id() {
-        let schema = serde_json::json!({"type": "object"});
-        let lines = run_serve_mcp(
-            &[r#"{"jsonrpc":"2.0","id":5,"method":"unknown/method"}"#],
-            &schema,
-        );
-        let json = json_lines(&lines);
-        assert_eq!(json.len(), 1);
-        assert_eq!(json[0]["id"], 5);
-        assert_eq!(json[0]["error"]["code"], -32601);
-        assert_eq!(json[0]["error"]["message"], "Method not found");
-    }
-
-    #[cfg(unix)]
-    #[serial]
-    #[test]
-    fn serve_mcp_unknown_method_no_id() {
-        let schema = serde_json::json!({"type": "object"});
-        let lines = run_serve_mcp(&[r#"{"jsonrpc":"2.0","method":"unknown/method"}"#], &schema);
-        assert!(json_lines(&lines).is_empty());
-    }
-
-    #[cfg(unix)]
-    #[serial]
-    #[test]
-    fn serve_mcp_empty_line_skipped() {
-        let schema = serde_json::json!({"type": "object"});
-        let lines = run_serve_mcp(
-            &["", r#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#],
-            &schema,
-        );
-        let json = json_lines(&lines);
-        assert_eq!(json.len(), 1);
-        assert_eq!(json[0]["id"], 1);
-    }
-
-    #[cfg(unix)]
-    #[serial]
-    #[test]
-    fn serve_mcp_malformed_json_skipped() {
-        let schema = serde_json::json!({"type": "object"});
-        let lines = run_serve_mcp(
-            &[
-                "not valid json",
-                r#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#,
-            ],
-            &schema,
-        );
-        let json = json_lines(&lines);
-        assert_eq!(json.len(), 1);
-        assert_eq!(json[0]["id"], 1);
-    }
-
-    // ------------------------------------------------------------------
-    //  run — integration
-    // ------------------------------------------------------------------
-
-    /// Helper: call `run()` with a real schema file and redirected I/O.
-    #[cfg(unix)]
-    fn run_with_input(input: &str, schema_body: &Value) -> Vec<String> {
-        let dir = tempfile::tempdir().unwrap();
-        let schema_path = dir.path().join("schema.json");
-        std::fs::write(
-            &schema_path,
-            serde_json::to_string_pretty(schema_body).unwrap(),
-        )
-        .unwrap();
-
-        let _lock = IO_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let (_, out_lines) = with_redirected_io(input, || {
-            let args = McpWorkflowValidateSchemaArgs {
-                schema_file: schema_path,
-            };
-            let _ = run(args);
+    fn validate_edge_enum_values() {
+        let schema = json!({
+            "type": "string",
+            "enum": ["red", "green", "blue"]
         });
-        out_lines
+        assert!(validate_against_schema(&json!("red"), &schema).is_ok());
+        assert!(validate_against_schema(&json!("yellow"), &schema).is_err());
     }
 
     #[test]
-    fn run_missing_schema_file() {
-        // The default log path creates a file under temp_dir, which should succeed.
-        // The schema file does NOT exist → run() returns Err.
-        let args = McpWorkflowValidateSchemaArgs {
-            schema_file: "/tmp/nonexistent_schema_luft_test.json".into(),
-        };
-        let result = run(args);
-        assert!(result.is_err());
-    }
-
-    #[cfg(unix)]
-    #[serial]
-    #[test]
-    fn run_with_schema_file_and_initialize() {
-        let schema = serde_json::json!({"type": "object"});
-        let lines = run_with_input(r#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#, &schema);
-        let json = json_lines(&lines);
-        assert_eq!(json.len(), 1);
-        assert_eq!(json[0]["id"], 1);
-        assert_eq!(
-            json[0]["result"]["serverInfo"]["name"],
-            "luft-structured-output"
-        );
-    }
-
-    #[cfg(unix)]
-    #[serial]
-    #[test]
-    fn run_with_env_log_var() {
-        let dir = tempfile::tempdir().unwrap();
-        let schema_path = dir.path().join("schema.json");
-        let schema = serde_json::json!({"type": "object"});
-        std::fs::write(&schema_path, serde_json::to_string_pretty(&schema).unwrap()).unwrap();
-        let log_path = dir.path().join("custom-mcp.log");
-
-        std::env::set_var("LUFT_MCP_LOG", log_path.to_str().unwrap());
-
-        let _lock = IO_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let (_, out_lines) =
-            with_redirected_io(r#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#, || {
-                let args = McpWorkflowValidateSchemaArgs {
-                    schema_file: schema_path.clone(),
-                };
-                let _ = run(args);
-            });
-        let json = json_lines(&out_lines);
-        assert_eq!(json.len(), 1);
-        assert!(log_path.exists(), "custom log file should exist");
-
-        std::env::remove_var("LUFT_MCP_LOG");
-    }
-
-    // ------------------------------------------------------------------
-    //  McpWorkflowValidateSchemaArgs
-    // ------------------------------------------------------------------
-
-    #[test]
-    fn mcp_args_has_schema_file() {
-        let args = McpWorkflowValidateSchemaArgs {
-            schema_file: "test.json".into(),
-        };
-        assert_eq!(args.schema_file.display().to_string(), "test.json");
+    fn validate_edge_number_bounds() {
+        let schema = json!({
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+        });
+        assert!(validate_against_schema(&json!(50), &schema).is_ok());
+        assert!(validate_against_schema(&json!(-1), &schema).is_err());
+        assert!(validate_against_schema(&json!(101), &schema).is_err());
     }
 }
-

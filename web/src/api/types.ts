@@ -90,6 +90,7 @@ export type AgentEvent =
   | { type: 'PhaseStarted'; run_id: RunId; phase_id: PhaseId; label: string; planned: number; ts: string }
   | { type: 'AgentStarted'; run_id: RunId; phase_id: PhaseId; agent_id: AgentId; role: AgentRole; prompt_preview: string; model?: string; ts: string }
   | { type: 'AgentProgress'; run_id: RunId; agent_id: AgentId; delta: ProgressDelta; ts: string }
+  | { type: 'AcpRequest'; run_id: RunId; agent_id: AgentId; method: string; raw: unknown; ts?: string }
   | { type: 'AgentDone'; run_id: RunId; agent_id: AgentId; status: AgentStatus; tokens: TokenUsage; elapsed_ms: number; ts: string }
   | { type: 'PhaseDone'; run_id: RunId; phase_id: PhaseId; ok: number; failed: number; ts: string }
   | { type: 'RunDone'; run_id: RunId; status: RunStatus; total_tokens: TokenUsage; ts: string }
