@@ -12,9 +12,6 @@ pub enum DaemonSubcommand {
         /// Port to listen on.
         #[arg(long, default_value_t = luft_daemon::autostart::DEFAULT_PORT)]
         port: u16,
-        /// Override the default backend (agents without explicit `backend` use this).
-        #[arg(long)]
-        backend: Option<String>,
         /// Run in foreground (blocks terminal). Internal use.
         #[arg(long)]
         foreground: bool,
@@ -27,24 +24,20 @@ pub enum DaemonSubcommand {
 
 pub async fn run(cmd: DaemonSubcommand) -> Result<()> {
     match cmd {
-        DaemonSubcommand::Start {
-            port,
-            backend,
-            foreground,
-        } => start(port, backend, foreground).await,
+        DaemonSubcommand::Start { port, foreground, } => start(port, foreground).await,
         DaemonSubcommand::Stop => stop().await,
         DaemonSubcommand::Status => status(),
     }
 }
 
-async fn start(port: u16, default_backend: Option<String>, foreground: bool) -> Result<()> {
+async fn start(port: u16, foreground: bool) -> Result<()> {
     if !foreground {
-        return spawn_detached(port, default_backend).await;
+        return spawn_detached(port).await;
     }
-    run_foreground(port, default_backend).await
+    run_foreground(port).await
 }
 
-async fn run_foreground(port: u16, default_backend: Option<String>) -> Result<()> {
+async fn run_foreground(port: u16) -> Result<()> {
     let mut ids = backend::detect_available_backends();
     if ids.is_empty() {
         ids.push("mock");
@@ -59,11 +52,7 @@ async fn run_foreground(port: u16, default_backend: Option<String>) -> Result<()
             Err(e) => eprintln!("  failed to create backend '{id}': {e}"),
         }
     }
-    if let Some(ref id) = default_backend {
-        if let Ok(b) = backend::create_backend(id, false, None) {
-            reg = reg.with_default(b);
-        }
-    }
+
     println!("Daemon backends: {}", ids.join(", "));
     let luft = luft::Luft::builder().registry(reg).build()?;
 
@@ -80,7 +69,7 @@ fn daemon_log_dir() -> std::path::PathBuf {
 }
 
 /// Spawn a detached daemon process in the background.
-async fn spawn_detached(port: u16, default_backend: Option<String>) -> Result<()> {
+async fn spawn_detached(port: u16) -> Result<()> {
     if let Some(pf) = luft_daemon::read_pid()? {
         if luft_daemon::is_alive(pf.pid) {
             println!("Daemon already running: PID {}, addr {}", pf.pid, pf.addr);
@@ -95,10 +84,6 @@ async fn spawn_detached(port: u16, default_backend: Option<String>) -> Result<()
         .arg("--port")
         .arg(port.to_string())
         .arg("--foreground");
-
-    if let Some(ref id) = default_backend {
-        cmd.arg("--backend").arg(id);
-    }
 
     let log_dir = daemon_log_dir();
     std::fs::create_dir_all(&log_dir)?;

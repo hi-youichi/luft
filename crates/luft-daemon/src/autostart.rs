@@ -14,7 +14,7 @@ pub const DEFAULT_PORT: u16 = 7878;
 /// Discover a running daemon, or auto-start one.
 ///
 /// Returns the daemon's address (`"host:port"`) on success.
-pub async fn discover_or_autostart(backend: Option<String>) -> Result<String> {
+pub async fn discover_or_autostart() -> Result<String> {
     if let Some(addr) = process::discover()? {
         if try_connect(&addr).await.is_ok() {
             debug!(%addr, "discovered running daemon");
@@ -23,11 +23,11 @@ pub async fn discover_or_autostart(backend: Option<String>) -> Result<String> {
         warn!("stale daemon PID file, removing");
         process::remove();
     }
-    autostart(backend).await
+    autostart().await
 }
 
 /// Spawn `luft daemon` as a child, then poll until it's reachable.
-async fn autostart(backend: Option<String>) -> Result<String> {
+async fn autostart() -> Result<String> {
     let port = std::env::var("LUFT_DAEMON_PORT")
         .ok()
         .and_then(|s| s.parse().ok())
@@ -44,9 +44,7 @@ async fn autostart(backend: Option<String>) -> Result<String> {
         .arg(port.to_string())
         .arg("--foreground");
 
-    if let Some(ref id) = backend {
-        cmd.arg("--backend").arg(id);
-    }
+    
 
     #[cfg(unix)]
     {

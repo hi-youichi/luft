@@ -20,7 +20,7 @@ use rmcp::{
     ErrorData as McpError, RoleServer, ServerHandler, ServiceExt,
 };
 use std::path::PathBuf;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 // ── LuftMcpServer ──────────────────────────────────────────────────────
 
@@ -29,7 +29,7 @@ use std::sync::{Arc, OnceLock};
 pub struct LuftMcpServer {
     pub service: Arc<WorkflowServiceImpl>,
     tool_router: ToolRouter<Self>,
-    client_name: Arc<OnceLock<String>>,
+    pub default_backend: Option<String>,
 }
 
 impl LuftMcpServer {
@@ -41,7 +41,7 @@ impl LuftMcpServer {
         let mut s = Self {
             service,
             tool_router: ToolRouter::default(),
-            client_name: Arc::new(OnceLock::new()),
+            default_backend: None,
         };
         s.tool_router = Self::tool_router();
         s
@@ -58,46 +58,15 @@ impl LuftMcpServer {
         self.service.luft()
     }
 
-    pub fn client_name(&self) -> Option<&str> {
-        self.client_name.get().map(|s| s.as_str())
-    }
-
-    pub fn is_codex(&self) -> bool {
-        matches!(
-            self.client_name(),
-            Some(n) if n.eq_ignore_ascii_case("codex")
-        )
-    }
-
-    /// Return a clone with a **fresh** `client_name` slot.
-    ///
-    /// `LuftMcpServer::clone()` shares the same `Arc<OnceLock<String>>`,
-    /// so the first MCP `initialize` across all clones locks the client
-    /// identity.  This method creates an independent `OnceLock` while
-    /// keeping the shared `service` (cheap `Arc` bump).
-    ///
-    /// Used by the daemon accept loop so each TCP/WS connection gets its
-    /// own auto-inference slot.
-    pub fn with_fresh_client_name(&self) -> Self {
+    /// Create a clone with optional per-connection backend.
+    /// Used by the daemon accept loop for each WS connection.
+    pub fn with_fresh_client_name_and_backend(&self, default_backend: Option<String>) -> Self {
         Self {
             service: Arc::clone(&self.service),
             tool_router: self.tool_router.clone(),
-            client_name: Arc::new(OnceLock::new()),
+            default_backend,
         }
     }
-}
-
-/// Map MCP client_info.name to a registered backend id.
-/// Returns None for unknown clients (fall back to daemon default).
-fn infer_backend_from_client_name(name: &str) -> Option<String> {
-    let lower = name.to_ascii_lowercase();
-    if lower == "codex" || lower.starts_with("codex-") || lower.starts_with("codex_") {
-        return Some("codex".into());
-    }
-    if lower == "opencode" || lower.starts_with("opencode-") || lower.starts_with("opencode_") {
-        return Some("opencode".into());
-    }
-    None
 }
 
 // ── Tools ──────────────────────────────────────────────────────────────
@@ -105,15 +74,15 @@ fn infer_backend_from_client_name(name: &str) -> Option<String> {
 #[tool_router]
 impl LuftMcpServer {
     #[tool(
-        description = "Execute a Luft workflow, or resume a prior checkpointed run. Exactly one of `script`, `path`, `resume_from_id` is required. Returns immediately with a run_id — use workflow_status to poll progress. Backend is auto-detected from your MCP client identity; pass `backend` to override (e.g. 'codex', 'opencode')."
+        description = "Execute a Luft workflow, or resume a prior checkpointed run. Exactly one of `script`, `path`, `resume_from_id` is required. Returns immediately with a run_id — use workflow_status to poll progress. Pass `backend` to override (e.g. 'codex', 'opencode')."
     )]
     async fn workflow_execute(
         &self,
         Parameters(mut req): Parameters<ExecuteWorkflowRequest>,
     ) -> Result<String, String> {
         if req.backend.is_none() {
-            if let Some(name) = self.client_name.get() {
-                req.backend = infer_backend_from_client_name(name);
+            if let Some(ref b) = self.default_backend {
+                req.backend = Some(b.clone());
             }
         }
         let (resp, handle) = self
@@ -121,10 +90,6 @@ impl LuftMcpServer {
             .start_workflow(req)
             .await
             .map_err(|e| e.to_string())?;
-        // Keep ownership of the join handle in the daemon task. Dropping the
-        // MCP call's handle detaches the run before its terminal outcome is
-        // observed, while cancellation still needs to remain cooperative for
-        // spawn_blocking-based execution.
         tokio::spawn(async move {
             let _ = handle.join().await;
         });
@@ -228,7 +193,6 @@ impl ServerHandler for LuftMcpServer {
         request: InitializeRequestParam,
         context: RequestContext<RoleServer>,
     ) -> Result<InitializeResult, McpError> {
-        let _ = self.client_name.set(request.client_info.name.clone());
         tracing::info!(
             client = %request.client_info.name,
             version = %request.client_info.version,
@@ -355,137 +319,31 @@ mod tests {
         LuftMcpServer::new(luft)
     }
 
-    fn simulate_handshake(server: &LuftMcpServer, name: &str) {
-        let _ = server.client_name.set(name.to_string());
-    }
-
-    // ── Client identity ──────────────────────────────────────────────────
+    // ── Per-connection backend isolation ─────────────────────────────────
 
     #[test]
-    fn client_name_is_none_before_handshake() {
+    fn with_fresh_client_name_and_backend_passes_default_backend() {
         let server = make_server();
-        assert_eq!(server.client_name(), None);
-        assert!(!server.is_codex());
+        assert_eq!(server.default_backend, None);
+
+        let server2 = server.with_fresh_client_name_and_backend(Some("codex".into()));
+        assert_eq!(server2.default_backend, Some("codex".into()));
+        assert_eq!(server.default_backend, None, "original should be unchanged");
     }
 
     #[test]
-    fn is_codex_matches_case_insensitive() {
-        for name in ["codex", "CODEX", "Codex", "CoDeX"] {
-            let server = make_server();
-            simulate_handshake(&server, name);
-            assert_eq!(server.client_name(), Some(name));
-            assert!(
-                server.is_codex(),
-                "expected {name:?} to be detected as codex"
-            );
-        }
-    }
-
-    #[test]
-    fn is_codex_rejects_non_codex_clients() {
-        for name in ["claude-code", "claude", "opencode", ""] {
-            let server = make_server();
-            simulate_handshake(&server, name);
-            assert_eq!(server.client_name(), Some(name));
-            assert!(!server.is_codex(), "{name:?} must not be detected as codex");
-        }
-    }
-
-    #[test]
-    fn client_name_keeps_first_value() {
+    fn with_fresh_client_name_and_backend_shares_service() {
         let server = make_server();
-        simulate_handshake(&server, "codex");
-        simulate_handshake(&server, "claude-code");
-        assert_eq!(server.client_name(), Some("codex"));
-        assert!(server.is_codex());
-    }
-
-    // ── Per-connection isolation ─────────────────────────────────────────
-
-    #[test]
-    fn with_fresh_client_name_is_independent() {
-        let server = make_server();
-        simulate_handshake(&server, "codex");
-        assert_eq!(server.client_name(), Some("codex"));
-
-        let server2 = server.with_fresh_client_name();
-        assert_eq!(
-            server2.client_name(),
-            None,
-            "fresh clone should have no client_name"
-        );
-        assert_eq!(
-            server.client_name(),
-            Some("codex"),
-            "original should be unchanged"
-        );
-
-        // The fresh clone can capture a different identity.
-        simulate_handshake(&server2, "opencode");
-        assert_eq!(server2.client_name(), Some("opencode"));
-        assert_eq!(
-            server.client_name(),
-            Some("codex"),
-            "original must not be affected"
-        );
-    }
-
-    #[test]
-    fn with_fresh_client_name_shares_service() {
-        let server = make_server();
-        let server2 = server.with_fresh_client_name();
+        let server2 = server.with_fresh_client_name_and_backend(Some("opencode".into()));
         assert!(
             Arc::ptr_eq(&server.service, &server2.service),
             "service Arc should be shared"
         );
     }
 
-    // ── infer_backend_from_client_name ───────────────────────────────────
-
     #[test]
-    fn infer_backend_codex() {
-        assert_eq!(
-            infer_backend_from_client_name("codex"),
-            Some("codex".into())
-        );
-        assert_eq!(
-            infer_backend_from_client_name("CODEX"),
-            Some("codex".into())
-        );
-        assert_eq!(
-            infer_backend_from_client_name("Codex"),
-            Some("codex".into())
-        );
-        assert_eq!(
-            infer_backend_from_client_name("codex-mcp-client"),
-            Some("codex".into())
-        );
-        assert_eq!(
-            infer_backend_from_client_name("codex_cli"),
-            Some("codex".into())
-        );
-    }
-
-    #[test]
-    fn infer_backend_opencode() {
-        assert_eq!(
-            infer_backend_from_client_name("opencode"),
-            Some("opencode".into())
-        );
-        assert_eq!(
-            infer_backend_from_client_name("OpenCode"),
-            Some("opencode".into())
-        );
-        assert_eq!(
-            infer_backend_from_client_name("opencode-acp"),
-            Some("opencode".into())
-        );
-    }
-
-    #[test]
-    fn infer_backend_unknown_returns_none() {
-        assert_eq!(infer_backend_from_client_name("claude-code"), None);
-        assert_eq!(infer_backend_from_client_name(""), None);
-        assert_eq!(infer_backend_from_client_name("my-custom-tool"), None);
+    fn default_backend_is_none_by_default() {
+        let server = make_server();
+        assert_eq!(server.default_backend, None);
     }
 }

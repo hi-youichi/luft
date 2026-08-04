@@ -50,6 +50,7 @@ pub(crate) fn build_task(
             "{prompt}\n\n\
              ---\n\
              IMPORTANT: You MUST call the `workflow_validate_schema` tool to submit your result.\n\
+             The tool payload must be exactly {{\"result\": <your JSON value>}}; do not put the result under `input`, `schema`, or another nested field, and do not JSON-encode an object as a string.\n\
              Do NOT return the result as a text message. Call the tool.",
             prompt = prompt,
         ),

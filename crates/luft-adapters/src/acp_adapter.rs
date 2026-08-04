@@ -110,6 +110,7 @@ struct SessionState {
     session_id: Arc<Mutex<Option<String>>>,
     resume_session_id: Option<String>,
     requested_session_id: Option<String>,
+    connect_timeout: Duration,
 }
 
 /// ACP backend configuration.
@@ -337,6 +338,7 @@ async fn run_acp_session(
             .map(|record| record.protocol_session_id)
             .or_else(|| task.session_id.clone()),
         requested_session_id: task.session_id.clone(),
+        connect_timeout: config.connect_timeout,
     };
 
     // Write the workflow-authoring skill into the spawned backend's own
@@ -508,6 +510,7 @@ fn drive_connection(
     let session_id = state.session_id.clone();
     let resume_session_id = state.resume_session_id.clone();
     let requested_session_id = state.requested_session_id.clone();
+    let connect_timeout = state.connect_timeout;
     let activity_tx = state.activity_tx.clone();
     let submit_signal = state.submit_signal.clone();
     let run_id = state.run_id;
@@ -587,6 +590,7 @@ fn drive_connection(
                         session_id: &session_id,
                         resume_session_id: resume_session_id.as_deref(),
                         requested_session_id: requested_session_id.as_deref(),
+                        connect_timeout,
                         backend_id,
                     })
                     .await?;
@@ -683,6 +687,7 @@ struct HandshakePromptContext<'a> {
     session_id: &'a Arc<Mutex<Option<String>>>,
     resume_session_id: Option<&'a str>,
     requested_session_id: Option<&'a str>,
+    connect_timeout: Duration,
     /// Registry key of this backend (`config.id`), captured into
     /// [`CurrentBackend::id`] during the handshake.
     backend_id: &'a str,
@@ -692,16 +697,29 @@ async fn run_handshake_and_prompt(
     ctx: HandshakePromptContext<'_>,
 ) -> Result<(), agent_client_protocol::Error> {
     tracing::debug!("ACP handshake: initialize");
-    let init = ctx
-        .conn
-        .send_request(
-            InitializeRequest::new(ProtocolVersion::V1).client_info(
-                Implementation::new("luft", env!("CARGO_PKG_VERSION"))
-                    .title("Luft"),
+    let init_request = InitializeRequest::new(ProtocolVersion::V1)
+        .client_info(Implementation::new("luft", env!("CARGO_PKG_VERSION")).title("Luft"));
+    emit_acp_request(
+        ctx.events,
+        ctx.run_id,
+        ctx.agent_id,
+        "initialize",
+        &init_request,
+    );
+    let init = tokio::time::timeout(
+        ctx.connect_timeout,
+        ctx.conn.send_request(init_request).block_task(),
+    )
+    .await
+    .map_err(|_| {
+        agent_client_protocol::Error::new(
+            -32000,
+            format!(
+                "ACP initialize timed out after {} seconds",
+                ctx.connect_timeout.as_secs()
             ),
         )
-        .block_task()
-        .await?;
+    })??;
 
     // Capture the connected backend's identity into the process-global
     // store, so downstream code can resolve "the current backend" without
@@ -999,8 +1017,8 @@ async fn send_prompt(
     );
     emit_acp_request(events, run_id, agent_id, "session/prompt", &req);
     conn.send_request(req)
-    .block_task()
-    .await
+        .block_task()
+        .await
 }
 
 fn emit_acp_request<T: serde::Serialize>(

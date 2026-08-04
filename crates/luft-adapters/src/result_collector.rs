@@ -67,15 +67,52 @@ fn status_from_stop_reason(s: &str) -> AgentStatus {
 }
 
 fn normalize_structured_output(value: serde_json::Value) -> serde_json::Value {
-    if value.get("schema").is_some() {
-        if let Some(input) = value.get("input").cloned() {
-            if !input.is_null() {
-                tracing::debug!("extracted input from MCP wrapper, discarding schema envelope");
-                return input;
-            }
+    match value {
+        serde_json::Value::String(text) => {
+            serde_json::from_str(&text).unwrap_or(serde_json::Value::String(text))
         }
+        serde_json::Value::Object(object) => {
+            // ACP clients/backends may expose the MCP call arguments either
+            // directly or inside an additional `arguments` envelope. The
+            // workflow tool contract is `{ result: <value> }`; the envelope
+            // is transport metadata, not the agent's structured result.
+            if let Some(arguments) = object.get("arguments").and_then(|v| v.as_object()) {
+                if let Some(result) = arguments.get("result").cloned() {
+                    tracing::debug!("extracted result from MCP arguments envelope");
+                    return normalize_structured_output(result);
+                }
+                if arguments.get("schema").is_some() {
+                    if let Some(input) = arguments.get("input").cloned() {
+                        if !input.is_null() {
+                            tracing::debug!("extracted input from nested MCP schema envelope");
+                            return normalize_structured_output(input);
+                        }
+                    }
+                }
+            }
+
+            // Normal MCP tool input is `{ result: <value> }`. Accept a
+            // JSON-encoded string as a compatibility fallback for clients
+            // that serialized the value one time too many.
+            if let Some(result) = object.get("result").cloned() {
+                tracing::debug!("extracted result from MCP envelope");
+                return normalize_structured_output(result);
+            }
+
+            // Keep compatibility with the older `{ input, schema }` envelope.
+            if object.get("schema").is_some() {
+                if let Some(input) = object.get("input").cloned() {
+                    if !input.is_null() {
+                        tracing::debug!("extracted input from MCP schema envelope");
+                        return normalize_structured_output(input);
+                    }
+                }
+            }
+
+            serde_json::Value::Object(object)
+        }
+        other => other,
     }
-    value
 }
 
 /// Parse structured findings out of agent text (raw JSON or fenced code block).
@@ -249,7 +286,43 @@ mod tests {
             TokenUsage::default(),
             Some(serde_json::json!({"result": "structured"})),
         );
-        assert_eq!(r.output["result"], "structured");
+        assert_eq!(r.output, serde_json::json!("structured"));
+    }
+
+    #[test]
+    fn normalize_result_string_containing_json() {
+        let r = collect(
+            &task(),
+            "EndTurn",
+            "ignored text".into(),
+            TokenUsage::default(),
+            Some(serde_json::json!({
+                "result": "{\"endpoint\":\"GET /health\",\"summary\":\"ok\"}"
+            })),
+        );
+        assert_eq!(r.output["endpoint"], "GET /health");
+        assert_eq!(r.output["summary"], "ok");
+    }
+
+    #[test]
+    fn normalize_arguments_result_envelope() {
+        let r = collect(
+            &task(),
+            "EndTurn",
+            "ignored text".into(),
+            TokenUsage::default(),
+            Some(serde_json::json!({
+                "arguments": {
+                    "result": {
+                        "endpoint": "GET /health",
+                        "summary": "ok"
+                    }
+                }
+            })),
+        );
+        assert_eq!(r.output["endpoint"], "GET /health");
+        assert_eq!(r.output["summary"], "ok");
+        assert!(r.output.get("arguments").is_none());
     }
 
     #[test]

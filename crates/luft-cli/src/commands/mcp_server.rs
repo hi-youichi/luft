@@ -35,8 +35,8 @@ pub struct McpServeArgs {
 
 /// Entry point for `luft mcp serve`.
 pub async fn serve(args: McpServeArgs) -> Result<()> {
-    let addr = luft_daemon::discover_or_autostart(args.backend).await?;
-    luft_mcp::proxy::run_proxy(&addr).await?;
+    let addr = luft_daemon::discover_or_autostart().await?;
+    luft_mcp::proxy::run_proxy(&addr, args.backend.as_deref()).await?;
     Ok(())
 }
 

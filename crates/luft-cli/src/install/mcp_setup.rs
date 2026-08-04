@@ -101,7 +101,7 @@ impl McpSetup {
             Value::Object(serde_json::Map::new())
         };
 
-        if let Err(e) = Self::merge_claude_mcp(&mut config, &luft_command()) {
+        if let Err(e) = Self::merge_claude_mcp(&mut config, &luft_command(), "claude") {
             return McpConfigResult::Failed(e.to_string());
         }
 
@@ -112,10 +112,10 @@ impl McpSetup {
         McpConfigResult::Configured
     }
 
-    fn merge_claude_mcp(config: &mut Value, luft_cmd: &str) -> Result<()> {
+    fn merge_claude_mcp(config: &mut Value, luft_cmd: &str, backend: &str) -> Result<()> {
         let luft_entry = json!({
             "command": luft_cmd,
-            "args": ["mcp", "serve"]
+            "args": ["mcp", "serve", "--backend", backend]
         });
 
         if let Some(obj) = config.as_object_mut() {
@@ -203,7 +203,7 @@ impl McpSetup {
         let luft_cmd = luft_command();
         let luft_entry = json!({
             "type": "local",
-            "command": [luft_cmd, "mcp", "serve"]
+            "command": [luft_cmd, "mcp", "serve", "--backend", "opencode"]
        });
 
         if let Some(obj) = config.as_object_mut() {
@@ -275,7 +275,7 @@ impl McpSetup {
         // TOML literal string (single-quoted) so Windows backslashes in the
         // path need no escaping. Binary paths never contain single quotes.
         new_content.push_str(&format!("command = '{}'\n", luft_cmd));
-        new_content.push_str("args = [\"mcp\", \"serve\"]\n");
+        new_content.push_str("args = [\"mcp\", \"serve\", \"--backend\", \"codex\"]\n");
 
         if let Err(e) = fs::write(&config_file, new_content) {
             return McpConfigResult::Failed(e.to_string());
@@ -457,12 +457,12 @@ mod tests {
     #[test]
     fn merge_claude_mcp_into_empty() {
         let mut config = json!({});
-        McpSetup::merge_claude_mcp(&mut config, "luft").unwrap();
+        McpSetup::merge_claude_mcp(&mut config, "luft", "claude").unwrap();
 
         let servers = config["mcpServers"].as_object().unwrap();
         assert!(servers.contains_key("luft"));
         assert_eq!(servers["luft"]["command"], "luft");
-        assert_eq!(servers["luft"]["args"], json!(["mcp", "serve"]));
+        assert_eq!(servers["luft"]["args"], json!(["mcp", "serve", "--backend", "claude"]));
     }
 
     #[test]
@@ -476,7 +476,7 @@ mod tests {
             }
         });
 
-        McpSetup::merge_claude_mcp(&mut config, "luft").unwrap();
+        McpSetup::merge_claude_mcp(&mut config, "luft", "claude").unwrap();
 
         let servers = config["mcpServers"].as_object().unwrap();
         assert!(servers.contains_key("existing"));
@@ -495,10 +495,10 @@ mod tests {
             }
         });
 
-        McpSetup::merge_claude_mcp(&mut config, "luft").unwrap();
+        McpSetup::merge_claude_mcp(&mut config, "luft", "claude").unwrap();
 
-        assert_eq!(config["mcpServers"]["luft"]["command"], "luft");
-        assert_eq!(config["mcpServers"]["luft"]["args"], json!(["mcp", "serve"]));
+assert_eq!(config["mcpServers"]["luft"]["command"], "luft");
+        assert_eq!(config["mcpServers"]["luft"]["args"], json!(["mcp", "serve", "--backend", "claude"]));
     }
 
     #[test]
@@ -507,7 +507,7 @@ mod tests {
         // `configure_claude` pass `luft_command()` (an absolute path) and
         // have it reach disk unchanged.
         let mut config = json!({});
-        McpSetup::merge_claude_mcp(&mut config, "/custom/path/to/luft").unwrap();
+        McpSetup::merge_claude_mcp(&mut config, "/custom/path/to/luft", "claude").unwrap();
         assert_eq!(
             config["mcpServers"]["luft"]["command"],
             "/custom/path/to/luft"
@@ -535,7 +535,7 @@ mod tests {
         assert_eq!(config["mcp"]["luft"]["type"], "local");
         assert_eq!(
             config["mcp"]["luft"]["command"],
-            json!(["/test/luft", "mcp", "serve"])
+            json!(["/test/luft", "mcp", "serve", "--backend", "opencode"])
         );
     }
 
@@ -626,7 +626,7 @@ mod tests {
                 .unwrap();
         assert_eq!(
             config["mcp"]["luft"]["command"],
-            json!(["/test/luft", "mcp", "serve"])
+            json!(["/test/luft", "mcp", "serve", "--backend", "opencode"])
         );
     }
 
@@ -651,7 +651,7 @@ mod tests {
         // TOML literal string (single-quoted) — the absolute path flows
         // through verbatim, no backslash escaping.
         assert!(content.contains("command = '/test/luft'"));
-        assert!(content.contains("args = [\"mcp\", \"serve\"]"));
+        assert!(content.contains("args = [\"mcp\", \"serve\", \"--backend\", \"codex\"]"));
     }
 
     #[test]
@@ -703,7 +703,7 @@ args = ["custom-args"]
         let content = std::fs::read_to_string(dir.join("config.toml")).unwrap();
         assert!(!content.contains("custom-luft"));
         assert!(content.contains("command = '/test/luft'"));
-        assert!(content.contains("args = [\"mcp\", \"serve\"]"));
+        assert!(content.contains("args = [\"mcp\", \"serve\", \"--backend\", \"codex\"]"));
     }
 
     // ── configure_for_agents ───────────────────────────────
@@ -771,13 +771,13 @@ args = ["custom-args"]
     #[test]
     fn merge_claude_mcp_round_trip() {
         let mut config = json!({});
-        McpSetup::merge_claude_mcp(&mut config, "luft").unwrap();
+        McpSetup::merge_claude_mcp(&mut config, "luft", "claude").unwrap();
         assert!(config["mcpServers"]["luft"].is_object());
         assert_eq!(config["mcpServers"]["luft"]["command"], "luft");
 
         // 二次合并：值一致，不应产生变化
         let original = config.clone();
-        McpSetup::merge_claude_mcp(&mut config, "luft").unwrap();
+        McpSetup::merge_claude_mcp(&mut config, "luft", "claude").unwrap();
         assert_eq!(config, original);
     }
 

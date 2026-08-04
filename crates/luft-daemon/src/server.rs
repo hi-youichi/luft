@@ -19,7 +19,6 @@ pub async fn serve(luft: Luft, listener: TcpListener) -> Result<()> {
     process::write(pid, &addr.to_string())?;
     info!(%addr, pid, "daemon started");
 
-    // LuftMcpServer takes ownership of Luft but is Clone (stores it in Arc internally).
     let mcp_server = Arc::new(LuftMcpServer::new(luft));
 
     let mut shutdown_rx = setup_shutdown_handler();
@@ -39,7 +38,7 @@ pub async fn serve(luft: Luft, listener: TcpListener) -> Result<()> {
                         continue;
                     }
                 };
-                let server = mcp_server.with_fresh_client_name();
+                let server = Arc::clone(&mcp_server);
                 tokio::spawn(async move {
                     if let Err(e) = handle_connection(stream, peer, server).await {
                         warn!(%peer, error = %e, "connection ended with error");
@@ -57,14 +56,30 @@ pub async fn serve(luft: Luft, listener: TcpListener) -> Result<()> {
 async fn handle_connection(
     stream: tokio::net::TcpStream,
     peer: std::net::SocketAddr,
-    mcp_server: LuftMcpServer,
+    mcp_server: Arc<LuftMcpServer>,
 ) -> Result<()> {
-    let ws_stream = tokio_tungstenite::accept_async(stream).await?;
+    let backend: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
-    // All connections route to MCP for now.
-    // TODO: use accept_hdr to extract the request URI and route /mcp vs /run.
-    info!(%peer, "connection routed to /mcp");
-    luft_mcp::ws_transport::serve_ws(mcp_server, ws_stream).await?;
+    let ws_stream = tokio_tungstenite::accept_hdr_async(stream, |req: &tokio_tungstenite::tungstenite::handshake::server::Request, res| {
+        if let Some(query) = req.uri().query() {
+            for pair in query.split('&') {
+                let mut kv = pair.splitn(2, '=');
+                if kv.next() == Some("backend") {
+                    if let Some(val) = kv.next() {
+                        if !val.is_empty() {
+                            *backend.lock().unwrap() = Some(val.to_string());
+                        }
+                    }
+                }
+            }
+        }
+        Ok(res)
+    })
+    .await?;
+
+    let server = mcp_server.with_fresh_client_name_and_backend(backend.into_inner().unwrap());
+    info!(%peer, backend = ?server.default_backend, "connection routed to /mcp");
+    luft_mcp::ws_transport::serve_ws(server, ws_stream).await?;
     Ok(())
 }
 
