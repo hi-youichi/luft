@@ -13,11 +13,11 @@ testing = ["luft-core/testing"]
 unstable_end_turn_token_usage = ["luft-adapters/unstable_end_turn_token_usage"]
 
 [dependencies]
-luft-core = { path = "../luft-core", version = "0.4.3" }
-luft-storage = { path = "../luft-storage", version = "0.4.3" }
-luft-runtime = { path = "../luft-runtime", version = "0.4.3" }
-luft-adapters = { path = "../luft-adapters", version = "0.4.3" }
-luft-planner = { path = "../luft-planner", version = "0.4.3" }
+luft-core = { path = "../luft-core", version = "0.4.6" }
+luft-storage = { path = "../luft-storage", version = "0.4.6" }
+luft-runtime = { path = "../luft-runtime", version = "0.4.6" }
+luft-adapters = { path = "../luft-adapters", version = "0.4.6" }
+luft-planner = { path = "../luft-planner", version = "0.4.6" }
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["compat"] }
 serde = { version = "1", features = ["derive"] }
@@ -30,6 +30,6 @@ uuid = { version = "1", features = ["v7", "serde"] }
 
 [dev-dependencies]
 tempfile = "3"
-luft-core = { path = "../luft-core", version = "0.4.3", features = ["testing"] }
+luft-core = { path = "../luft-core", version = "0.4.6", features = ["testing"] }
 
 
