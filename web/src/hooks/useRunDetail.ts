@@ -1,12 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
-import { mockApi } from '@/api/mock-client'
+import { api, queryKeys } from '@/api'
 import type { RunCheckpoint } from '@/api/types'
 
 export function useRunDetail(runId: string) {
   const query = useQuery({
-    queryKey: ['run', runId],
-    queryFn: () => mockApi.runs.get(runId),
+    queryKey: queryKeys.runs.detail(runId),
+    queryFn: () => api.runs.get(runId),
     enabled: !!runId,
   })
 
@@ -45,7 +45,7 @@ export function useRunDetail(runId: string) {
     }, 3000)
 
     return () => clearInterval(timer)
-  }, [runId, query.data?.status])
+  }, [runId, query.data])
 
   return {
     ...query,
@@ -55,8 +55,8 @@ export function useRunDetail(runId: string) {
 
 export function useRunEvents(runId: string) {
   return useQuery({
-    queryKey: ['run-events', runId],
-    queryFn: () => mockApi.runs.getEvents(runId),
+    queryKey: queryKeys.runs.events(runId),
+    queryFn: () => api.runs.getEvents(runId),
     enabled: !!runId,
   })
 }

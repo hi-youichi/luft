@@ -395,6 +395,12 @@ impl Luft {
     pub fn available_backend_ids(&self) -> Vec<&'static str> {
         self.registry.available_ids()
     }
+
+    /// Base directory where run artifacts are stored.
+    #[must_use]
+    pub fn base_dir(&self) -> &Path {
+        &self.base_dir
+    }
 }
 
 /// Async handle to a running orchestration.

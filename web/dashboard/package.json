@@ -1,0 +1,19 @@
+{
+  "name": "@luft/dashboard-api",
+  "version": "0.4.6",
+  "description": "WebSocket client and API infrastructure for the Luft Web Dashboard",
+  "type": "module",
+  "main": "src/api/index.ts",
+  "types": "src/api/index.ts",
+  "exports": {
+    ".": "./src/api/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}

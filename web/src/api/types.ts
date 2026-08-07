@@ -127,6 +127,7 @@ export interface WorkflowDetail {
   name: string
   content: string
   description: string
+  last_modified?: string
 }
 
 export interface BackendConfig {
@@ -138,8 +139,88 @@ export interface BackendConfig {
   usage_count: number
 }
 
+export interface WorkflowSaveRequest {
+  name: string
+  content: string
+  description?: string
+}
+
+export interface WorkflowRunRequest {
+  name: string
+  task?: string
+  backend?: string
+}
+
 export interface RunFilters {
   status?: RunStatus | 'all'
   time?: 'today' | '24h' | '7d' | 'all'
   q?: string
+}
+
+export interface CancelRunResponse {
+  run_id: RunId
+  status: 'cancelled'
+  cancelled_at: string
+}
+
+export interface BackendTestResponse {
+  id: string
+  connected: boolean
+  latency_ms?: number
+  error?: string
+}
+
+export interface RunLogsRequest {
+  run_id: RunId
+  tail?: number
+  since?: string
+  level?: 'debug' | 'info' | 'warn' | 'error'
+}
+
+export interface RunLogsResponse {
+  run_id: RunId
+  lines: LogLine[]
+  has_more: boolean
+}
+
+export interface LogLine {
+  ts: string
+  level: 'debug' | 'info' | 'warn' | 'error'
+  message: string
+  agent_id?: AgentId
+}
+
+export interface RunArtifact {
+  run_id: RunId
+  name: string
+  path: string
+  size: number
+  mime_type: string
+  created_at: string
+}
+
+export interface RunArtifactsResponse {
+  run_id: RunId
+  artifacts: RunArtifact[]
+}
+
+export interface DeleteBackendRequest {
+  id: string
+}
+
+export interface DeleteBackendResponse {
+  id: string
+  deleted: boolean
+}
+
+export interface CreateBackendRequest {
+  name: string
+  provider: string
+  model: string
+  api_key?: string
+  base_url?: string
+}
+
+export interface CreateBackendResponse {
+  backend: BackendConfig
 }

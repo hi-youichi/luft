@@ -1,0 +1,118 @@
+name: E2E Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_LOG: info
+
+jobs:
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── Rust toolchain ────────────────────────────────────────────────────
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+
+      # ── Build daemon ──────────────────────────────────────────────────────
+      - name: Build daemon binary
+        run: cargo build --bin luft
+        timeout-minutes: 15
+
+      # ── Start daemon (background) ─────────────────────────────────────────
+      - name: Start daemon
+        run: |
+          ./target/debug/luft daemon start --port 7878 --foreground &
+          echo "DAEMON_PID=$!" >> "$GITHUB_ENV"
+        timeout-minutes: 1
+
+      - name: Wait for daemon health
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:7878/api/health >/dev/null 2>&1; then
+              echo "Daemon is healthy"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Daemon did not become healthy within 30 seconds"
+          exit 1
+        timeout-minutes: 1
+
+      # ── Node.js toolchain ─────────────────────────────────────────────────
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install npm dependencies
+        working-directory: web
+        run: npm ci
+        timeout-minutes: 5
+
+      - name: Install Playwright browsers
+        working-directory: web
+        run: npx playwright install chromium
+        timeout-minutes: 5
+
+      # ── Start Vite dev server (background) ────────────────────────────────
+      - name: Start Vite dev server
+        working-directory: web
+        run: |
+          npm run dev &
+          echo "VITE_PID=$!" >> "$GITHUB_ENV"
+        timeout-minutes: 1
+
+      - name: Wait for Vite dev server
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:5173 >/dev/null 2>&1; then
+              echo "Vite dev server is ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Vite dev server did not start within 30 seconds"
+          exit 1
+        timeout-minutes: 1
+
+      # ── Run Playwright tests ──────────────────────────────────────────────
+      - name: Run E2E tests
+        working-directory: web
+        run: npx playwright test
+        timeout-minutes: 10
+        continue-on-error: true
+
+      # ── Upload test report on failure ─────────────────────────────────────
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: web/playwright-report/
+          retention-days: 7
+          if-no-files-found: warn
+
+      # ── Stop daemon ───────────────────────────────────────────────────────
+      - name: Stop daemon
+        if: always()
+        run: ./target/debug/luft daemon stop
+        timeout-minutes: 1
+        continue-on-error: true

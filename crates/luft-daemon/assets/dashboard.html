@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Luft Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/dashboard.css">
+</head>
+<body>
+  <div id="app">
+    <aside class="sidebar" id="sidebar">
+      <header class="sidebar-header">
+        <div class="logo-wrap">
+          <div class="logo-mark">
+            <svg viewBox="0 0 32 32" fill="none" class="logo-svg">
+              <path d="M6 24V8l10 12V8h2v16L8 12v12H6z" fill="currentColor"/>
+              <path d="M20 8h6v2h-2v14h-2V10h-2V8z" fill="currentColor"/>
+            </svg>
+          </div>
+          <div class="logo-text">
+            <h1>Luft</h1>
+            <span class="logo-sub">Orchestration Dashboard</span>
+          </div>
+        </div>
+      </header>
+      <div class="search-wrap">
+        <input type="text" id="search" class="search-input" placeholder="Filter runs..." autocomplete="off">
+        <button class="refresh-btn" id="refresh-btn" title="Refresh runs">
+          <svg viewBox="0 0 20 20" fill="none" width="16" height="16">
+            <path d="M10 3v2a5 5 0 1 0 4.9 4h2.02A7 7 0 1 1 10 3z" fill="currentColor"/>
+            <path d="M10 1l4 4-4 4V1z" fill="currentColor"/>
+          </svg>
+        </button>
+      </div>
+      <nav class="run-list" id="run-list">
+        <div class="empty-state">
+          <p>No runs yet</p>
+          <span>Runs will appear here when workflows execute</span>
+        </div>
+      </nav>
+      <footer class="sidebar-footer">
+        <div class="auto-refresh">
+          <label class="toggle">
+            <input type="checkbox" id="auto-refresh" checked>
+            <span class="toggle-slider"></span>
+            <span class="toggle-label">Auto-refresh</span>
+          </label>
+        </div>
+      </footer>
+    </aside>
+
+    <main class="main-content" id="main-content">
+      <div id="empty-detail" class="empty-detail">
+        <div class="empty-detail-inner">
+          <svg viewBox="0 0 64 64" fill="none" width="64" height="64" class="empty-icon">
+            <rect x="8" y="8" width="48" height="48" rx="4" stroke="currentColor" stroke-width="2" fill="none"/>
+            <path d="M20 24h24M20 32h24M20 40h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          <h2>Select a run</h2>
+          <p>Choose a run from the sidebar to view its details, phases, and event log.</p>
+        </div>
+      </div>
+
+      <div id="run-detail" class="run-detail" style="display:none;">
+        <header class="detail-header">
+          <div class="detail-title-row">
+            <div class="status-badge" id="detail-status-badge">--</div>
+            <h2 id="detail-task" class="detail-task">--</h2>
+          </div>
+          <div class="detail-meta">
+            <span class="meta-item">
+              <span class="meta-label">Run ID</span>
+              <code id="detail-run-id" class="meta-value">--</code>
+            </span>
+            <span class="meta-item">
+              <span class="meta-label">Dir</span>
+              <code id="detail-run-dir" class="meta-value">--</code>
+            </span>
+            <span class="meta-item">
+              <span class="meta-label">Created</span>
+              <span id="detail-created" class="meta-value">--</span>
+            </span>
+            <span class="meta-item">
+              <span class="meta-label">Updated</span>
+              <span id="detail-updated" class="meta-value">--</span>
+            </span>
+          </div>
+        </header>
+
+        <section class="stats-grid" id="stats-grid">
+          <div class="stat-card">
+            <div class="stat-icon phase-icon">
+              <svg viewBox="0 0 20 20" fill="none" width="20" height="20"><path d="M4 4h12v3H4V4zm0 5h12v2H4V9zm0 4h8v2H4v-2z" fill="currentColor"/></svg>
+            </div>
+            <div class="stat-body">
+              <div class="stat-value" id="stat-phase">0 / 0</div>
+              <div class="stat-label">Phase</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon agent-icon">
+              <svg viewBox="0 0 20 20" fill="none" width="20" height="20"><circle cx="10" cy="8" r="4" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M3 18c0-4 3-6 7-6s7 2 7 6" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+            </div>
+            <div class="stat-body">
+              <div class="stat-value" id="stat-agents">0 / 0</div>
+              <div class="stat-label">Agents</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon token-icon">
+              <svg viewBox="0 0 20 20" fill="none" width="20" height="20"><path d="M10 2L3 6v8l7 4 7-4V6l-7-4z" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M10 2v16M3 6l7 4 7-4" stroke="currentColor" stroke-width="1.5"/></svg>
+            </div>
+            <div class="stat-body">
+              <div class="stat-value" id="stat-tokens">0</div>
+              <div class="stat-label">Tokens</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon running-icon">
+              <svg viewBox="0 0 20 20" fill="none" width="20" height="20"><path d="M10 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16zm0 2a6 6 0 1 1 0 12 6 6 0 0 1 0-12z" fill="currentColor"/><circle cx="10" cy="10" r="3" fill="currentColor"/></svg>
+            </div>
+            <div class="stat-body">
+              <div class="stat-value" id="stat-running">0</div>
+              <div class="stat-label">Running</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="detail-section">
+          <div class="section-tabs">
+            <button class="tab active" data-tab="events">Event Log</button>
+            <button class="tab" data-tab="report">Report</button>
+          </div>
+
+          <div class="tab-content" id="tab-events">
+            <div class="event-filters">
+              <button class="filter-chip active" data-filter="all">All</button>
+              <button class="filter-chip" data-filter="AgentStarted">Started</button>
+              <button class="filter-chip" data-filter="AgentDone">Completed</button>
+              <button class="filter-chip" data-filter="PhaseDone">Phase</button>
+              <button class="filter-chip" data-filter="Log">Log</button>
+              <button class="filter-chip" data-filter="error">Errors</button>
+            </div>
+            <div class="event-log" id="event-log">
+              <div class="event-empty">No events</div>
+            </div>
+          </div>
+
+          <div class="tab-content" id="tab-report" style="display:none;">
+            <pre class="report-output" id="report-output">No report available</pre>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+  <script src="/dashboard.js"></script>
+</body>
+</html>
