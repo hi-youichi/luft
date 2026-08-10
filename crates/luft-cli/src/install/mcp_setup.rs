@@ -48,11 +48,12 @@ fn luft_command() -> String {
 
 /// MCP 配置器
 ///
-/// 为 Claude、OpenCode、Codex 三种 Agent 配置 `luft mcp serve` MCP 服务器。
+/// 为 Claude、OpenCode、Codex、Hermes 四种 Agent 配置 `luft mcp serve` MCP 服务器。
 /// 每种 Agent 的配置文件格式和路径不同：
 /// - Claude: `~/.claude/settings.json` (JSON, `mcpServers.luft`)
 /// - OpenCode: `~/.config/opencode/opencode.json` 或 `.jsonc` (JSON/JSONC, `mcp.luft`)
 /// - Codex: `~/.codex/config.toml` (TOML, `[mcp_servers.luft]`)
+/// - Hermes: `~/.hermes/config.yaml` (YAML, `mcp_servers.luft`)
 pub struct McpSetup;
 
 impl McpSetup {
@@ -72,6 +73,7 @@ impl McpSetup {
                 AgentType::Claude => Self::configure_claude(),
                 AgentType::Opencode => Self::configure_opencode(),
                 AgentType::Codex => Self::configure_codex(),
+                AgentType::Hermes => Self::configure_hermes(),
                 _ => McpConfigResult::NotSupported,
             };
             results.push((agent.clone(), result));
@@ -289,6 +291,68 @@ impl McpSetup {
         Ok(home.join(".codex"))
     }
 
+    // ── Hermes ─────────────────────────────────────────────
+
+    fn configure_hermes() -> McpConfigResult {
+        let config_dir = match Self::get_hermes_config_dir() {
+            Ok(dir) => dir,
+            Err(e) => return McpConfigResult::Failed(e.to_string()),
+        };
+        let config_file = config_dir.join("config.yaml");
+
+        if let Err(e) = fs::create_dir_all(&config_dir) {
+            return McpConfigResult::Failed(e.to_string());
+        }
+
+        let content = if config_file.exists() {
+            match fs::read_to_string(&config_file) {
+                Ok(c) => c,
+                Err(e) => return McpConfigResult::Failed(e.to_string()),
+            }
+        } else {
+            String::new()
+        };
+
+        let cleaned = remove_yaml_mcp_server(&content, "luft");
+        let luft_cmd = luft_command();
+        let luft_block = format!(
+            "  luft:\n    command: '{}'\n    args: [\"mcp\", \"serve\", \"--backend\", \"hermes\"]\n",
+            luft_cmd
+        );
+
+        let mut lines: Vec<String> = cleaned.lines().map(String::from).collect();
+
+        if let Some(idx) = lines.iter().position(|l| l.trim_start().starts_with("mcp_servers:")) {
+            for (offset, block_line) in luft_block.lines().enumerate() {
+                lines.insert(idx + 1 + offset, block_line.to_string());
+            }
+        } else {
+            if !lines.is_empty() {
+                lines.push(String::new());
+            }
+            lines.push("mcp_servers:".to_string());
+            for block_line in luft_block.lines() {
+                lines.push(block_line.to_string());
+            }
+        }
+
+        let mut new_content = lines.join("\n");
+        if !new_content.ends_with('\n') {
+            new_content.push('\n');
+        }
+
+        if let Err(e) = fs::write(&config_file, new_content) {
+            return McpConfigResult::Failed(e.to_string());
+        }
+
+        McpConfigResult::Configured
+    }
+
+    fn get_hermes_config_dir() -> Result<PathBuf> {
+        let home = get_home_dir().ok_or(crate::install::types::InstallError::HomeDirNotFound)?;
+        Ok(home.join(".hermes"))
+    }
+
     // ── 共享工具方法 ────────────────────────────────────────
 
     fn read_json(path: &Path) -> Result<Value> {
@@ -379,6 +443,50 @@ fn remove_toml_section(content: &str, section_name: &str) -> String {
         } else {
             result.push(line);
         }
+    }
+
+    let mut out = result.join("\n");
+    if !out.is_empty() {
+        out.push('\n');
+    }
+    out
+}
+
+/// Remove a YAML MCP server entry (e.g. `  luft:`) from under the `mcp_servers:` key.
+///
+/// Removes the `  <server_name>:` line at 2-space indent and all its child
+/// lines (deeper indentation) until the next key at indent ≤ 2 or end of file.
+fn remove_yaml_mcp_server(content: &str, server_name: &str) -> String {
+    let key = format!("{}:", server_name);
+    let lines: Vec<&str> = content.lines().collect();
+    let mut result: Vec<&str> = Vec::with_capacity(lines.len());
+    let mut i = 0;
+
+    while i < lines.len() {
+        let line = lines[i];
+        let trimmed = line.trim();
+        let leading_ws = line.len() - line.trim_start().len();
+
+        if leading_ws == 2 && trimmed.starts_with(&key) {
+            i += 1;
+            while i < lines.len() {
+                let next = lines[i];
+                let next_trimmed = next.trim();
+                if next_trimmed.is_empty() {
+                    i += 1;
+                    continue;
+                }
+                let next_ws = next.len() - next.trim_start().len();
+                if next_ws <= 2 {
+                    break;
+                }
+                i += 1;
+            }
+            continue;
+        }
+
+        result.push(line);
+        i += 1;
     }
 
     let mut out = result.join("\n");
@@ -704,6 +812,72 @@ args = ["custom-args"]
         assert!(!content.contains("custom-luft"));
         assert!(content.contains("command = '/test/luft'"));
         assert!(content.contains("args = [\"mcp\", \"serve\", \"--backend\", \"codex\"]"));
+    }
+
+    // ── Hermes configure ───────────────────────────────────
+
+    #[test]
+    #[serial]
+    fn configure_hermes_creates_new_yaml() {
+        let tmp = TempDir::new().unwrap();
+        let _guard = HomeGuard::new(tmp.path());
+        let _bin = BinGuard::new("/test/luft");
+        let dir = tmp.path().join(".hermes");
+
+        let result = McpSetup::configure_for_agents(&[AgentType::Hermes]);
+        assert_eq!(result[0].1, McpConfigResult::Configured);
+
+        let config_file = dir.join("config.yaml");
+        assert!(config_file.exists());
+
+        let content = std::fs::read_to_string(&config_file).unwrap();
+        assert!(content.contains("mcp_servers:"));
+        assert!(content.contains("  luft:"));
+        assert!(content.contains("command: '/test/luft'"));
+        assert!(content.contains("args: [\"mcp\", \"serve\", \"--backend\", \"hermes\"]"));
+    }
+
+    #[test]
+    #[serial]
+    fn configure_hermes_preserves_existing_content() {
+        let tmp = TempDir::new().unwrap();
+        let _bin = BinGuard::new("/test/luft");
+        let dir = tmp.path().join(".hermes");
+        fs::create_dir_all(&dir).unwrap();
+
+        let existing = "model: hermes-3\n\nmcp_servers:\n  filesystem:\n    command: npx\n    args:\n      - filesystem-server\n";
+        fs::write(dir.join("config.yaml"), existing).unwrap();
+
+        let _guard = HomeGuard::new(tmp.path());
+        let result = McpSetup::configure_for_agents(&[AgentType::Hermes]);
+        assert_eq!(result[0].1, McpConfigResult::Configured);
+
+        let content = std::fs::read_to_string(dir.join("config.yaml")).unwrap();
+        assert!(content.contains("model: hermes-3"));
+        assert!(content.contains("filesystem-server"));
+        assert!(content.contains("  luft:"));
+        assert!(content.contains("command: '/test/luft'"));
+    }
+
+    #[test]
+    #[serial]
+    fn configure_hermes_overwrites_stale_luft() {
+        let tmp = TempDir::new().unwrap();
+        let _bin = BinGuard::new("/test/luft");
+        let dir = tmp.path().join(".hermes");
+        fs::create_dir_all(&dir).unwrap();
+
+        let existing = "mcp_servers:\n  luft:\n    command: custom-hermes\n    args: [\"custom-args\"]\n";
+        fs::write(dir.join("config.yaml"), existing).unwrap();
+
+        let _guard = HomeGuard::new(tmp.path());
+        let result = McpSetup::configure_for_agents(&[AgentType::Hermes]);
+        assert_eq!(result[0].1, McpConfigResult::Configured);
+
+        let content = std::fs::read_to_string(dir.join("config.yaml")).unwrap();
+        assert!(!content.contains("custom-hermes"));
+        assert!(content.contains("command: '/test/luft'"));
+        assert!(content.contains("args: [\"mcp\", \"serve\", \"--backend\", \"hermes\"]"));
     }
 
     // ── configure_for_agents ───────────────────────────────

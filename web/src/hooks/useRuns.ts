@@ -1,10 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
-import { mockApi } from '@/api/mock-client'
+import { api, queryKeys } from '@/api'
 import type { RunFilters } from '@/api/types'
 
 export function useRuns(filters?: RunFilters) {
   return useQuery({
-    queryKey: ['runs', filters],
-    queryFn: () => mockApi.runs.list(filters),
+    queryKey: queryKeys.runs.list(filters),
+    queryFn: () => api.runs.list(filters),
   })
 }

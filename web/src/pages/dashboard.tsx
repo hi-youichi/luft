@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { useDashboardStats } from '@/hooks/useDashboardStats'
+import { useLiveDashboardStats } from '@/hooks/useLiveDashboardStats'
 import { StatCard } from '@/components/stat-card'
 import { StatusBadge } from '@/components/status-badge'
 import { ProgressBar } from '@/components/progress-bar'
@@ -31,7 +31,7 @@ function RunMiniCard({ run }: { run: RunSummary }) {
 }
 
 export function Dashboard() {
-  const { data: stats, isLoading } = useDashboardStats()
+  const { data: stats, isLoading } = useLiveDashboardStats()
 
   if (isLoading || !stats) {
     return (

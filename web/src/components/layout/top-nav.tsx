@@ -1,40 +1,37 @@
 import { NavLink } from 'react-router-dom'
-import { Activity, ListChecks, FileCode2, Server, Play } from 'lucide-react'
+import { Play, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useUIStore } from '@/stores/ui'
+import { navItems } from '@/lib/routes'
+import { MobileNav } from '@/components/layout/mobile-nav'
 import { cn } from '@/lib/utils'
-
-const navItems = [
-  { to: '/', label: 'Dashboard', icon: Activity },
-  { to: '/runs', label: 'Runs', icon: ListChecks },
-  { to: '/workflows', label: 'Workflows', icon: FileCode2 },
-  { to: '/backends', label: 'Backends', icon: Server },
-]
 
 export function TopNav() {
   const setRunDialogOpen = useUIStore((s) => s.setRunDialogOpen)
+  const setCommandPaletteOpen = useUIStore((s) => s.setCommandPaletteOpen)
 
   return (
-    <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-border bg-bg-surface/80 px-6 backdrop-blur-md">
+    <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-border bg-bg-surface/80 px-4 backdrop-blur-md sm:px-6">
       <div className="flex items-center gap-2">
-        <div className="flex items-center gap-2 mr-8">
+        <MobileNav />
+        <div className="mr-4 flex items-center gap-2 sm:mr-8">
           <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/15">
-            <span className="text-primary text-base font-bold font-display">M</span>
+            <span className="text-base font-bold text-primary font-display">M</span>
           </div>
-          <span className="text-base font-semibold font-display tracking-tight">maestro</span>
+          <span className="hidden text-base font-semibold tracking-tight font-display sm:inline">maestro</span>
         </div>
-        <nav className="flex items-center gap-1">
-          {navItems.map(({ to, label, icon: Icon }) => (
+        <nav className="hidden items-center gap-1 md:flex">
+          {navItems.map(({ path, label, icon: Icon, end }) => (
             <NavLink
-              key={to}
-              to={to}
-              end={to === '/'}
+              key={path}
+              to={path}
+              end={end}
               className={({ isActive }) =>
                 cn(
                   'flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
                   isActive
                     ? 'bg-hover text-primary'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-hover/50'
+                    : 'text-muted-foreground hover:bg-hover/50 hover:text-foreground',
                 )
               }
             >
@@ -44,10 +41,24 @@ export function TopNav() {
           ))}
         </nav>
       </div>
-      <Button size="sm" onClick={() => setRunDialogOpen(true)}>
-        <Play className="h-3.5 w-3.5" />
-        Run
-      </Button>
+      <div className="flex items-center gap-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="gap-1.5 text-muted-foreground"
+          onClick={() => setCommandPaletteOpen(true)}
+        >
+          <Search className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">Search</span>
+          <kbd className="hidden rounded border border-border px-1.5 py-0.5 font-mono text-[10px] sm:inline">
+            ⌘K
+          </kbd>
+        </Button>
+        <Button size="sm" onClick={() => setRunDialogOpen(true)}>
+          <Play className="h-3.5 w-3.5" />
+          Run
+        </Button>
+      </div>
     </header>
   )
 }

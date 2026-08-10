@@ -46,14 +46,30 @@ pub(crate) fn build_task(
     };
 
     let prompt = match &output_schema {
-        Some(_) => format!(
-            "{prompt}\n\n\
-             ---\n\
-             IMPORTANT: You MUST call the `workflow_validate_schema` tool to submit your result.\n\
-             The tool payload must be exactly {{\"result\": <your JSON value>}}; do not put the result under `input`, `schema`, or another nested field, and do not JSON-encode an object as a string.\n\
-             Do NOT return the result as a text message. Call the tool.",
-            prompt = prompt,
-        ),
+        Some(schema) => {
+            let schema_json = serde_json::to_string_pretty(schema).unwrap_or_default();
+            format!(
+                "{prompt}\n\n\
+                 ---\n\
+                 ## Output Instructions\n\
+                 \n\
+                 You MUST submit your result by calling the `workflow_validate_schema` tool.\n\
+                 \n\
+                 **Do NOT write your result as a text message.** Call the tool instead.\n\
+                 \n\
+                 The tool takes a single argument:\
+                 ```json\n\
+                 {{\"result\": <your answer>}}\n\
+                 ```\n\
+                 \n\
+                 Where `<your answer>` must match this JSON Schema:\n\
+                 ```json\n{schema_json}```\n\
+                 \n\
+                 After completing your analysis, call `workflow_validate_schema` with your structured result.",
+                prompt = prompt,
+                schema_json = schema_json,
+            )
+        }
         None => prompt,
     };
 
@@ -177,10 +193,10 @@ mod tests {
         o.set("schema", schema).unwrap();
 
         let (task, _, _) = build_task(&o, 0, &seq_counter()).unwrap();
-        assert!(task.prompt.contains("IMPORTANT"));
+        assert!(task.prompt.contains("MUST"));
         assert!(task.prompt.contains("workflow_validate_schema"));
         assert!(task.prompt.contains("tool"));
-        assert!(!task.prompt.contains("JSON Schema"));
+        assert!(task.prompt.contains("JSON Schema"));
         assert!(task.output_schema.is_some());
     }
 

@@ -10,4 +10,20 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:7878',
+        changeOrigin: true,
+      },
+      '/mcp': {
+        target: 'ws://localhost:7878',
+        ws: true,
+      },
+      '/run/': {
+        target: 'ws://localhost:7878',
+        ws: true,
+      },
+    },
+  },
 })

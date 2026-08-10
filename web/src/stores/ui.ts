@@ -5,11 +5,15 @@ interface UIState {
   eventStreamPaused: boolean
   selectedPhaseId: number | null
   runDialogOpen: boolean
+  commandPaletteOpen: boolean
 
   toggleDensity: () => void
   toggleEventPause: () => void
   setSelectedPhase: (id: number | null) => void
   setRunDialogOpen: (open: boolean) => void
+  setCommandPaletteOpen: (open: boolean) => void
+  runDetailShowMetrics: boolean
+  setRunDetailShowMetrics: (show: boolean) => void
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -17,6 +21,7 @@ export const useUIStore = create<UIState>((set) => ({
   eventStreamPaused: false,
   selectedPhaseId: null,
   runDialogOpen: false,
+  commandPaletteOpen: false,
 
   toggleDensity: () =>
     set((s) => ({
@@ -25,4 +30,7 @@ export const useUIStore = create<UIState>((set) => ({
   toggleEventPause: () => set((s) => ({ eventStreamPaused: !s.eventStreamPaused })),
   setSelectedPhase: (id) => set({ selectedPhaseId: id }),
   setRunDialogOpen: (open) => set({ runDialogOpen: open }),
+  setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
+  runDetailShowMetrics: true,
+  setRunDetailShowMetrics: (show) => set({ runDetailShowMetrics: show }),
 }))

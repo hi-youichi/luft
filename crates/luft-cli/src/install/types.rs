@@ -13,6 +13,8 @@ pub enum AgentType {
     Opencode,
     /// Claude - Claude Code
     Claude,
+    /// Hermes - NousResearch Hermes Agent
+    Hermes,
     /// Custom - 自定义 Agent (为未来扩展预留)
     Custom(String),
     /// FutureExtension - 未来的扩展 Agent (预留)
@@ -28,6 +30,7 @@ impl AgentType {
             AgentType::Codex => "Codex ACP".to_string(),
             AgentType::Opencode => "OpenCode".to_string(),
             AgentType::Claude => "Claude Code".to_string(),
+            AgentType::Hermes => "Hermes Agent".to_string(),
             AgentType::Custom(id) => format!("Custom Agent ({})", id),
             AgentType::FutureExtension => "Future Agent".to_string(),
         }

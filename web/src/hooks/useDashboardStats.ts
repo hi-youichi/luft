@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
-import { mockApi } from '@/api/mock-client'
+import { api, queryKeys } from '@/api'
 
 export function useDashboardStats() {
   return useQuery({
-    queryKey: ['dashboard-stats'],
-    queryFn: () => mockApi.stats.get(),
+    queryKey: queryKeys.stats,
+    queryFn: () => api.stats.get(),
   })
 }

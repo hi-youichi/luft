@@ -1,7 +1,10 @@
 import type {
   RunSummary, RunCheckpoint, AgentEvent, DashboardStats,
   WorkflowSummary, WorkflowDetail, BackendConfig, AgentResultCache,
+  RunLogsResponse, RunArtifactsResponse, LogLine, RunArtifact,
+  CancelRunResponse,
 } from './types'
+import type { ApiHealth, ApiVersionInfo } from './common'
 
 const now = Date.now()
 const min = 60_000
@@ -329,6 +332,70 @@ agent({ role = "adversary", prompt = "尝试绕过发现的安全防护" })
 phase({ label = "报告生成", planned = 1 })
 agent({ role = "voter", prompt = "生成安全审计报告" })`,
   },
+  'test-gen': {
+    name: 'test-gen',
+    description: '自动生成测试用例',
+    last_modified: ts(360),
+    content: `-- Phase 1: 分析现有测试
+phase({ label = "分析现有测试", planned = 1 })
+agent({ role = "producer", prompt = "扫描现有测试文件，分析覆盖率和盲区" })
+
+-- Phase 2: 生成测试
+phase({ label = "生成测试", planned = 2 })
+agent({ role = "producer", prompt = "为 converge.rs 生成单元测试，覆盖正常/边界/错误路径" })
+agent({ role = "producer", prompt = "为 sandbox.rs 生成单元测试，覆盖超时/OOM/退出码场景" })
+
+-- Phase 3: 验证测试
+phase({ label = "验证测试", planned = 1 })
+agent({ role = "voter", prompt = "运行所有生成的测试，验证是否通过" })`,
+  },
+  'doc-review': {
+    name: 'doc-review',
+    description: '文档审查与补全',
+    last_modified: ts(480),
+    content: `-- Phase 1: 扫描文档
+phase({ label = "扫描文档", planned = 1 })
+agent({ role = "producer", prompt = "扫描所有 .md 文件，识别缺失和过时内容" })
+
+-- Phase 2: 审查质量
+phase({ label = "审查质量", planned = 1 })
+agent({ role = "producer", prompt = "审查文档质量和准确性" })
+
+-- Phase 3: 生成补全
+phase({ label = "生成补全", planned = 1 })
+agent({ role = "producer", prompt = "为缺失内容生成文档补丁" })
+
+-- Phase 4: 验证
+phase({ label = "验证", planned = 1 })
+agent({ role = "voter", prompt = "验证补全的文档质量" })`,
+  },
+  'deploy-check': {
+    name: 'deploy-check',
+    description: '部署前预检查',
+    last_modified: ts(600),
+    content: `-- Phase 1: 环境检查
+phase({ label = "环境检查", planned = 2 })
+agent({ role = "producer", prompt = "检查部署环境配置（Docker、环境变量）" })
+agent({ role = "producer", prompt = "检查依赖服务可用性（数据库、缓存）" })
+
+-- Phase 2: 预部署验证
+phase({ label = "预部署验证", planned = 2 })
+agent({ role = "producer", prompt = "验证数据库迁移脚本" })
+agent({ role = "producer", prompt = "验证 API 健康检查" })
+
+-- Phase 3: 安全检查
+phase({ label = "安全检查", planned = 1 })
+agent({ role = "producer", prompt = "检查 TLS 证书和安全头" })
+
+-- Phase 4: 性能基线
+phase({ label = "性能基线", planned = 2 })
+agent({ role = "producer", prompt = "运行性能基线测试" })
+agent({ role = "adversary", prompt = "尝试制造性能退化场景" })
+
+-- Phase 5: 签发报告
+phase({ label = "签发报告", planned = 1 })
+agent({ role = "voter", prompt = "综合所有检查结果，签发部署报告" })`,
+  },
 }
 
 // ── Backends ──
@@ -338,3 +405,115 @@ export const mockBackends: BackendConfig[] = [
   { id: 'b2', name: 'GPT-4o', provider: 'openai', model: 'gpt-4o', connected: true, usage_count: 5 },
   { id: 'b3', name: 'Local Llama', provider: 'ollama', model: 'llama3-70b', connected: false, usage_count: 0 },
 ]
+
+// ── System: Health ──
+
+export const mockHealth: ApiHealth = {
+  status: 'ok',
+  version: '0.8.2',
+  uptime_ms: elapsed(320),
+  checks: [
+    { name: 'database', status: 'ok', latency_ms: 3 },
+    { name: 'websocket', status: 'ok', latency_ms: 1 },
+    { name: 'file_system', status: 'ok', latency_ms: 0 },
+    { name: 'lua_runtime', status: 'ok', latency_ms: 8 },
+  ],
+}
+
+export const mockVersionInfo: ApiVersionInfo = {
+  api_version: 'v1',
+  build_version: '0.8.2',
+  git_commit: 'a1b2c3d',
+  build_date: '2025-08-18T10:00:00Z',
+  features: ['workflows', 'streaming', 'backends', 'artifacts', 'logs'],
+}
+
+// ── Run Logs ──
+
+export function mockLogsForRun(runId: string): RunLogsResponse {
+  const cp = mockCheckpoints[runId]
+  if (!cp) {
+    return { run_id: runId, lines: [], has_more: false }
+  }
+
+  const lines: LogLine[] = [
+    { ts: cp.started_at, level: 'info', message: `Run ${runId} started: ${cp.task}` },
+    ...cp.phases.flatMap(phase => {
+      const phaseLines: LogLine[] = []
+      if (phase.status === 'pending') return phaseLines
+      phaseLines.push({
+        ts: cp.started_at, level: 'info',
+        message: `Phase ${phase.phase_id} (${phase.label}) started`,
+      })
+      for (const a of phase.agents) {
+        phaseLines.push({
+          ts: cp.started_at, level: 'debug', agent_id: a.agent_id,
+          message: `Agent ${a.agent_id} (${a.role}) prompt: ${a.prompt_preview.slice(0, 80)}`,
+        })
+        if (a.error) {
+          phaseLines.push({
+            ts: cp.started_at, level: 'error', agent_id: a.agent_id,
+            message: a.error,
+          })
+        }
+      }
+      if (phase.status === 'completed') {
+        phaseLines.push({
+          ts: cp.started_at, level: 'info',
+          message: `Phase ${phase.phase_id} completed`,
+        })
+      }
+      return phaseLines
+    }),
+  ]
+
+  if (cp.status === 'completed') {
+    lines.push({ ts: cp.started_at, level: 'info', message: `Run ${runId} completed successfully` })
+  } else if (cp.status === 'failed') {
+    lines.push({ ts: cp.started_at, level: 'error', message: `Run ${runId} failed` })
+  } else if (cp.status === 'cancelled') {
+    lines.push({ ts: cp.started_at, level: 'warn', message: `Run ${runId} cancelled` })
+  }
+
+  return { run_id: runId, lines, has_more: false }
+}
+
+// ── Run Artifacts ──
+
+export function mockArtifactsForRun(runId: string): RunArtifactsResponse {
+  const cp = mockCheckpoints[runId]
+  if (!cp || (cp.status !== 'completed' && cp.status !== 'failed')) {
+    return { run_id: runId, artifacts: [] }
+  }
+
+  const baseTs = cp.started_at
+  const artifacts: RunArtifact[] = [
+    {
+      run_id: runId, name: 'report.md', path: `runs/${runId}/report.md`,
+      size: 12_400, mime_type: 'text/markdown', created_at: baseTs,
+    },
+    {
+      run_id: runId, name: 'findings.json', path: `runs/${runId}/findings.json`,
+      size: 3_200, mime_type: 'application/json', created_at: baseTs,
+    },
+  ]
+
+  if (cp.status === 'failed') {
+    artifacts.push({
+      run_id: runId, name: 'error.log', path: `runs/${runId}/error.log`,
+      size: 1_800, mime_type: 'text/plain', created_at: baseTs,
+    })
+  }
+
+  return { run_id: runId, artifacts }
+}
+
+// ── Cancel Run ──
+
+export function mockCancelRun(runId: string): CancelRunResponse {
+  return {
+    run_id: runId,
+    status: 'cancelled',
+    cancelled_at: new Date().toISOString(),
+  }
+}

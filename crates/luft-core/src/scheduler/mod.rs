@@ -322,11 +322,11 @@ impl Scheduler {
                                     serde_json::to_string_pretty(&result.output)
                                         .unwrap_or_default()
                                 });
-                            task.prompt = if fallback_text.is_some() {
+                            let can_resume = task.session_id.is_some();
+
+                            let correction = if fallback_text.is_some() {
                                 format!(
-                                    "{original_prompt}\n\n\
-                                     ---\n\
-                                     You returned your result as plain text instead of calling the `workflow_validate_schema` tool.\n\
+                                    "You returned your result as plain text instead of calling the `workflow_validate_schema` tool.\n\
                                      You MUST call the `workflow_validate_schema` tool to submit your result.\n\
                                      Do NOT return the result as a text message.\n\
                                      \n\
@@ -334,16 +334,15 @@ impl Scheduler {
                                      ```\n{last_output}\n```\n\
                                      \n\
                                      Required JSON Schema:\n\
-                                     ```json\n{schema}\n```",
-                                    original_prompt = original_prompt,
+                                     ```json\n{schema}\n```\n\
+                                     \n\
+                                     Call `workflow_validate_schema` with {{\"result\": <your corrected JSON>}}.",
                                     last_output = last_output,
                                     schema = schema_json,
                                 )
                             } else {
                                 format!(
-                                    "{original_prompt}\n\n\
-                                     ---\n\
-                                     Your previous response did not match the required schema.\n\
+                                    "Your previous response did not match the required schema.\n\
                                      Error: {error}\n\
                                      \n\
                                      Your output was:\n\
@@ -352,13 +351,23 @@ impl Scheduler {
                                      Required JSON Schema:\n\
                                      ```json\n{schema}\n```\n\
                                      \n\
-                                     Call the `workflow_validate_schema` tool with a JSON object that\n\
-                                     matches this schema exactly. Include ALL required fields.",
-                                    original_prompt = original_prompt,
+                                     Call `workflow_validate_schema` with {{\"result\": <your corrected JSON>}}.\n\
+                                     Include ALL required fields and match enum values exactly (case-sensitive).",
                                     error = error,
                                     last_output = last_output,
                                     schema = schema_json,
                                 )
+                            };
+
+                            task.prompt = if can_resume {
+                                tracing::debug!(
+                                    agent_id = %task.agent_id,
+                                    session_id = ?task.session_id,
+                                    "schema retry via session resume (short correction prompt)"
+                                );
+                                correction
+                            } else {
+                                format!("{original_prompt}\n\n---\n{correction}")
                             };
                             continue;
                         }

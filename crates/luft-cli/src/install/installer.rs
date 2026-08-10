@@ -139,6 +139,15 @@ impl Installer {
                 }
             }
 
+            // Hermes: ~/.hermes/config.yaml -> mcp_servers.luft
+            let hermes_config = home.join(".hermes/config.yaml");
+            if hermes_config.exists() {
+                let content = std::fs::read_to_string(&hermes_config)?;
+                if content.contains("  luft:") {
+                    any_valid = true;
+                }
+            }
+
             if !any_valid {
                 return Err(InstallError::VerificationFailed(
                     "未找到任何已配置的 MCP 服务器".to_string(),
@@ -154,7 +163,8 @@ impl Installer {
         "建议: 请先安装至少一个支持的 Agent：
 - Codex ACP: npm install -g @agentclientprotocol/codex-acp
 - OpenCode: 下载并安装 OpenCode
-- Claude Code: 下载并安装 Claude Code"
+- Claude Code: 下载并安装 Claude Code
+- Hermes Agent: pip install hermes-agent"
             .to_string()
     }
 }
@@ -199,6 +209,8 @@ mod tests {
         assert!(suggestions.contains("npm install -g"));
         assert!(suggestions.contains("OpenCode"));
         assert!(suggestions.contains("Claude Code"));
+        assert!(suggestions.contains("Hermes Agent"));
+        assert!(suggestions.contains("pip install hermes-agent"));
     }
 
     #[test]

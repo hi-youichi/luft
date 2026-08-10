@@ -99,8 +99,56 @@ pub fn create_backend(
             });
             Ok(Arc::new(luft::adapters::AcpAdapter::new(cfg)))
         }
+        "hermes" => {
+            let cfg = apply_hermes_overrides(luft::adapters::AcpConfig {
+                id: "hermes",
+                binary: PathBuf::from("hermes"),
+                acp_args: vec!["acp".to_string()],
+                emit_raw_events,
+                model,
+                ..Default::default()
+            });
+            Ok(Arc::new(luft::adapters::AcpAdapter::new(cfg)))
+        }
         _ => anyhow::bail!("unknown backend: {}", id),
     }
+}
+
+/// Merge config file Hermes ACP overrides into the given config (same pattern
+/// as Codex ACP — no secrets in TOML, use `inherit_env`).
+fn apply_hermes_overrides(mut cfg: luft::adapters::AcpConfig) -> luft::adapters::AcpConfig {
+    let over = crate::config::load_config()
+        .map(|c| c.backend.hermes_acp)
+        .unwrap_or_default();
+    if let Some(command) = over.command {
+        cfg.binary = command;
+    }
+    if let Some(args) = over.args {
+        cfg.acp_args = args;
+    }
+    if let Some(timeout) = over.connect_timeout_secs {
+        cfg.connect_timeout = Duration::from_secs(timeout);
+    }
+    if let Some(emit_raw_events) = over.emit_raw_events {
+        cfg.emit_raw_events = emit_raw_events;
+    }
+    if let Some(names) = over.inherit_env {
+        for name in names {
+            if !cfg.env_passthrough.contains(&name) {
+                cfg.env_passthrough.push(name);
+            }
+        }
+    }
+    if let Some(env) = over.env {
+        for (name, value) in env {
+            if is_sensitive_env_var(&name) {
+                tracing::warn!(env = %name, "ignoring sensitive Hermes ACP env configured in file; use inherit_env instead");
+            } else {
+                cfg.env.insert(name, value);
+            }
+        }
+    }
+    cfg
 }
 
 /// Merge the dedicated Codex ACP configuration without allowing secrets to be
@@ -191,7 +239,7 @@ pub fn detect_available_backends() -> Vec<&'static str> {
     let cfg = crate::config::load_config();
     let override_binary = cfg.as_ref().and_then(|c| c.backend.acp.binary.as_deref());
 
-    let mut result: Vec<&'static str> = ["opencode", "claude-acp", "loom-acp"]
+    let mut result: Vec<&'static str> = ["opencode", "claude-acp", "loom-acp", "hermes"]
         .into_iter()
         .filter(|id| is_binary_available(id, override_binary))
         .collect();
@@ -354,7 +402,11 @@ mod tests {
         let backends = detect_available_backends();
         for id in &backends {
             assert!(
-                *id == "opencode" || *id == "claude-acp" || *id == "loom-acp" || *id == "codex",
+                *id == "opencode"
+                    || *id == "claude-acp"
+                    || *id == "loom-acp"
+                    || *id == "codex"
+                    || *id == "hermes",
                 "unexpected backend id: {id}",
             );
         }

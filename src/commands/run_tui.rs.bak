@@ -1,0 +1,418 @@
+//! TUI mode for `maestro run` — full-screen ratatui dashboard.
+//! Spawns the workflow on a background tokio task and drives a
+//! crossterm event loop on the main thread.
+
+use crate::commands::event_log::EventLogger;
+use anyhow::Result;
+use crossterm::event::{self, Event, KeyCode, KeyModifiers};
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
+use crossterm::ExecutableCommand;
+use maestro::core::contract::backend::RunContext;
+use maestro::core::contract::event::{AgentEvent, ProgressDelta};
+use maestro::core::contract::ids::AgentId;
+use maestro::core::state::{CheckpointStatus, RunCheckpoint};
+use maestro::service::phases::{build_phases_view, PhaseRow, PhaseStatus, PhasesView};
+use maestro::service::run::PreparedRun;
+use ratatui::backend::CrosstermBackend;
+use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
+use ratatui::Terminal;
+use std::collections::HashMap;
+use std::io::{stdout, Write};
+use std::path::PathBuf;
+use std::sync::Arc;
+use tokio::sync::broadcast::{self, RecvError};
+use tokio::time::Duration;
+
+// ── Running agent live state ──────────────────────────────────────
+
+#[derive(Debug, Clone)]
+struct RunningAgentState {
+    agent_id: AgentId,
+    phase_id: u32,
+    tokens: u64,
+    tool_count: usize,
+    last_message: String,
+}
+
+// ── TUI application state ─────────────────────────────────────────
+
+struct TuiApp {
+    checkpoint: RunCheckpoint,
+    events: Vec<AgentEvent>,
+    view: PhasesView,
+    finished: bool,
+    scroll: usize,
+    show_agent_detail: bool,
+    running_agents: HashMap<AgentId, RunningAgentState>,
+    warnings: Vec<String>,
+    exit_countdown: Option<u8>,
+}
+
+impl TuiApp {
+    fn new(checkpoint: RunCheckpoint) -> Self {
+        let events = Vec::new();
+        let view = build_phases_view(&checkpoint, &events);
+        Self {
+            checkpoint,
+            events,
+            view,
+            finished: false,
+            scroll: 0,
+            show_agent_detail: false,
+            running_agents: HashMap::new(),
+            warnings: Vec::new(),
+            exit_countdown: None,
+        }
+    }
+
+    fn handle_event(&mut self, event: AgentEvent) {
+        match &event {
+            AgentEvent::AgentStarted { agent_id, phase_id, .. } => {
+                self.running_agents.insert(
+                    *agent_id,
+                    RunningAgentState {
+                        agent_id: *agent_id,
+                        phase_id: *phase_id,
+                        tokens: 0,
+                        tool_count: 0,
+                        last_message: String::new(),
+                    },
+                );
+            }
+            AgentEvent::AgentProgress { agent_id, delta } => {
+                if let Some(state) = self.running_agents.get_mut(agent_id) {
+                    match delta {
+                        ProgressDelta::Tokens { usage } => {
+                            state.tokens = usage.input + usage.output;
+                        }
+                        ProgressDelta::ToolCall { .. } => {
+                            state.tool_count += 1;
+                        }
+                        ProgressDelta::Message { text } => {
+                            state.last_message = text.clone();
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            AgentEvent::AgentDone { agent_id, .. } => {
+                self.running_agents.remove(agent_id);
+            }
+            AgentEvent::RunDone { .. } => {
+                self.finished = true;
+            }
+            _ => {}
+        }
+        self.checkpoint.update_from_event(&event);
+        self.events.push(event);
+        self.rebuild_view();
+    }
+
+    fn rebuild_view(&mut self) {
+        self.view = build_phases_view(&self.checkpoint, &self.events);
+    }
+
+    fn scroll_up(&mut self) {
+        self.scroll = self.scroll.saturating_sub(1);
+    }
+
+    fn scroll_down(&mut self) {
+        self.scroll += 1;
+    }
+}
+
+// ── Terminal setup / teardown ─────────────────────────────────────
+
+type TuiTerminal = Terminal<CrosstermBackend<std::io::Stdout>>;
+
+fn setup_terminal() -> Result<TuiTerminal> {
+    enable_raw_mode()?;
+    stdout().execute(EnterAlternateScreen)?;
+    let backend = CrosstermBackend::new(stdout());
+    let terminal = Terminal::new(backend)?;
+    Ok(terminal)
+}
+
+fn restore_terminal(mut terminal: TuiTerminal) -> Result<()> {
+    disable_raw_mode()?;
+    stdout().execute(LeaveAlternateScreen)?;
+    terminal.show_cursor()?;
+    Ok(())
+}
+
+// ── Render ────────────────────────────────────────────────────────
+
+fn render(app: &TuiApp, frame: &mut ratatui::Frame) {
+    let area = frame.size();
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(4),    // header
+            Constraint::Min(1),       // phases list
+            Constraint::Length(1),    // status bar
+        ])
+        .split(area);
+
+    // ── Header ──
+    let status_str = match &app.checkpoint.status {
+        CheckpointStatus::Running => "Running".to_string(),
+        CheckpointStatus::Completed => "Completed".to_string(),
+        CheckpointStatus::Failed => "Failed".to_string(),
+        CheckpointStatus::Cancelled => "Cancelled".to_string(),
+    };
+    let elapsed = app
+        .view
+        .run
+        .elapsed_secs
+        .map(|s| format!("{:.1}s", s))
+        .unwrap_or_else(|| "-".to_string());
+    let header_text = vec![
+        Line::from(Span::raw(format!(
+            "Run {}  status={}  phase {}/{}  {} tok  {}",
+            app.checkpoint.run_id,
+            status_str,
+            app.view.run.current_phase,
+            app.view.run.total_phases,
+            app.checkpoint.total_tokens,
+            elapsed,
+        ))),
+        Line::from(Span::raw(format!("Task: {}", app.checkpoint.task))),
+    ];
+    let header = Paragraph::new(header_text)
+        .block(Block::default().borders(Borders::ALL).title(" maestro run "))
+        .wrap(Wrap { trim: false });
+    frame.render_widget(header, chunks[0]);
+
+    // ── Phases list ──
+    let phase_lines = build_phase_lines(app);
+    let visible_lines: Vec<Line> = phase_lines
+        .iter()
+        .skip(app.scroll)
+        .take((chunks[1].height as usize).saturating_sub(1))
+        .cloned()
+        .collect();
+    let phases = Paragraph::new(visible_lines)
+        .block(Block::default().borders(Borders::NONE))
+        .wrap(Wrap { trim: false });
+    frame.render_widget(phases, chunks[1]);
+
+    // ── Status bar ──
+    let status_text = if let Some(remaining) = app.exit_countdown {
+        format!("Run completed. Exiting in {}s...", remaining)
+    } else if app.finished {
+        "Run completed. Press q to exit.".to_string()
+    } else {
+        "q: quit  \u{2191}\u{2193}: scroll  Tab: toggle agent detail".to_string()
+    };
+    let status_bar = Paragraph::new(Line::from(Span::raw(status_text)))
+        .style(Style::default().fg(Color::White).bg(Color::Blue));
+    frame.render_widget(status_bar, chunks[2]);
+}
+
+fn build_phase_lines(app: &TuiApp) -> Vec<Line> {
+    let mut lines = Vec::new();
+    for phase in &app.view.phases {
+        let icon = phase_icon(phase.status);
+        let elapsed = phase
+            .elapsed_secs
+            .map(|s| format!("{:.1}s", s))
+            .unwrap_or_else(|| String::new());
+        let phase_line = format!(
+            " {} Phase {}/{}  {}  [{}]  {}",
+            icon,
+            phase.phase_id,
+            app.view.run.total_phases,
+            phase.label,
+            phase.status.as_str(),
+            elapsed,
+        );
+        lines.push(Line::from(Span::raw(phase_line)));
+
+        if let Some(detail) = &phase.detail {
+            lines.push(Line::from(Span::raw(format!("    {}", detail))));
+        }
+
+        if app.show_agent_detail {
+            for agent in &phase.agents {
+                let tokens = agent
+                    .tokens
+                    .map(|t| format!("tok={}", t))
+                    .unwrap_or_else(|| String::new());
+                let msg = agent
+                    .last_message
+                    .as_deref()
+                    .unwrap_or("")
+                    .chars()
+                    .take(60)
+                    .collect::<String>();
+                let agent_line = format!(
+                    "    \u{2514} {}  {}  {}",
+                    agent.short_id, agent.status, tokens
+                );
+                lines.push(Line::from(Span::raw(agent_line)));
+                if !msg.is_empty() {
+                    lines.push(Line::from(Span::raw(format!("       {}", msg))));
+                }
+            }
+        }
+    }
+    lines
+}
+
+fn phase_icon(status: PhaseStatus) -> &'static str {
+    match status {
+        PhaseStatus::Pending => "\u{25CB}",     // ○
+        PhaseStatus::Running => "\u{25D0}",     // ◐
+        PhaseStatus::Completed => "\u{25CF}",   // ●
+        PhaseStatus::Failed => "\u{2715}",      // ✕
+    }
+}
+
+// ── Confirm exit dialog ───────────────────────────────────────────
+
+fn confirm_exit() -> Result<bool> {
+    // Restore terminal briefly to show prompt
+    let _ = disable_raw_mode();
+    let _ = stdout().execute(LeaveAlternateScreen);
+
+    print!("Abort workflow? (y/N): ");
+    std::io::Write::flush(&mut std::io::stdout())?;
+
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input)?;
+    let confirmed = input.trim().eq_ignore_ascii_case("y");
+
+    // Re-enter TUI if cancelled
+    if !confirmed {
+        let _ = enable_raw_mode();
+        let _ = stdout().execute(EnterAlternateScreen);
+    }
+
+    Ok(confirmed)
+}
+
+// ── Main TUI entry point ──────────────────────────────────────────
+
+pub async fn run_tui(
+    run_ctx: RunContext,
+    prepared: PreparedRun,
+    script: String,
+    output: Option<PathBuf>,
+    mut logger: Option<EventLogger>,
+) -> Result<()> {
+    let rx = run_ctx.events.subscribe();
+    let checkpoint = prepared
+        .journal
+        .get_checkpoint()
+        .expect("journal must have checkpoint by now");
+    let mut app = TuiApp::new(checkpoint);
+    let mut terminal = setup_terminal()?;
+
+    // Spawn workflow execution on the tokio runtime
+    let run_handle = tokio::spawn(async move {
+        maestro::service::run::execute(&run_ctx, prepared.runtime, script).await
+    });
+
+    let result = loop {
+        // Render frame
+        let result = terminal.draw(|f| render(&app, f));
+        if let Err(e) = result {
+            let _ = restore_terminal(terminal);
+            anyhow::bail!("TUI render error: {}", e);
+        }
+
+        if app.finished {
+            // Freeze for 3 seconds showing final state
+            for remaining in (1..=3).rev() {
+                app.exit_countdown = Some(remaining);
+                let _ = terminal.draw(|f| render(&app, f));
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+            break None;
+        }
+
+        // Wait for either keyboard input or an agent event
+        tokio::select! {
+            // Keyboard input (poll with 100ms timeout)
+            _ = tokio::time::sleep(Duration::from_millis(100)) => {
+                if event::poll(std::time::Duration::from_millis(0))? {
+                    match event::read()? {
+                        Event::Key(key) => {
+                            match key.code {
+                                KeyCode::Char('q') | KeyCode::Esc => {
+                                    if confirm_exit()? {
+                                        run_ctx.cancel.cancel();
+                                        break None;
+                                    }
+                                }
+                                KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                    if confirm_exit()? {
+                                        run_ctx.cancel.cancel();
+                                        break None;
+                                    }
+                                }
+                                KeyCode::Up => app.scroll_up(),
+                                KeyCode::Down => app.scroll_down(),
+                                KeyCode::Tab => app.show_agent_detail = !app.show_agent_detail,
+                                _ => {}
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            // Agent event from broadcast channel
+            ev = rx.recv() => {
+                match ev {
+                    Ok(event) => {
+                        if let Some(ref mut l) = logger {
+                            let _ = l.write(&event);
+                        }
+                        app.handle_event(event);
+                    }
+                    Err(RecvError::Closed) => break None,
+                    Err(RecvError::Lagged(n)) => {
+                        app.warnings.push(format!("skipped {} events", n));
+                    }
+                }
+            }
+        }
+    };
+
+    // Flush logger if present
+    if let Some(ref mut l) = logger {
+        let _ = l.flush();
+    }
+
+    restore_terminal(terminal)?;
+
+    // Collect the execution result
+    let exec_result: std::result::Result<serde_json::Value, maestro::runtime::ScriptError> =
+        run_handle.await.map_err(|e| anyhow::anyhow!("execution panicked: {}", e))??;
+
+    match exec_result {
+        Ok(report) => {
+            if let Some(path) = &output {
+                crate::commands::run::write_report(path, &report)?;
+                eprintln!("Report written to {}", path.display());
+            }
+            println!(
+                "{}",
+                serde_json::to_string(&serde_json::json!({
+                    "type": "report",
+                    "run_id": run_ctx.run_id.to_string(),
+                    "report": report,
+                }))?
+            );
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "workflow execution failed");
+            eprintln!("Execution error: {}", e);
+        }
+    }
+
+    Ok(())
+}

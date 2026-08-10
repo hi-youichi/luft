@@ -56,6 +56,19 @@ impl SkillManager {
                     }
                 }
 
+                AgentType::Hermes => {
+                    let target_dir = home_dir()
+                        .ok_or(crate::install::types::InstallError::HomeDirNotFound)?
+                        .join(".hermes/skills/luft/workflow");
+
+                    let skills_count = self.write_skills_to(&target_dir)?;
+                    results.push(BridgeInstallResult {
+                        agent_type: vec![AgentType::Hermes],
+                        target_dir: target_dir.clone(),
+                        skills_count,
+                    });
+                }
+
                 AgentType::Custom(id) => {
                     let target_dir = home_dir()
                         .ok_or(crate::install::types::InstallError::HomeDirNotFound)?
@@ -106,6 +119,13 @@ impl SkillManager {
                     }
                 }
 
+                AgentType::Hermes => {
+                    let dir = home.join(".hermes/skills/luft/workflow");
+                    if !dirs.contains(&dir) {
+                        dirs.push(dir);
+                    }
+                }
+
                 AgentType::Custom(id) => {
                     let dir = home.join(format!(".{}/skills/workflow", id));
                     if !dirs.contains(&dir) {
@@ -119,8 +139,6 @@ impl SkillManager {
 
         Ok(dirs)
     }
-
-
 }
 
 #[cfg(test)]
@@ -208,5 +226,27 @@ mod tests {
         }
 
         assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn test_install_for_hermes() {
+        let temp_dir = TempDir::new().unwrap();
+        let original_home = home_dir();
+        std::env::set_var("HOME", temp_dir.path());
+
+        let skill_manager = SkillManager::new().unwrap();
+        let results = skill_manager
+            .install_for_agents(&[AgentType::Hermes])
+            .unwrap();
+
+        std::env::remove_var("HOME");
+        if let Some(h) = original_home {
+            std::env::set_var("HOME", h);
+        }
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].skills_count, 7);
+        assert!(results[0].agent_type.contains(&AgentType::Hermes));
+        assert!(results[0].target_dir.ends_with(".hermes/skills/luft/workflow"));
     }
 }

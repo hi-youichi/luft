@@ -30,6 +30,9 @@ pub struct BackendConfig {
     /// Per-backend settings for the Codex ACP adapter.
     #[serde(default)]
     pub codex_acp: AcpBackendOverride,
+    /// Per-backend settings for the Hermes ACP adapter.
+    #[serde(default)]
+    pub hermes_acp: AcpBackendOverride,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -308,6 +311,7 @@ mod tests {
                 default: Some("opencode".into()),
                 model: Some("claude-3-5-sonnet".into()),
                 codex_acp: AcpBackendOverride::default(),
+                hermes_acp: AcpBackendOverride::default(),
                 acp: AcpConfigOverride {
                     binary: Some("/usr/local/bin/opencode".into()),
                     args: Some(vec!["--verbose".into(), "--no-color".into()]),

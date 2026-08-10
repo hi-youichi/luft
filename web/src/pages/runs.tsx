@@ -1,6 +1,6 @@
-import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useRuns } from '@/hooks/useRuns'
+import { useLiveRuns } from '@/hooks/useLiveRuns'
+import { useUrlState } from '@/hooks/useUrlState'
 import { StatusBadge } from '@/components/status-badge'
 import { ProgressBar } from '@/components/progress-bar'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
@@ -11,10 +11,15 @@ import { formatTokens, formatElapsed, formatRelativeTime } from '@/lib/format'
 import type { RunStatus } from '@/api/types'
 
 export function RunsPage() {
-  const [status, setStatus] = useState<RunStatus | 'all'>('all')
-  const [time, setTime] = useState<'today' | '24h' | '7d' | 'all'>('all')
-  const [query, setQuery] = useState('')
-  const { data, isLoading } = useRuns({ status, time, q: query })
+  const { values: urlState, setValue } = useUrlState({
+    status: 'all',
+    time: 'all',
+    q: '',
+  })
+  const status = urlState.status as RunStatus | 'all'
+  const time = urlState.time as 'today' | '24h' | '7d' | 'all'
+  const query = urlState.q
+  const { data, isLoading } = useLiveRuns({ filters: { status, time, q: query } })
   const navigate = useNavigate()
 
   return (
@@ -22,7 +27,7 @@ export function RunsPage() {
       <h1 className="text-xl font-semibold font-display">Runs</h1>
 
       <div className="flex items-center gap-3">
-        <Select value={status} onValueChange={(v) => setStatus(v as RunStatus | 'all')}>
+        <Select value={status} onValueChange={(v) => setValue('status', v)}>
           <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">全部</SelectItem>
@@ -32,7 +37,7 @@ export function RunsPage() {
             <SelectItem value="cancelled">已取消</SelectItem>
           </SelectContent>
         </Select>
-        <Select value={time} onValueChange={(v) => setTime(v as 'today' | '24h' | '7d' | 'all')}>
+        <Select value={time} onValueChange={(v) => setValue('time', v)}>
           <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="today">今天</SelectItem>
@@ -45,7 +50,7 @@ export function RunsPage() {
           placeholder="搜索 task..."
           className="max-w-xs"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => setValue('q', e.target.value)}
         />
         {data && (
           <span className="ml-auto text-sm text-muted-foreground">{data.total} runs</span>
