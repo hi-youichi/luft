@@ -118,27 +118,31 @@ impl LuftMcpServer {
     #[tool(
         description = "Get the current rich status of a workflow run, including per-phase and per-agent detail"
     )]
-    fn workflow_status(
+    async fn workflow_status(
         &self,
         Parameters(req): Parameters<GetRunStatusRequest>,
     ) -> Result<String, String> {
-        let resp = self
-            .service
-            .get_run_status(req)
-            .map_err(|e| e.to_string())?;
-        serde_json::to_string(&resp).map_err(|e| e.to_string())
+        let service = Arc::clone(&self.service);
+        tokio::task::spawn_blocking(move || {
+            let resp = service.get_run_status(req).map_err(|e| e.to_string())?;
+            serde_json::to_string(&resp).map_err(|e| e.to_string())
+        })
+        .await
+        .map_err(|e| format!("workflow_status worker failed: {e}"))?
     }
 
     #[tool(description = "Get paginated/filtered events for a workflow run")]
-    fn workflow_events(
+    async fn workflow_events(
         &self,
         Parameters(req): Parameters<GetRunEventsRequest>,
     ) -> Result<String, String> {
-        let resp = self
-            .service
-            .get_run_events(req)
-            .map_err(|e| e.to_string())?;
-        serde_json::to_string(&resp).map_err(|e| e.to_string())
+        let service = Arc::clone(&self.service);
+        tokio::task::spawn_blocking(move || {
+            let resp = service.get_run_events(req).map_err(|e| e.to_string())?;
+            serde_json::to_string(&resp).map_err(|e| e.to_string())
+        })
+        .await
+        .map_err(|e| format!("workflow_events worker failed: {e}"))?
     }
 
     #[tool(description = "Cancel an in-flight workflow run")]
