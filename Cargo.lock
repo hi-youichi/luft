@@ -1714,7 +1714,7 @@ dependencies = [
 
 [[package]]
 name = "luft"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1736,7 +1736,7 @@ dependencies = [
 
 [[package]]
 name = "luft-adapters"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "agent-client-protocol",
  "anyhow",
@@ -1754,7 +1754,7 @@ dependencies = [
 
 [[package]]
 name = "luft-cli"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "agent-client-protocol",
  "anyhow",
@@ -1793,7 +1793,7 @@ dependencies = [
 
 [[package]]
 name = "luft-core"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1816,7 +1816,7 @@ dependencies = [
 
 [[package]]
 name = "luft-daemon"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1837,7 +1837,7 @@ dependencies = [
 
 [[package]]
 name = "luft-mcp"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1861,7 +1861,7 @@ dependencies = [
 
 [[package]]
 name = "luft-planner"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "luft-core",
@@ -1879,7 +1879,7 @@ dependencies = [
 
 [[package]]
 name = "luft-runtime"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1900,7 +1900,7 @@ dependencies = [
 
 [[package]]
 name = "luft-service"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1921,7 +1921,7 @@ dependencies = [
 
 [[package]]
 name = "luft-skills"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "const_format",
  "luft-core",
@@ -1930,7 +1930,7 @@ dependencies = [
 
 [[package]]
 name = "luft-storage"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "chrono",
