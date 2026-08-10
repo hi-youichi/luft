@@ -1,10 +1,10 @@
 //! Progress persistence and resume for long-running workflows.
 //!
-//! This module implements checkpointing and recovery for dynamic workflows.
-//! Progress is saved as the run goes, so a job interrupted by a restart can resume.
+//! This module defines the data types for checkpointing and the
+//! `CheckpointBackend` trait that persistence engines (e.g. SQLite) implement.
 //!
 //! Key features:
-//! - Event log persistence (JSONL)
+//! - Event log persistence
 //! - Agent result caching
 //! - Resume from last checkpoint
 //! - Run state management
@@ -14,13 +14,14 @@ use crate::contract::finding::Finding;
 use crate::contract::ids::{AgentId, PhaseId, RunId};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs::{self, File, OpenOptions};
-use std::io::{BufRead, BufReader, Write};
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::path::Path;
 
-/// Run state persisted to disk.
+
+// ============================================================================
+// Data Types (frozen contracts)
+// ============================================================================
+
+/// Run state persisted to the backend.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunCheckpoint {
     pub run_id: RunId,
@@ -29,8 +30,6 @@ pub struct RunCheckpoint {
     pub current_phase: u32,
     pub completed_phases: Vec<PhaseSummary>,
     pub agent_results: HashMap<AgentId, AgentResultCache>,
-    /// Session metadata keyed by agent id. The session id is Luft-owned; the
-    /// backend may attach additional resumability state outside this file.
     #[serde(default)]
     pub agent_sessions: HashMap<AgentId, AgentSessionCheckpoint>,
     pub findings: Vec<Finding>,
@@ -39,8 +38,6 @@ pub struct RunCheckpoint {
     pub updated_at: u64,
     #[serde(default)]
     pub workflow_meta: Option<serde_json::Value>,
-    /// Every agent_id that has received an `AgentStarted` event, in arrival
-    /// order. Used to compute "running" = started − done.
     #[serde(default)]
     pub started_agent_ids: Vec<AgentId>,
 }
@@ -66,6 +63,26 @@ impl std::fmt::Display for CheckpointStatus {
     }
 }
 
+impl CheckpointStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            CheckpointStatus::Running => "running",
+            CheckpointStatus::Completed => "completed",
+            CheckpointStatus::Failed => "failed",
+            CheckpointStatus::Cancelled => "cancelled",
+        }
+    }
+
+    pub fn parse_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "completed" => CheckpointStatus::Completed,
+            "failed" => CheckpointStatus::Failed,
+            "cancelled" => CheckpointStatus::Cancelled,
+            _ => CheckpointStatus::Running,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PhaseSummary {
     pub phase_id: PhaseId,
@@ -88,8 +105,6 @@ pub struct AgentResultCache {
     pub findings: Vec<Finding>,
     pub tokens: u64,
     pub completed_at: u64,
-    /// Deterministic cache key hash for resume lookups.
-    /// Populated by JournalStore::cache_agent(); None for legacy checkpoints.
     #[serde(default)]
     pub cache_key_hash: Option<String>,
     #[serde(default)]
@@ -101,11 +116,8 @@ pub struct AgentResultCache {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentSessionCheckpoint {
     pub agent_id: AgentId,
-    /// Luft/backend routing identity associated with this session.
     #[serde(default)]
     pub backend_id: Option<String>,
-    /// Backend protocol identifier. Kept separate so a future Luft-owned
-    /// opaque session id does not have to be exposed as the wire id.
     #[serde(default)]
     pub protocol_session_id: Option<String>,
     pub session_id: String,
@@ -115,479 +127,83 @@ pub struct AgentSessionCheckpoint {
     pub resumable: bool,
 }
 
-/// Persistence store for a single run.
-#[derive(Debug)]
-pub struct RunStore {
-    run_dir: PathBuf,
-    checkpoint: RwLock<Option<RunCheckpoint>>,
-    events_file: RwLock<Option<File>>,
-}
+// ============================================================================
+// CheckpointBackend Trait
+// ============================================================================
 
-impl RunStore {
-    /// Create or open a run store at the given path.
-    pub fn new(run_dir: &Path) -> Result<Arc<Self>, std::io::Error> {
-        tracing::debug!(path = %run_dir.display(), "creating RunStore");
-        fs::create_dir_all(run_dir)?;
-
-        let store = Arc::new(Self {
-            run_dir: run_dir.to_path_buf(),
-            checkpoint: RwLock::new(None),
-            events_file: RwLock::new(None),
-        });
-
-        Ok(store)
-    }
-
-    /// Insert or update an agent result in the checkpoint directly.
-    /// Used by JournalStore to persist cache_key_hash before appending the event.
-    pub fn upsert_agent_result(&self, cache: &AgentResultCache) -> Result<(), std::io::Error> {
-        let mut guard = self.checkpoint.write().unwrap();
-        if let Some(ref mut checkpoint) = *guard {
-            checkpoint
-                .agent_results
-                .insert(cache.agent_id, cache.clone());
-            checkpoint.updated_at = current_timestamp();
-            let cp = checkpoint.clone();
-            drop(guard);
-            let cp_path = self.run_dir.join("checkpoint.json");
-            let content = serde_json::to_string_pretty(&cp)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-            fs::write(&cp_path, content)?;
-        }
-        Ok(())
-    }
-
-    /// Insert or update an agent session in the checkpoint.
-    pub fn upsert_agent_session(
-        &self,
-        session: &AgentSessionCheckpoint,
-    ) -> Result<(), std::io::Error> {
-        let mut guard = self.checkpoint.write().unwrap();
-        if let Some(ref mut checkpoint) = *guard {
-            checkpoint
-                .agent_sessions
-                .insert(session.agent_id, session.clone());
-            checkpoint.updated_at = current_timestamp();
-            let cp = checkpoint.clone();
-            drop(guard);
-            let cp_path = self.run_dir.join("checkpoint.json");
-            let content = serde_json::to_string_pretty(&cp)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-            fs::write(&cp_path, content)?;
-        }
-        Ok(())
-    }
-
+/// Persistence backend for a single run.
+///
+/// Implementations (e.g. `SqliteCheckpointBackend` in `luft-storage`)
+/// provide checkpoint + event log storage. All methods are synchronous;
+/// async backends bridge internally via `block_in_place`.
+pub trait CheckpointBackend: Send + Sync + std::fmt::Debug {
     /// Initialize a new run.
-    pub fn init_run(&self, run_id: RunId, task: &str) -> Result<(), std::io::Error> {
-        tracing::info!(%run_id, %task, "initializing run store");
-        let checkpoint = RunCheckpoint {
-            run_id,
-            task: task.to_string(),
-            status: CheckpointStatus::Running,
-            current_phase: 0,
-            completed_phases: vec![],
-            agent_results: HashMap::new(),
-            agent_sessions: HashMap::new(),
-            findings: vec![],
-            total_tokens: 0,
-            created_at: current_timestamp(),
-            updated_at: current_timestamp(),
-            workflow_meta: None,
-            started_agent_ids: vec![],
-        };
-
-        // Save checkpoint
-        self.save_checkpoint(&checkpoint)?;
-
-        // Open events file
-        let events_path = self.run_dir.join("events.jsonl");
-        let events_file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(events_path)?;
-
-        let mut checkpoint_guard = self.checkpoint.write().unwrap();
-        *checkpoint_guard = Some(checkpoint);
-
-        let mut events_guard = self.events_file.write().unwrap();
-        *events_guard = Some(events_file);
-
-        Ok(())
-    }
+    fn init_run(&self, run_id: RunId, task: &str, run_dir: &str) -> anyhow::Result<()>;
 
     /// Initialize a new run with declarative workflow metadata.
-    pub fn init_run_with_meta(
+    fn init_run_with_meta(
         &self,
         run_id: RunId,
         task: &str,
+        run_dir: &str,
         workflow_meta: serde_json::Value,
-    ) -> Result<(), std::io::Error> {
-        tracing::info!(%run_id, %task, "initializing run store with meta");
-        let checkpoint = RunCheckpoint {
-            run_id,
-            task: task.to_string(),
-            status: CheckpointStatus::Running,
-            current_phase: 0,
-            completed_phases: vec![],
-            agent_results: HashMap::new(),
-            agent_sessions: HashMap::new(),
-            findings: vec![],
-            total_tokens: 0,
-            created_at: current_timestamp(),
-            updated_at: current_timestamp(),
-            workflow_meta: Some(workflow_meta),
-            started_agent_ids: vec![],
-        };
+    ) -> anyhow::Result<()>;
 
-        self.save_checkpoint(&checkpoint)?;
+    /// Open an existing run for resume. Returns None if not found.
+    fn open_run(&self, run_id: RunId) -> anyhow::Result<Option<RunCheckpoint>>;
 
-        let events_path = self.run_dir.join("events.jsonl");
-        let events_file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(events_path)?;
+    /// Append an event to the log and update checkpoint state.
+    fn append_event(&self, event: &AgentEvent) -> anyhow::Result<()>;
 
-        let mut checkpoint_guard = self.checkpoint.write().unwrap();
-        *checkpoint_guard = Some(checkpoint);
+    /// Insert or update an agent result.
+    fn upsert_agent_result(&self, cache: &AgentResultCache) -> anyhow::Result<()>;
 
-        let mut events_guard = self.events_file.write().unwrap();
-        *events_guard = Some(events_file);
+    /// Insert or update an agent session.
+    fn upsert_agent_session(&self, session: &AgentSessionCheckpoint) -> anyhow::Result<()>;
 
-        Ok(())
-    }
+    /// Get current checkpoint (from in-memory cache).
+    fn get_checkpoint(&self) -> Option<RunCheckpoint>;
 
-    /// Open an existing run for resume.
-    pub fn open_run(&self, _run_id: RunId) -> Result<Option<RunCheckpoint>, std::io::Error> {
-        tracing::debug!(%_run_id, "opening existing run");
-        let checkpoint_path = self.run_dir.join("checkpoint.json");
-
-        if !checkpoint_path.exists() {
-            return Ok(None);
-        }
-
-        let content = fs::read_to_string(&checkpoint_path)?;
-        let checkpoint: RunCheckpoint = serde_json::from_str(&content)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-
-        // Open events file. Resume appends new events (phase_started, agent_started,
-        // log, agent_done) to the same file; opening read-only here would make every
-        // forwarded event fail with Access is denied (os error 5) and silently drop
-        // observability for the entire resumed run.
-        let events_path = self.run_dir.join("events.jsonl");
-        let events_file = OpenOptions::new()
-            .read(true)
-            .append(true)
-            .open(events_path)?;
-
-        let mut checkpoint_guard = self.checkpoint.write().unwrap();
-        *checkpoint_guard = Some(checkpoint.clone());
-
-        let mut events_guard = self.events_file.write().unwrap();
-        *events_guard = Some(events_file);
-
-        Ok(Some(checkpoint))
-    }
-
-    /// Append an event to the log.
-    pub fn append_event(&self, event: &AgentEvent) -> Result<(), std::io::Error> {
-        let json = serde_json::to_string(event)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-
-        let mut events_guard = self.events_file.write().unwrap();
-        if let Some(ref mut file) = *events_guard {
-            writeln!(file, "{}", json)?;
-            file.flush()?;
-        }
-
-        // Update checkpoint (this also persists to disk)
-        self.update_from_event(event);
-
-        Ok(())
-    }
-
-    /// Update checkpoint from an event and persist to disk.
-    fn update_from_event(&self, event: &AgentEvent) {
-        let mut checkpoint_guard = self.checkpoint.write().unwrap();
-        if let Some(ref mut checkpoint) = *checkpoint_guard {
-            match event {
-                AgentEvent::AgentDone {
-                    agent_id,
-                    status,
-                    tokens,
-                    ..
-                } => {
-                    let existing = checkpoint.agent_results.get(agent_id);
-                    let cache = AgentResultCache {
-                        agent_id: *agent_id,
-                        phase_id: existing.map(|c| c.phase_id).unwrap_or(0),
-                        status: status.as_str().to_string(),
-                        output: existing
-                            .map(|c| c.output.clone())
-                            .unwrap_or(serde_json::Value::Null),
-                        findings: existing.map(|c| c.findings.clone()).unwrap_or_default(),
-                        tokens: tokens.total(),
-                        completed_at: existing
-                            .map(|c| c.completed_at)
-                            .unwrap_or(current_timestamp()),
-                        cache_key_hash: existing.and_then(|c| c.cache_key_hash.clone()),
-                        description: existing.and_then(|c| c.description.clone()),
-                        role: existing.and_then(|c| c.role.clone()),
-                    };
-                    checkpoint.agent_results.insert(*agent_id, cache);
-                    checkpoint.total_tokens += tokens.total();
-                }
-                AgentEvent::AgentStarted { agent_id, .. } => {
-                    if !checkpoint.started_agent_ids.contains(agent_id) {
-                        checkpoint.started_agent_ids.push(*agent_id);
-                    }
-                }
-                AgentEvent::PhaseDone { phase_id, .. } => {
-                    if *phase_id > 0 {
-                        checkpoint.current_phase = *phase_id;
-                    }
-                }
-                AgentEvent::RunDone {
-                    status,
-                    total_tokens,
-                    ..
-                } => {
-                    // Cancellation is monotonic: a late RunDone or other
-                    // event from the blocking executor must not resurrect a
-                    // run that was already cancelled through the disk/API path.
-                    let cancelled_on_disk =
-                        fs::read_to_string(self.run_dir.join("checkpoint.json"))
-                            .ok()
-                            .and_then(|content| {
-                                serde_json::from_str::<RunCheckpoint>(&content).ok()
-                            })
-                            .is_some_and(|disk_checkpoint| {
-                                disk_checkpoint.status == CheckpointStatus::Cancelled
-                            });
-                    if cancelled_on_disk {
-                        checkpoint.status = CheckpointStatus::Cancelled;
-                    } else if checkpoint.status != CheckpointStatus::Cancelled {
-                        checkpoint.status = match status {
-                            crate::contract::event::RunStatus::Completed => {
-                                CheckpointStatus::Completed
-                            }
-                            crate::contract::event::RunStatus::Failed => CheckpointStatus::Failed,
-                            crate::contract::event::RunStatus::Cancelled => {
-                                CheckpointStatus::Cancelled
-                            }
-                            crate::contract::event::RunStatus::Partial => CheckpointStatus::Running,
-                        };
-                    }
-                    // Only overwrite if a real total was supplied; otherwise keep
-                    // the figure accumulated from AgentDone events.
-                    let t = total_tokens.total();
-                    if t > 0 {
-                        checkpoint.total_tokens = t;
-                    }
-                }
-                _ => {}
-            }
-            checkpoint.updated_at = current_timestamp();
-
-            // Persist updated checkpoint to disk (write-only, no lock needed - already held)
-            if let Err(e) = self.write_checkpoint_to_disk(checkpoint) {
-                tracing::warn!(error = %e, "failed to save checkpoint");
-            }
-        }
-    }
-
-    /// Write checkpoint to disk without acquiring any locks.
-    fn write_checkpoint_to_disk(&self, checkpoint: &RunCheckpoint) -> Result<(), std::io::Error> {
-        let checkpoint_path = self.run_dir.join("checkpoint.json");
-        let temp_path = self.run_dir.join("checkpoint.json.tmp");
-        // Cancellation may be requested by another process while this store
-        // is applying a late event. Preserve the terminal marker when merging
-        // such a write; otherwise a stale RunDone(Completed/Failed) can
-        // resurrect a cancelled run on disk.
-        let mut checkpoint_to_write = checkpoint.clone();
-        if let Ok(existing) = std::fs::read_to_string(&checkpoint_path) {
-            if serde_json::from_str::<RunCheckpoint>(&existing)
-                .ok()
-                .is_some_and(|cp| cp.status == CheckpointStatus::Cancelled)
-            {
-                checkpoint_to_write.status = CheckpointStatus::Cancelled;
-            }
-        }
-        let content = serde_json::to_string_pretty(&checkpoint_to_write)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        std::fs::write(&temp_path, &content)?;
-        std::fs::rename(&temp_path, &checkpoint_path)?;
-        Ok(())
-    }
-
-    /// Save checkpoint to disk (public API, acquires lock).
-    pub fn save_checkpoint(&self, checkpoint: &RunCheckpoint) -> Result<(), std::io::Error> {
-        let checkpoint_path = self.run_dir.join("checkpoint.json");
-        let temp_path = self.run_dir.join("checkpoint.json.tmp");
-        let content = serde_json::to_string_pretty(checkpoint)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        std::fs::write(&temp_path, &content)?;
-        std::fs::rename(&temp_path, &checkpoint_path)?;
-
-        let mut checkpoint_guard = self.checkpoint.write().unwrap();
-        *checkpoint_guard = Some(checkpoint.clone());
-
-        Ok(())
-    }
-
-    /// Get current checkpoint.
-    pub fn get_checkpoint(&self) -> Option<RunCheckpoint> {
-        let guard = self.checkpoint.read().unwrap();
-        guard.clone()
-    }
-
-    /// Get all findings collected so far.
-    pub fn get_findings(&self) -> Vec<Finding> {
-        let guard = self.checkpoint.read().unwrap();
-        guard
-            .as_ref()
-            .map(|c| c.findings.clone())
-            .unwrap_or_default()
-    }
+    /// Get all findings.
+    fn get_findings(&self) -> Vec<Finding>;
 
     /// Get event log as a vector.
-    pub fn get_event_log(&self) -> Result<Vec<AgentEvent>, std::io::Error> {
-        let events_path = self.run_dir.join("events.jsonl");
-        let file = File::open(events_path)?;
-        let reader = BufReader::new(file);
-        let mut events = Vec::new();
-
-        for line in reader.lines() {
-            let line = line?;
-            if line.trim().is_empty() {
-                continue;
-            }
-            let event: AgentEvent = serde_json::from_str(&line)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-            events.push(event);
-        }
-
-        Ok(events)
-    }
+    fn get_event_log(&self) -> anyhow::Result<Vec<AgentEvent>>;
 
     /// Check if a run can be resumed.
-    pub fn can_resume(&self) -> bool {
-        let guard = self.checkpoint.read().unwrap();
-        matches!(
-            guard.as_ref().map(|c| c.status.clone()),
-            Some(CheckpointStatus::Running)
-        )
-    }
+    fn can_resume(&self) -> bool;
 
-    /// Reset checkpoint status to `Running`. Used when resuming a
-    /// failed/cancelled run — the terminal status is replaced so that
-    /// status queries reflect the active execution and a crash leaves a
-    /// resumable checkpoint.
-    pub fn reset_status_to_running(&self) -> Result<(), std::io::Error> {
-        let mut guard = self.checkpoint.write().unwrap();
-
-        if guard.is_none() {
-            let checkpoint_path = self.run_dir.join("checkpoint.json");
-            if !checkpoint_path.exists() {
-                return Ok(());
-            }
-            let content = fs::read_to_string(&checkpoint_path)?;
-            let cp: RunCheckpoint = serde_json::from_str(&content)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-            *guard = Some(cp);
-        }
-
-        if let Some(ref mut checkpoint) = *guard {
-            checkpoint.status = CheckpointStatus::Running;
-            checkpoint.updated_at = current_timestamp();
-            let cp_clone = checkpoint.clone();
-            drop(guard);
-            self.write_checkpoint_to_disk(&cp_clone)?;
-        }
-        Ok(())
-    }
+    /// Reset checkpoint status to Running.
+    fn reset_status_to_running(&self) -> anyhow::Result<()>;
 
     /// Mark run as cancelled.
-    pub fn cancel(&self) -> Result<(), std::io::Error> {
-        tracing::info!("cancelling run");
-        let mut guard = self.checkpoint.write().unwrap();
+    fn cancel(&self) -> anyhow::Result<()>;
 
-        // Cache miss: this `RunStore` was created by a *different* process
-        // (e.g. the MCP server cancelling a run started by `luft run`), so
-        // the in-memory cache was never populated by `init_run` /
-        // `update_from_event`. Load the checkpoint from disk so we can
-        // mutate + persist it. If no `checkpoint.json` exists at all, there
-        // is nothing to cancel — return Ok (preserves the prior no-op
-        // behaviour for unknown runs, and must not create a file).
-        if guard.is_none() {
-            let checkpoint_path = self.run_dir.join("checkpoint.json");
-            if !checkpoint_path.exists() {
-                return Ok(());
-            }
-            let content = fs::read_to_string(&checkpoint_path)?;
-            let cp: RunCheckpoint = serde_json::from_str(&content)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-            *guard = Some(cp);
-        }
-
-        if let Some(ref mut checkpoint) = *guard {
-            checkpoint.status = CheckpointStatus::Cancelled;
-            checkpoint.updated_at = current_timestamp();
-            let checkpoint = checkpoint.clone();
-            drop(guard);
-            // Use the same atomic write path as event updates. This keeps the
-            // cross-process cancellation marker durable even if the running
-            // process is concurrently flushing a late event.
-            self.write_checkpoint_to_disk(&checkpoint)?;
-        }
-        Ok(())
-    }
+    /// Save checkpoint (full overwrite).
+    fn save_checkpoint(&self, checkpoint: &RunCheckpoint) -> anyhow::Result<()>;
 }
 
-/// Get current timestamp.
-fn current_timestamp() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
+/// Helper: current unix timestamp.
+pub fn current_timestamp() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0)
 }
 
 // ============================================================================
-// Global store management
+// Factory — callers provide a backend at construction time.
 // ============================================================================
 
-use std::sync::OnceLock;
-
-static RUN_STORES: OnceLock<dashmap::DashMap<String, Arc<RunStore>>> = OnceLock::new();
-
-/// Get or create the global run stores.
-fn get_run_stores() -> &'static dashmap::DashMap<String, Arc<RunStore>> {
-    RUN_STORES.get_or_init(dashmap::DashMap::new)
-}
-
-/// Get or create a run store for a run directory.
-pub fn get_run_store(run_dir_name: &str, base_dir: &Path) -> Result<Arc<RunStore>, std::io::Error> {
-    let stores = get_run_stores();
-
-    if let Some(store) = stores.get(run_dir_name) {
-        return Ok(store.clone());
-    }
-
-    let run_dir = base_dir.join(run_dir_name);
-    let store = RunStore::new(&run_dir)?;
-    stores.insert(run_dir_name.to_string(), store.clone());
-
-    Ok(store)
-}
-
-/// List all run directory names (both new-format and legacy UUID).
-pub fn list_runs(base_dir: &Path) -> Result<Vec<String>, std::io::Error> {
+/// List all run directory names under the base dir.
+/// For SQLite backends, this is derived from the `runs` table.
+/// This helper remains for filesystem-based discovery.
+pub fn list_run_dirs(base_dir: &Path) -> anyhow::Result<Vec<String>> {
     if !base_dir.exists() {
         return Ok(vec![]);
     }
-
     let mut run_dirs = Vec::new();
-    for entry in fs::read_dir(base_dir)? {
+    for entry in std::fs::read_dir(base_dir)? {
         let entry = entry?;
         let path = entry.path();
         if path.is_dir() {
@@ -596,797 +212,6 @@ pub fn list_runs(base_dir: &Path) -> Result<Vec<String>, std::io::Error> {
             }
         }
     }
-
     run_dirs.sort();
     Ok(run_dirs)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::tempdir;
-
-    #[test]
-    fn test_run_store_init() {
-        let dir = tempdir().unwrap();
-        let run_id = uuid::Uuid::now_v7();
-        let store = RunStore::new(dir.path()).unwrap();
-        store.init_run(run_id, "Test task").unwrap();
-
-        let checkpoint = store.get_checkpoint().unwrap();
-        assert_eq!(checkpoint.run_id, run_id);
-        assert_eq!(checkpoint.task, "Test task");
-        assert_eq!(checkpoint.status, CheckpointStatus::Running);
-    }
-
-    #[test]
-    fn test_run_store_resume() {
-        let dir = tempdir().unwrap();
-        let run_id = uuid::Uuid::now_v7();
-        let store = RunStore::new(dir.path()).unwrap();
-        store.init_run(run_id, "Test task").unwrap();
-
-        // Open in new store instance
-        let store2 = RunStore::new(dir.path()).unwrap();
-        let checkpoint = store2.open_run(run_id).unwrap().unwrap();
-        assert_eq!(checkpoint.run_id, run_id);
-        assert_eq!(checkpoint.task, "Test task");
-    }
-
-    #[test]
-    fn test_can_resume() {
-        let dir = tempdir().unwrap();
-        let run_id = uuid::Uuid::now_v7();
-        let store = RunStore::new(dir.path()).unwrap();
-        store.init_run(run_id, "Test task").unwrap();
-
-        assert!(store.can_resume());
-    }
-
-    #[test]
-    fn test_resume_appends_events() {
-        // Regression: open_run previously opened events.jsonl read-only, causing
-        // every forwarded event in the resumed run to fail with
-        // `Access is denied (os error 5)` and silently dropping observability.
-        let dir = tempdir().unwrap();
-        let run_id = uuid::Uuid::now_v7();
-        let store = RunStore::new(dir.path()).unwrap();
-        store.init_run(run_id, "Test task").unwrap();
-
-        let store2 = RunStore::new(dir.path()).unwrap();
-        store2.open_run(run_id).unwrap().unwrap();
-
-        // Writing through the resumed store must succeed and persist the event.
-        let evt = AgentEvent::Log {
-            run_id,
-            agent_id: None,
-            level: crate::contract::event::LogLevel::Info,
-            msg: "resume smoke test".to_string(),
-        };
-        store2
-            .append_event(&evt)
-            .expect("append_event after resume must succeed");
-
-        let log = store2.get_event_log().expect("read events.jsonl");
-        assert!(
-            log.iter().any(|e| matches!(
-                e,
-                AgentEvent::Log { msg, .. } if msg == "resume smoke test"
-            )),
-            "event written after open_run must appear in events.jsonl"
-        );
-    }
-
-    // ----------------------------------------------------------------------
-    // Tests for F1 / F4 / F5 / F8 (spec `docs/src/core/state.rs.md`).
-    //
-    // These exercise the consolidated write path
-    // (`write_checkpoint_to_disk`), the lock-dance-free `cancel`, the
-    // snake_case `AgentStatus::as_str()` mapping that no longer depends on
-    // `Debug` formatting, and the `serde_to_io` error mapping helper that
-    // funnels every `serde_json::Error` through `ErrorKind::InvalidData`.
-    // ----------------------------------------------------------------------
-
-    use crate::contract::backend::AgentStatus;
-    use crate::contract::ids::TokenUsage;
-    use std::collections::HashSet;
-
-    fn sample_token_usage() -> TokenUsage {
-        TokenUsage {
-            input: 10,
-            output: 5,
-            cache_read: 0,
-            cache_write: 0,
-        }
-    }
-
-    fn build_agent_done(
-        run_id: RunId,
-        agent_id: AgentId,
-        status: AgentStatus,
-        tokens: TokenUsage,
-    ) -> AgentEvent {
-        AgentEvent::AgentDone {
-            run_id,
-            agent_id,
-            status,
-            tokens,
-            elapsed_ms: 0,
-            name: None,
-            agent_seq: 0,
-            output: serde_json::Value::Null,
-            findings: vec![],
-            prompt: String::new(),
-            retry_count: 0,
-            ts: Default::default(),
-        }
-    }
-
-    fn read_raw_checkpoint(run_dir: &Path) -> serde_json::Value {
-        let path = run_dir.join("checkpoint.json");
-        let content =
-            std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read checkpoint.json: {e}"));
-        serde_json::from_str(&content).unwrap_or_else(|e| panic!("parse checkpoint.json: {e}"))
-    }
-
-    // ----- upsert_agent_result (F1 delegation) ---------------------------
-
-    #[test]
-    fn upsert_agent_result_persists_to_disk() {
-        // F1: `upsert_agent_result` must persist via the same write path as
-        // `write_checkpoint_to_disk` so that a follow-up `open_run` sees the
-        // inserted entry without any in-process plumbing.
-        let dir = tempdir().unwrap();
-        let run_id = uuid::Uuid::now_v7();
-        let store = RunStore::new(dir.path()).unwrap();
-        store.init_run(run_id, "upsert test").unwrap();
-
-        let agent_id = uuid::Uuid::now_v7();
-        let cache = AgentResultCache {
-            agent_id,
-            phase_id: 1,
-            status: "ok".into(),
-            output: serde_json::json!({"v": 42}),
-            findings: vec![],
-            tokens: 100,
-            completed_at: 1_700_000_000,
-            cache_key_hash: Some("deadbeef".into()),
-            description: None,
-            role: None,
-        };
-        store.upsert_agent_result(&cache).unwrap();
-
-        // 1. In-memory state reflects the upsert.
-        let cp = store.get_checkpoint().expect("checkpoint present");
-        let cached = cp
-            .agent_results
-            .get(&agent_id)
-            .expect("agent_id indexed after upsert");
-        assert_eq!(cached.tokens, 100);
-        assert_eq!(cached.status, "ok");
-
-        // 2. On-disk JSON matches the in-memory state.
-        let raw = read_raw_checkpoint(dir.path());
-        let ar = raw
-            .get("agent_results")
-            .and_then(|v| v.as_object())
-            .expect("agent_results object");
-        assert_eq!(ar.len(), 1, "exactly one agent cached on disk");
-        let entry = ar.values().next().expect("non-empty agent_results on disk");
-        assert_eq!(entry.get("tokens").and_then(|v| v.as_u64()), Some(100));
-        assert_eq!(entry.get("status").and_then(|v| v.as_str()), Some("ok"));
-        assert_eq!(
-            entry.get("cache_key_hash").and_then(|v| v.as_str()),
-            Some("deadbeef")
-        );
-
-        // 3. Re-opening the run restores the entry from disk.
-        drop(store);
-        let reopened = RunStore::new(dir.path()).unwrap();
-        let restored = reopened.open_run(run_id).unwrap().unwrap();
-        assert!(
-            restored.agent_results.contains_key(&agent_id),
-            "upserted entry must survive close+reopen"
-        );
-        assert_eq!(restored.agent_results[&agent_id].tokens, 100);
-    }
-
-    #[test]
-    fn upsert_agent_session_persists_and_reloads() {
-        let dir = tempdir().unwrap();
-        let run_id = uuid::Uuid::now_v7();
-        let store = RunStore::new(dir.path()).unwrap();
-        store.init_run(run_id, "session checkpoint test").unwrap();
-
-        let agent_id = uuid::Uuid::now_v7();
-        store
-            .upsert_agent_session(&AgentSessionCheckpoint {
-                agent_id,
-                backend_id: Some("mock".into()),
-                protocol_session_id: Some("luft-session-1".into()),
-                session_id: "luft-session-1".into(),
-                status: "ok".into(),
-                updated_at: 1_700_000_000,
-                resumable: true,
-            })
-            .unwrap();
-
-        let raw = read_raw_checkpoint(dir.path());
-        assert_eq!(
-            raw["agent_sessions"][agent_id.to_string()]["session_id"],
-            "luft-session-1"
-        );
-
-        drop(store);
-        let reopened = RunStore::new(dir.path()).unwrap();
-        let restored = reopened.open_run(run_id).unwrap().unwrap();
-        let session = restored.agent_sessions.get(&agent_id).unwrap();
-        assert_eq!(session.session_id, "luft-session-1");
-        assert!(session.resumable);
-    }
-
-    #[test]
-    fn upsert_agent_result_updates_existing_entry() {
-        // F1: re-upserting the same agent_id overwrites the prior entry,
-        // mirroring the HashMap semantics of agent_results.
-        let dir = tempdir().unwrap();
-        let run_id = uuid::Uuid::now_v7();
-        let store = RunStore::new(dir.path()).unwrap();
-        store.init_run(run_id, "overwrite test").unwrap();
-
-        let agent_id = uuid::Uuid::now_v7();
-        let first = AgentResultCache {
-            agent_id,
-            phase_id: 1,
-            status: "ok".into(),
-            output: serde_json::json!("first"),
-            findings: vec![],
-            tokens: 10,
-            completed_at: 1,
-            cache_key_hash: None,
-            description: None,
-            role: None,
-        };
-        let second = AgentResultCache {
-            agent_id,
-            phase_id: 1,
-            status: "error".into(),
-            output: serde_json::json!("second"),
-            findings: vec![],
-            tokens: 99,
-            completed_at: 2,
-            cache_key_hash: None,
-            description: None,
-            role: None,
-        };
-        store.upsert_agent_result(&first).unwrap();
-        store.upsert_agent_result(&second).unwrap();
-
-        let cp = store.get_checkpoint().unwrap();
-        assert_eq!(cp.agent_results.len(), 1, "no duplicate entries");
-        let cached = &cp.agent_results[&agent_id];
-        assert_eq!(cached.status, "error");
-        assert_eq!(cached.tokens, 99);
-        assert_eq!(cached.completed_at, 2);
-
-        // Disk must also reflect the second upsert, not the first.
-        let raw = read_raw_checkpoint(dir.path());
-        let ar = raw
-            .get("agent_results")
-            .and_then(|v| v.as_object())
-            .unwrap();
-        assert_eq!(ar.len(), 1);
-        let entry = ar.values().next().unwrap();
-        assert_eq!(entry.get("tokens").and_then(|v| v.as_u64()), Some(99));
-        assert_eq!(entry.get("status").and_then(|v| v.as_str()), Some("error"));
-    }
-
-    #[test]
-    fn upsert_agent_result_noop_when_uninitialized() {
-        // F1: before init_run the in-memory checkpoint is None and the helper
-        // must not create a checkpoint.json from nothing. This keeps the
-        // behaviour of "upsert only patches an existing checkpoint".
-        let dir = tempdir().unwrap();
-        let store = RunStore::new(dir.path()).unwrap();
-        assert!(store.get_checkpoint().is_none());
-        let cp_path = dir.path().join("checkpoint.json");
-        assert!(!cp_path.exists(), "no checkpoint.json before init");
-
-        let cache = AgentResultCache {
-            agent_id: uuid::Uuid::now_v7(),
-            phase_id: 1,
-            status: "ok".into(),
-            output: serde_json::json!(null),
-            findings: vec![],
-            tokens: 0,
-            completed_at: 0,
-            cache_key_hash: None,
-            description: None,
-            role: None,
-        };
-        store.upsert_agent_result(&cache).unwrap();
-        assert!(
-            !cp_path.exists(),
-            "upsert_agent_result must not create checkpoint.json before init_run"
-        );
-        assert!(store.get_checkpoint().is_none());
-    }
-
-    #[test]
-    fn upsert_agent_result_advances_updated_at() {
-        // F1: the delegated write path must still update the checkpoint's
-        // `updated_at` timestamp the same way the inline implementation did.
-        let dir = tempdir().unwrap();
-        let run_id = uuid::Uuid::now_v7();
-        let store = RunStore::new(dir.path()).unwrap();
-        store.init_run(run_id, "ts test").unwrap();
-        let before = store.get_checkpoint().unwrap().updated_at;
-
-        std::thread::sleep(std::time::Duration::from_millis(1100));
-
-        let cache = AgentResultCache {
-            agent_id: uuid::Uuid::now_v7(),
-            phase_id: 1,
-            status: "ok".into(),
-            output: serde_json::json!(null),
-            findings: vec![],
-            tokens: 0,
-            completed_at: 0,
-            cache_key_hash: None,
-            description: None,
-            role: None,
-        };
-        store.upsert_agent_result(&cache).unwrap();
-        let after = store.get_checkpoint().unwrap().updated_at;
-        assert!(
-            after > before,
-            "updated_at must advance after upsert (before={before}, after={after})"
-        );
-    }
-
-    // ----- cancel (F1 delegation + F4 lock-dance collapse) ---------------
-
-    #[test]
-    fn cancel_persists_cancelled_status_to_disk() {
-        // F1+F4: cancel delegates to write_checkpoint_to_disk with the
-        // already-mutated checkpoint (no redundant read-lock + inline
-        // serialize). The Cancelled status must appear on disk so a follow-up
-        // process sees the terminal state.
-        let dir = tempdir().unwrap();
-        let run_id = uuid::Uuid::now_v7();
-        let store = RunStore::new(dir.path()).unwrap();
-        store.init_run(run_id, "cancel me").unwrap();
-        assert!(store.can_resume());
-
-        store.cancel().unwrap();
-
-        // In-memory: status is Cancelled, can_resume() is false.
-        let cp = store.get_checkpoint().unwrap();
-        assert_eq!(cp.status, CheckpointStatus::Cancelled);
-        assert!(!store.can_resume());
-
-        // On-disk: same status, observable across processes.
-        let raw = read_raw_checkpoint(dir.path());
-        assert_eq!(
-            raw.get("status").and_then(|v| v.as_str()),
-            Some("cancelled")
-        );
-
-        // Reopen: the persisted status survives close+reopen.
-        drop(store);
-        let reopened = RunStore::new(dir.path()).unwrap();
-        let restored = reopened.open_run(run_id).unwrap().unwrap();
-        assert_eq!(restored.status, CheckpointStatus::Cancelled);
-        assert!(!reopened.can_resume());
-    }
-
-    #[test]
-    fn cancel_is_idempotent() {
-        // F4: the new cancel body only mutates under the write lock and
-        // delegates to write_checkpoint_to_disk once. Calling it twice must
-        // not panic, not deadlock, and must leave the persisted state
-        // consistent (Cancelled, monotonically newer updated_at).
-        let dir = tempdir().unwrap();
-        let run_id = uuid::Uuid::now_v7();
-        let store = RunStore::new(dir.path()).unwrap();
-        store.init_run(run_id, "double cancel").unwrap();
-
-        store.cancel().unwrap();
-        let after_first = store.get_checkpoint().unwrap().updated_at;
-        std::thread::sleep(std::time::Duration::from_millis(1100));
-
-        store.cancel().expect("second cancel must succeed");
-        let after_second = store.get_checkpoint().unwrap().updated_at;
-
-        assert_eq!(
-            store.get_checkpoint().unwrap().status,
-            CheckpointStatus::Cancelled
-        );
-        assert!(
-            after_second >= after_first,
-            "updated_at must not regress (was {after_first}, now {after_second})"
-        );
-
-        let raw = read_raw_checkpoint(dir.path());
-        assert_eq!(
-            raw.get("status").and_then(|v| v.as_str()),
-            Some("cancelled")
-        );
-    }
-
-    #[test]
-    fn cancel_before_init_is_safe_noop() {
-        // F4: cancel on an uninitialised store must not panic and must not
-        // create a checkpoint file. The cancelled-status guard requires
-        // `Some(checkpoint)` so the body simply skips.
-        let dir = tempdir().unwrap();
-        let store = RunStore::new(dir.path()).unwrap();
-        assert!(store.get_checkpoint().is_none());
-        store.cancel().expect("cancel before init must succeed");
-        assert!(store.get_checkpoint().is_none());
-        assert!(
-            !dir.path().join("checkpoint.json").exists(),
-            "cancel before init must not create checkpoint.json"
-        );
-    }
-
-    #[test]
-    fn cancel_loads_checkpoint_from_disk_when_cache_is_empty() {
-        // Cross-process regression: a different process (e.g. `luft run`)
-        // wrote a Running checkpoint to disk, then this process (e.g. the
-        // MCP server) opens a fresh `RunStore` whose in-memory cache is
-        // empty. `cancel()` must load from disk, flip the status to
-        // Cancelled, and persist — not silently no-op.
-        let dir = tempdir().unwrap();
-        let run_id = uuid::Uuid::now_v7();
-
-        // Write the checkpoint directly to disk, bypassing the in-memory
-        // cache entirely (mirrors what another process leaves behind).
-        let cp = RunCheckpoint {
-            run_id,
-            task: "started elsewhere".into(),
-            status: CheckpointStatus::Running,
-            current_phase: 0,
-            completed_phases: vec![],
-            agent_results: HashMap::new(),
-            agent_sessions: HashMap::new(),
-            findings: vec![],
-            total_tokens: 0,
-            created_at: current_timestamp(),
-            updated_at: current_timestamp(),
-            workflow_meta: None,
-            started_agent_ids: vec![],
-        };
-        let cp_path = dir.path().join("checkpoint.json");
-        std::fs::write(&cp_path, serde_json::to_string_pretty(&cp).unwrap()).unwrap();
-
-        // Fresh RunStore — cache is None, exactly like a query-only process.
-        let store = RunStore::new(dir.path()).unwrap();
-        assert!(store.get_checkpoint().is_none(), "cache must start empty");
-
-        store.cancel().expect("cancel must succeed cross-process");
-
-        // In-memory cache is now populated with the cancelled checkpoint.
-        let cached = store
-            .get_checkpoint()
-            .expect("cache populated after cancel");
-        assert_eq!(cached.status, CheckpointStatus::Cancelled);
-
-        // Disk reflects the same terminal status — observable to any process.
-        let raw = read_raw_checkpoint(dir.path());
-        assert_eq!(
-            raw.get("status").and_then(|v| v.as_str()),
-            Some("cancelled")
-        );
-        assert_eq!(
-            raw.get("run_id").and_then(|v| v.as_str()),
-            Some(run_id.to_string()).as_deref()
-        );
-    }
-
-    #[test]
-    fn cancel_preserves_agent_results_and_findings() {
-        // F1+F4: cancel only mutates status/updated_at. Pre-existing
-        // agent_results, findings, and total_tokens must be preserved
-        // verbatim across the cancel write.
-        let dir = tempdir().unwrap();
-        let run_id = uuid::Uuid::now_v7();
-        let store = RunStore::new(dir.path()).unwrap();
-        store.init_run(run_id, "preserve").unwrap();
-
-        let agent_id = uuid::Uuid::now_v7();
-        let cache = AgentResultCache {
-            agent_id,
-            phase_id: 1,
-            status: "ok".into(),
-            output: serde_json::json!({"x": 1}),
-            findings: vec![],
-            tokens: 250,
-            completed_at: 7,
-            cache_key_hash: Some("hash-1".into()),
-            description: None,
-            role: None,
-        };
-        store.upsert_agent_result(&cache).unwrap();
-        let before = store.get_checkpoint().unwrap();
-
-        store.cancel().unwrap();
-        let after = store.get_checkpoint().unwrap();
-
-        assert_eq!(after.status, CheckpointStatus::Cancelled);
-        assert_eq!(after.agent_results.len(), 1);
-        assert_eq!(after.agent_results[&agent_id].tokens, 250);
-        assert_eq!(
-            after.agent_results[&agent_id].cache_key_hash.as_deref(),
-            Some("hash-1")
-        );
-        assert_eq!(after.total_tokens, before.total_tokens);
-    }
-
-    #[test]
-    fn late_event_from_another_process_cannot_resurrect_cancelled_run() {
-        let dir = tempdir().unwrap();
-        let run_id = uuid::Uuid::now_v7();
-        let writer = RunStore::new(dir.path()).unwrap();
-        writer.init_run(run_id, "cross process race").unwrap();
-
-        // A second process/store cancels the run after the first store has
-        // loaded its running checkpoint into memory.
-        let canceller = RunStore::new(dir.path()).unwrap();
-        canceller.cancel().unwrap();
-
-        writer
-            .append_event(&AgentEvent::RunDone {
-                run_id,
-                status: crate::contract::event::RunStatus::Completed,
-                total_tokens: TokenUsage::default(),
-                report: serde_json::Value::Null,
-                ts: chrono::Utc::now(),
-            })
-            .unwrap();
-
-        let restored = RunStore::new(dir.path())
-            .unwrap()
-            .open_run(run_id)
-            .unwrap()
-            .unwrap();
-        assert_eq!(restored.status, CheckpointStatus::Cancelled);
-    }
-
-    // ----- AgentDone -> AgentResultCache.status (F5) ---------------------
-
-    #[test]
-    fn agent_done_persists_snake_case_status_for_each_variant() {
-        // F5 KEY test: the persisted AgentResultCache.status string MUST
-        // come from AgentStatus::as_str() and NOT from Debug formatting.
-        // For TimedOut this is the load-bearing regression: Debug lowercased
-        // yields "timedout" (no underscore) but as_str() yields "timed_out".
-        let dir = tempdir().unwrap();
-        let run_id = uuid::Uuid::now_v7();
-        let store = RunStore::new(dir.path()).unwrap();
-        store.init_run(run_id, "F5 variants").unwrap();
-
-        let cases: Vec<(AgentStatus, &str)> = vec![
-            (AgentStatus::Ok, "ok"),
-            (AgentStatus::Error, "error"),
-            (AgentStatus::Cancelled, "cancelled"),
-            (AgentStatus::TimedOut, "timed_out"),
-        ];
-        for (status, expected) in &cases {
-            let agent_id = uuid::Uuid::now_v7();
-            let evt = build_agent_done(run_id, agent_id, status.clone(), sample_token_usage());
-            store.append_event(&evt).unwrap();
-
-            let raw = read_raw_checkpoint(dir.path());
-            let ar = raw
-                .get("agent_results")
-                .and_then(|v| v.as_object())
-                .expect("agent_results object");
-            let entry = ar
-                .values()
-                .find(|v| {
-                    v.get("agent_id").and_then(|id| id.as_str()) == Some(&agent_id.to_string())
-                })
-                .unwrap_or_else(|| panic!("entry for {agent_id} missing"));
-            let persisted = entry
-                .get("status")
-                .and_then(|v| v.as_str())
-                .unwrap_or_else(|| panic!("status missing for {status:?}"));
-            assert_eq!(
-                persisted, *expected,
-                "AgentDone({status:?}) must persist status={expected:?} (snake_case); \
-                 got {persisted:?}. If this fails with \"timedout\" for TimedOut, \
-                 F5 has regressed to Debug formatting."
-            );
-        }
-    }
-
-    #[test]
-    fn agent_done_timed_out_persists_with_underscore_not_collapsed() {
-        // Strongest F5 regression guard: the buggy form would persist
-        // "timedout" (no underscore) for TimedOut. The fixed form persists
-        // "timed_out". This test fails loudly if anyone reintroduces the
-        // `format!("{:?}", status).to_lowercase()` shortcut.
-        let dir = tempdir().unwrap();
-        let run_id = uuid::Uuid::now_v7();
-        let store = RunStore::new(dir.path()).unwrap();
-        store.init_run(run_id, "timed-out guard").unwrap();
-
-        let agent_id = uuid::Uuid::now_v7();
-        let evt = build_agent_done(
-            run_id,
-            agent_id,
-            AgentStatus::TimedOut,
-            sample_token_usage(),
-        );
-        store.append_event(&evt).unwrap();
-
-        let raw = read_raw_checkpoint(dir.path());
-        let ar = raw
-            .get("agent_results")
-            .and_then(|v| v.as_object())
-            .unwrap();
-        let entry = ar.values().next().expect("entry exists");
-        let persisted = entry.get("status").and_then(|v| v.as_str()).unwrap();
-
-        assert_eq!(
-            persisted, "timed_out",
-            "AgentDone(TimedOut) must persist \"timed_out\" with an underscore; got {persisted:?}"
-        );
-        assert_ne!(
-            persisted, "timedout",
-            "AgentDone(TimedOut) must NOT collapse to Debug-lowercased \"timedout\""
-        );
-    }
-
-    #[test]
-    fn agent_done_then_reopen_restores_snake_case_status() {
-        // The persisted snake_case status must survive a close+reopen cycle,
-        // since legacy checkpoints with Debug-lowercased "timedout" should be
-        // distinguished from new checkpoints with "timed_out" — but new
-        // checkpoints must round-trip cleanly through the JSON pipeline.
-        let dir = tempdir().unwrap();
-        let run_id = uuid::Uuid::now_v7();
-        let store = RunStore::new(dir.path()).unwrap();
-        store.init_run(run_id, "round-trip").unwrap();
-
-        let agent_id = uuid::Uuid::now_v7();
-        let evt = build_agent_done(
-            run_id,
-            agent_id,
-            AgentStatus::Cancelled,
-            TokenUsage {
-                input: 1,
-                output: 2,
-                cache_read: 0,
-                cache_write: 0,
-            },
-        );
-        store.append_event(&evt).unwrap();
-        drop(store);
-
-        let reopened = RunStore::new(dir.path()).unwrap();
-        let cp = reopened.open_run(run_id).unwrap().unwrap();
-        let cached = cp
-            .agent_results
-            .get(&agent_id)
-            .expect("agent cached on disk");
-        assert_eq!(cached.status, "cancelled");
-        assert_eq!(cached.tokens, 3);
-    }
-
-    // ----- F8 serde_to_io error mapping (indirect) -----------------------
-
-    #[test]
-    fn open_run_with_corrupt_checkpoint_returns_invalid_data() {
-        // F8: every serde_json::Error → io::Error funnel passes through
-        // ErrorKind::InvalidData. Verifies the consolidated helper is wired
-        // into open_run's deserialization path.
-        let dir = tempdir().unwrap();
-        std::fs::create_dir_all(dir.path()).unwrap();
-        std::fs::write(
-            dir.path().join("checkpoint.json"),
-            b"{ this is not valid json",
-        )
-        .unwrap();
-
-        let store = RunStore::new(dir.path()).unwrap();
-        let err = store
-            .open_run(uuid::Uuid::now_v7())
-            .expect_err("corrupt JSON must surface as an io::Error");
-        assert_eq!(
-            err.kind(),
-            std::io::ErrorKind::InvalidData,
-            "corrupt checkpoint must map to InvalidData via serde_to_io; got {:?}",
-            err.kind()
-        );
-    }
-
-    #[test]
-    fn open_run_with_wrong_typed_checkpoint_returns_invalid_data() {
-        // F8: even structurally-valid JSON that fails typed deserialisation
-        // (missing required field) must come back as InvalidData.
-        let dir = tempdir().unwrap();
-        std::fs::create_dir_all(dir.path()).unwrap();
-        // `task` is a required field on RunCheckpoint; omitting it triggers
-        // a serde error which the helper must classify as InvalidData.
-        std::fs::write(
-            dir.path().join("checkpoint.json"),
-            br#"{"run_id":"00000000-0000-0000-0000-000000000000","status":"running"}"#,
-        )
-        .unwrap();
-
-        let store = RunStore::new(dir.path()).unwrap();
-        let err = store
-            .open_run(uuid::Uuid::now_v7())
-            .expect_err("missing-field JSON must surface as an io::Error");
-        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
-    }
-
-    #[test]
-    fn get_event_log_with_corrupt_line_returns_invalid_data() {
-        // F8: the consolidated helper also covers get_event_log's per-line
-        // deserialisation. A single bad line must surface as InvalidData
-        // rather than SomeOtherKind so callers can distinguish "corrupted
-        // journal" from "missing file".
-        let dir = tempdir().unwrap();
-        std::fs::create_dir_all(dir.path()).unwrap();
-        std::fs::write(dir.path().join("events.jsonl"), b"not-json\n").unwrap();
-
-        let store = RunStore::new(dir.path()).unwrap();
-        let err = store
-            .get_event_log()
-            .expect_err("corrupt event line must surface as an io::Error");
-        assert_eq!(
-            err.kind(),
-            std::io::ErrorKind::InvalidData,
-            "corrupt event line must map to InvalidData via serde_to_io; got {:?}",
-            err.kind()
-        );
-    }
-
-    // ----- Cross-cutting safety nets -------------------------------------
-
-    #[test]
-    fn as_str_variants_round_trip_through_checkpoint_pipeline() {
-        // Property-style test: for every AgentStatus variant, the persisted
-        // status string must equal AgentStatus::variant.as_str() exactly,
-        // with no whitespace, no case drift, and no truncation. This catches
-        // accidental future reverts to Debug-derived strings.
-        let dir = tempdir().unwrap();
-        let run_id = uuid::Uuid::now_v7();
-        let store = RunStore::new(dir.path()).unwrap();
-        store.init_run(run_id, "round-trip property").unwrap();
-
-        let variants = [
-            AgentStatus::Ok,
-            AgentStatus::Error,
-            AgentStatus::Cancelled,
-            AgentStatus::TimedOut,
-        ];
-        let mut seen: HashSet<String> = HashSet::new();
-
-        for variant in &variants {
-            let agent_id = uuid::Uuid::now_v7();
-            let evt = build_agent_done(run_id, agent_id, variant.clone(), sample_token_usage());
-            store.append_event(&evt).unwrap();
-
-            let cp = store.get_checkpoint().unwrap();
-            let cached = cp
-                .agent_results
-                .get(&agent_id)
-                .expect("entry for {agent_id}");
-            assert_eq!(
-                cached.status,
-                variant.as_str(),
-                "{variant:?}.as_str() must round-trip via append_event→update_from_event"
-            );
-            // Also confirm uniqueness is preserved on disk.
-            assert!(
-                seen.insert(cached.status.clone()),
-                "duplicate status {cached_status:?} persisted for {variant:?}",
-                cached_status = cached.status
-            );
-        }
-    }
 }

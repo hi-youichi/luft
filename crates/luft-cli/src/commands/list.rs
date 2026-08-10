@@ -12,7 +12,7 @@ pub const DEFAULT_LIMIT: usize = 20;
 /// rendered output without capturing stdout.
 pub fn format_runs(limit: Option<usize>) -> Result<String> {
     let base_dir = runs_base_dir();
-    let runs = luft_core::query::list_runs(&base_dir)?;
+    let runs = luft::query::list_runs(&base_dir)?;
     if runs.is_empty() {
         return Ok("No runs found.\n".to_string());
     }
@@ -42,6 +42,7 @@ pub fn list_runs_cmd(limit: Option<usize>) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use luft_core::state::CheckpointBackend;
     use std::path::PathBuf;
     use tempfile::TempDir;
 
@@ -75,13 +76,24 @@ mod tests {
         }
     }
 
+    fn open_test_pool(base_dir: &std::path::Path) -> luft::storage::DbPool {
+        std::fs::create_dir_all(base_dir).unwrap();
+        let db_path = base_dir.join(luft::storage::DEFAULT_DB_PATH);
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("create tokio runtime");
+        rt.block_on(luft::storage::open_db(&db_path)).unwrap()
+    }
+
     /// Helper: create a run in the current CWD's `.luft/runs/` directory.
     fn create_run(task: &str) -> uuid::Uuid {
         let base_dir = runs_base_dir();
+        std::fs::create_dir_all(&base_dir).unwrap();
         let run_id = uuid::Uuid::now_v7();
-        let dir_name = run_id.to_string();
-        let store = luft::core::state::get_run_store(&dir_name, &base_dir).unwrap();
-        store.init_run(run_id, task).unwrap();
+        let pool = open_test_pool(&base_dir);
+        let backend = luft::storage::SqliteCheckpointBackend::new(pool, run_id);
+        backend.init_run(run_id, task, "test_dir").unwrap();
         run_id
     }
 

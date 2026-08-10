@@ -5,9 +5,9 @@ use luft_core::contract::ids::{RunId, TokenUsage};
 use luft_core::journal::JournalStore;
 use luft_core::run_dir::{compose, derive_slug, ensure_unique};
 use luft_core::scheduler::{BackendRegistry, Scheduler, SchedulerConfig};
-use luft_core::state::{list_runs, CheckpointStatus, RunCheckpoint};
+use luft_core::state::{list_run_dirs, CheckpointStatus, RunCheckpoint};
 use luft_runtime::{ExecLimits, Runtime, ScriptError};
-use luft_storage::{open_db, EventWriter};
+use luft_storage::{open_db, SqliteCheckpointBackend};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -218,7 +218,7 @@ pub fn resolve_resume(run_dir_name: &str, base_dir: &Path) -> Result<RunSpec> {
 /// Find the most recent run that has a resumable checkpoint (CLI `--resume`
 /// with no explicit run id). Status is validated later by [`resolve_resume`].
 pub fn latest_resumable(base_dir: &Path) -> Result<String> {
-    let run_dirs = list_runs(base_dir)?;
+    let run_dirs = list_run_dirs(base_dir)?;
     run_dirs
         .iter()
         .rev()
@@ -233,7 +233,7 @@ pub struct PreviousRun {
 }
 
 pub fn find_resumable_by_task(task: &str, base_dir: &Path) -> Result<Option<PreviousRun>> {
-    let run_dirs = list_runs(base_dir)?;
+    let run_dirs = list_run_dirs(base_dir)?;
     for dir in run_dirs.iter().rev() {
         let cp_path = base_dir.join(dir).join("checkpoint.json");
         let content = match std::fs::read_to_string(&cp_path) {
@@ -297,20 +297,30 @@ pub async fn prepare(
     base_dir: &Path,
     run_ctx: &RunContext,
     max_concurrency: Option<usize>,
+    shared_pool: Option<&luft_storage::DbPool>,
 ) -> Result<PreparedRun> {
     // Clear any stale ACP-captured backend from a previous run.
-    // Each run should resolve its backend from the scoped registry default,
-    // not from process-global state leaked by an earlier run's handshake.
     luft_core::contract::clear_current_backend();
 
     let run_dir = base_dir.join(&spec.run_dir_name);
 
+    // Use the shared pool if provided; otherwise open a new one.
+    let pool = match shared_pool {
+        Some(p) => p.clone(),
+        None => {
+            let db_path = base_dir.join(luft_storage::DEFAULT_DB_PATH);
+            open_db(&db_path)
+                .await
+                .map_err(|e| anyhow::anyhow!("failed to open sqlite db: {}", e))?
+        }
+    };
+
+    // Create the checkpoint backend for this run.
+    let backend = Arc::new(SqliteCheckpointBackend::new(pool, spec.run_id));
+
     // Journal: fresh runs init + persist the script (so they can be resumed);
     // resume runs open the journal to replay cached agents.
-    let journal = Arc::new(
-        JournalStore::new(&run_dir)
-            .map_err(|e| anyhow::anyhow!("failed to open journal: {}", e))?,
-    );
+    let journal = Arc::new(JournalStore::with_backend(backend));
     if spec.resuming {
         journal
             .open(spec.run_id)
@@ -319,38 +329,22 @@ pub async fn prepare(
             .reset_status_to_running()
             .map_err(|e| anyhow::anyhow!("failed to reset checkpoint status for resume: {}", e))?;
     } else {
+        std::fs::create_dir_all(&run_dir)?;
         std::fs::write(run_dir.join("workflow.lua"), &spec.script)?;
         match &spec.workflow_meta {
             Some(meta) => journal
                 .init_run_with_meta(
                     spec.run_id,
                     &spec.task_label,
+                    &spec.run_dir_name,
                     serde_json::to_value(meta).unwrap(),
                 )
                 .map_err(|e| anyhow::anyhow!("failed to init journal with meta: {}", e))?,
             None => journal
-                .init_run(spec.run_id, &spec.task_label)
+                .init_run(spec.run_id, &spec.task_label, &spec.run_dir_name)
                 .map_err(|e| anyhow::anyhow!("failed to init journal: {}", e))?,
         }
     }
-
-    // SQLite structured persistence — shared across runs. Optional; if the DB
-    // can't be opened (e.g. read-only filesystem) we keep going so journal +
-    // JSONL remain the source of truth for resume.
-    let sqlite_writer = match open_db(
-        &run_dir
-            .parent()
-            .unwrap_or(base_dir)
-            .join(luft_storage::DEFAULT_DB_PATH),
-    )
-    .await
-    {
-        Ok(pool) => Some(EventWriter::new(pool)),
-        Err(e) => {
-            tracing::warn!(error = %e, "sqlite persistence disabled for this run");
-            None
-        }
-    };
 
     // Scheduler. Journaling is handled inside the runtime (cache-key aware), so
     // no scheduler-level callback is required. The registry (with its default
@@ -374,9 +368,9 @@ pub async fn prepare(
     );
     scheduler.init_run_with_cancel(spec.run_id, run_ctx.events.clone(), run_ctx.cancel.clone());
 
-    // Forward the scheduler event stream into BOTH:
-    //   1. Journal (checkpoint.json + events.jsonl) — for resume
-    //   2. SQLite (turns/agents/runs/spans/events tables) — for UI query
+    // Forward the scheduler event stream into the SQLite backend. The backend's
+    // `append_event` handles both the events audit log AND structured table
+    // updates in one call — no dual-write needed.
     let store = journal.store();
     let mut rx = run_ctx.events.subscribe();
     let _ = run_ctx.events.send(AgentEvent::RunStarted {
@@ -385,21 +379,13 @@ pub async fn prepare(
         ts: chrono::Utc::now(),
     });
     let fwd_run_id = spec.run_id;
-    let sqlite_writer_fwd = sqlite_writer.clone();
     tokio::spawn(async move {
         loop {
             match rx.recv().await {
-                // Raw ACP events are a live observability stream, not durable
-                // history — skip them so events.jsonl / get_logs stay lean.
                 Ok(AgentEvent::AcpRaw { .. }) => {}
                 Ok(evt) => {
                     if let Err(e) = store.append_event(&evt) {
-                        tracing::warn!(run_id = %fwd_run_id, error = %e, "failed to persist event to journal");
-                    }
-                    if let Some(w) = &sqlite_writer_fwd {
-                        if let Err(e) = w.write_event(&evt).await {
-                            tracing::warn!(run_id = %fwd_run_id, error = %e, "failed to persist event to sqlite");
-                        }
+                        tracing::warn!(run_id = %fwd_run_id, error = %e, "failed to persist event to sqlite");
                     }
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
@@ -725,7 +711,7 @@ mod tests {
     // resolve_script
     // =========================================================================
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn resolve_script_script_variant() {
         let backend: Arc<dyn AgentBackend> = Arc::new(MockBackend::new(
             "mock",
@@ -745,7 +731,7 @@ mod tests {
         assert_eq!(result, "print(1)");
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn resolve_script_workflow_variant() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test.lua");
@@ -769,7 +755,7 @@ mod tests {
         assert_eq!(result, "print('hello')");
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn resolve_script_nl_variant() {
         let output =
             serde_json::json!("```lua\nmeta = { reasoning = \"test\", phases = {} }\nfunction main()\nagent({prompt='test'})\nreport({ok=true})\nend\n```");
@@ -799,7 +785,7 @@ mod tests {
     // resolve_fresh
     // =========================================================================
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn resolve_fresh_script_variant() {
         let backend: Arc<dyn AgentBackend> = Arc::new(MockBackend::new(
             "mock",
@@ -821,7 +807,7 @@ mod tests {
         assert!(!spec.resuming);
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn resolve_fresh_workflow_variant() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("my_workflow.lua");
@@ -847,7 +833,7 @@ mod tests {
         assert!(!spec.resuming);
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn resolve_fresh_nl_variant() {
         let output =
             serde_json::json!("```lua\nmeta = { reasoning = \"test\", phases = {} }\nfunction main()\nagent({prompt='test'})\nreport({ok=true})\nend\n```");
@@ -1156,7 +1142,7 @@ mod tests {
         ))
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn prepare_fresh_run() {
         let dir = tempfile::tempdir().unwrap();
         let run_id = RunId::now_v7();
@@ -1167,10 +1153,6 @@ mod tests {
             events: tx,
         };
         let run_dir_name = "fresh_run_42".to_string();
-
-        // Create the run directory beforehand (prepare creates JournalStore there)
-        let run_dir = dir.path().join(&run_dir_name);
-        std::fs::create_dir_all(&run_dir).unwrap();
 
         let spec = RunSpec {
             run_id,
@@ -1184,21 +1166,17 @@ mod tests {
 
         let backend = make_prepare_backend();
         let registry = BackendRegistry::new().with(backend);
-        let _prepared = prepare(&spec, registry, dir.path(), &run_ctx, None)
+        let _prepared = prepare(&spec, registry, dir.path(), &run_ctx, None, None)
             .await
             .unwrap();
 
         // Fresh run: workflow.lua should have been written
+        let run_dir = dir.path().join("fresh_run_42");
         assert!(
             run_dir.join("workflow.lua").exists(),
             "workflow.lua should exist"
         );
-        assert!(
-            run_dir.join("checkpoint.json").exists(),
-            "checkpoint.json should exist"
-        );
 
-        // Journal and runtime should be accessible
         let content = std::fs::read_to_string(run_dir.join("workflow.lua")).unwrap();
         assert_eq!(content, "report({ok=true})");
     }
@@ -1207,7 +1185,7 @@ mod tests {
     // prepare — resume run
     // =========================================================================
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn prepare_resume_run() {
         let dir = tempfile::tempdir().unwrap();
         let run_id = RunId::now_v7();
@@ -1215,9 +1193,13 @@ mod tests {
         let run_dir = dir.path().join(&run_dir_name);
         std::fs::create_dir_all(&run_dir).unwrap();
 
-        // Seed a journal + workflow.lua as if a prior run had been started.
-        let journal = JournalStore::new(&run_dir).unwrap();
-        journal.init_run(run_id, "resume test").unwrap();
+        // Seed the SQLite DB with a prior run checkpoint.
+        let pool = open_db(&dir.path().join(luft_storage::DEFAULT_DB_PATH))
+            .await
+            .unwrap();
+        let backend = Arc::new(SqliteCheckpointBackend::new(pool, run_id));
+        let journal = JournalStore::with_backend(backend);
+        journal.init_run(run_id, "resume test", "resume_run_99").unwrap();
         write_workflow_lua(&run_dir, "report({resumed=true})");
         drop(journal);
 
@@ -1240,7 +1222,7 @@ mod tests {
 
         let backend = make_prepare_backend();
         let registry = BackendRegistry::new().with(backend);
-        let _prepared = prepare(&spec, registry, dir.path(), &run_ctx, None)
+        let _prepared = prepare(&spec, registry, dir.path(), &run_ctx, None, None)
             .await
             .unwrap();
 

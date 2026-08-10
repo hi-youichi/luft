@@ -233,8 +233,8 @@ mod tests {
         scheduler.init_run_with(run_id, run_ctx.events.clone());
 
         let dir = tempfile::TempDir::new().unwrap();
-        let journal = Arc::new(JournalStore::new(dir.path()).unwrap());
-        journal.init_run(run_id, "test").unwrap();
+        let journal = Arc::new(JournalStore::with_backend(Arc::new(luft_core::in_memory_backend::InMemoryBackend::new())));
+        journal.init_run(run_id, "test", "test_dir").unwrap();
 
         let cx = SdkContext::new(
             run_ctx,
@@ -279,8 +279,8 @@ mod tests {
         scheduler.init_run_with(run_id, run_ctx.events.clone());
 
         let dir = tempfile::TempDir::new().unwrap();
-        let journal = Arc::new(JournalStore::new(dir.path()).unwrap());
-        journal.init_run(run_id, "test").unwrap();
+        let journal = Arc::new(JournalStore::with_backend(Arc::new(luft_core::in_memory_backend::InMemoryBackend::new())));
+        journal.init_run(run_id, "test", "test_dir").unwrap();
 
         let cx = SdkContext::new(
             run_ctx,

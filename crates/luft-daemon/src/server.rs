@@ -53,6 +53,7 @@ pub async fn serve(luft: Luft, listener: TcpListener) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 async fn handle_connection(
     stream: tokio::net::TcpStream,
     peer: std::net::SocketAddr,
@@ -73,6 +74,7 @@ async fn handle_connection(
                 }
             }
         }
+        #[allow(clippy::result_large_err)]
         Ok(res)
     })
     .await?;

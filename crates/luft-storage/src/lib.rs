@@ -29,11 +29,13 @@
 //! # });
 //! ```
 
+pub mod checkpoint;
 pub mod db;
 pub mod error;
 pub mod reader;
 pub mod writer;
 
+pub use checkpoint::SqliteCheckpointBackend;
 pub use db::{open_db, DbPool, DEFAULT_DB_PATH};
 pub use error::StorageError;
 pub use reader::{

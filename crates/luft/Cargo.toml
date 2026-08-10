@@ -27,6 +27,7 @@ thiserror = "1"
 tracing = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v7", "serde"] }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "chrono", "uuid", "json", "macros", "migrate"] }
 
 [dev-dependencies]
 tempfile = "3"

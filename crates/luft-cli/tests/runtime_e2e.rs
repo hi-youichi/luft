@@ -256,8 +256,10 @@ async fn workflow_events_emitted() {
 async fn resume_skips_cached_agent() {
     let dir = tempfile::tempdir().unwrap();
     let run_id = uuid::Uuid::now_v7();
-    let journal = Arc::new(JournalStore::new(dir.path()).unwrap());
-    journal.init_run(run_id, "resume test").unwrap();
+    let journal = Arc::new(JournalStore::with_backend(Arc::new(
+        luft_core::in_memory_backend::InMemoryBackend::new(),
+    )));
+    journal.init_run(run_id, "resume test", "test_dir").unwrap();
 
     let backend = ok_backend();
     let script = r#"

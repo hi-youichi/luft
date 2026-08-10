@@ -34,7 +34,7 @@ pub fn clear_runs_cmd(days: Option<u64>) -> Result<()> {
 mod tests {
     use super::super::GLOBAL_CWD_LOCK;
     use super::*;
-    use luft::core::state::{get_run_store, CheckpointStatus};
+    use luft::core::state::{CheckpointStatus, RunCheckpoint};
     use std::path::PathBuf;
     use std::sync::MutexGuard;
     use tempfile::TempDir;
@@ -67,17 +67,43 @@ mod tests {
         }
     }
 
+    fn write_checkpoint(
+        base_dir: &std::path::Path,
+        dir_name: &str,
+        run_id: uuid::Uuid,
+        task: &str,
+        status: CheckpointStatus,
+        updated_at: u64,
+    ) {
+        let run_dir = base_dir.join(dir_name);
+        std::fs::create_dir_all(&run_dir).unwrap();
+        let cp = RunCheckpoint {
+            run_id,
+            task: task.to_string(),
+            status,
+            current_phase: 0,
+            completed_phases: vec![],
+            agent_results: Default::default(),
+            agent_sessions: Default::default(),
+            findings: vec![],
+            total_tokens: 0,
+            created_at: 0,
+            updated_at,
+            workflow_meta: None,
+            started_agent_ids: vec![],
+        };
+        std::fs::write(
+            run_dir.join("checkpoint.json"),
+            serde_json::to_string(&cp).unwrap(),
+        )
+        .unwrap();
+    }
+
     fn create_completed_run(task: &str) -> uuid::Uuid {
         let base_dir = runs_base_dir();
         let run_id = uuid::Uuid::now_v7();
         let dir_name = run_id.to_string();
-        let store = get_run_store(&dir_name, &base_dir).unwrap();
-        store.init_run(run_id, task).unwrap();
-        if let Some(mut cp) = store.get_checkpoint() {
-            cp.status = CheckpointStatus::Completed;
-            cp.updated_at = 1000;
-            let _ = store.save_checkpoint(&cp);
-        }
+        write_checkpoint(&base_dir, &dir_name, run_id, task, CheckpointStatus::Completed, 1000);
         run_id
     }
 
@@ -85,8 +111,7 @@ mod tests {
         let base_dir = runs_base_dir();
         let run_id = uuid::Uuid::now_v7();
         let dir_name = run_id.to_string();
-        let store = get_run_store(&dir_name, &base_dir).unwrap();
-        store.init_run(run_id, task).unwrap();
+        write_checkpoint(&base_dir, &dir_name, run_id, task, CheckpointStatus::Running, 0);
         run_id
     }
 
@@ -129,16 +154,11 @@ mod tests {
         let base_dir = runs_base_dir();
         let run_id = uuid::Uuid::now_v7();
         let dir_name = run_id.to_string();
-        let store = get_run_store(&dir_name, &base_dir).unwrap();
-        store.init_run(run_id, "recent").unwrap();
-        if let Some(mut cp) = store.get_checkpoint() {
-            cp.status = CheckpointStatus::Completed;
-            cp.updated_at = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs();
-            let _ = store.save_checkpoint(&cp);
-        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        write_checkpoint(&base_dir, &dir_name, run_id, "recent", CheckpointStatus::Completed, now);
         // With --days 7, the recent run should survive.
         assert!(clear_runs_cmd(Some(7)).is_ok());
         let remaining: Vec<_> = runs_base_dir().read_dir().unwrap().collect();

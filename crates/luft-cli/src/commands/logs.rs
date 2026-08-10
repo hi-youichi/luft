@@ -5,10 +5,7 @@ use anyhow::Result;
 
 pub fn logs_run_cmd(run_dir: String, limit: Option<usize>) -> Result<()> {
     let base_dir = runs_base_dir();
-    if !base_dir.join(&run_dir).exists() {
-        anyhow::bail!("run not found: {}", run_dir);
-    }
-    let events = luft_core::query::get_events(&run_dir, &base_dir)?;
+    let events = luft::query::get_events(&run_dir, &base_dir)?;
     if events.is_empty() {
         println!("No events for run {}", run_dir);
         return Ok(());
@@ -28,6 +25,7 @@ pub fn logs_run_cmd(run_dir: String, limit: Option<usize>) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use luft::core::state::CheckpointBackend;
     use std::path::PathBuf;
     use tempfile::TempDir;
 
@@ -63,14 +61,26 @@ mod tests {
         uuid::Uuid::now_v7()
     }
 
+    fn open_test_pool(base_dir: &std::path::Path) -> luft::storage::DbPool {
+        std::fs::create_dir_all(base_dir).unwrap();
+        let db_path = base_dir.join(luft::storage::DEFAULT_DB_PATH);
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("create tokio runtime");
+        rt.block_on(luft::storage::open_db(&db_path)).unwrap()
+    }
+
     fn create_run_with_events(events: &[luft::core::contract::event::AgentEvent]) -> String {
         let base_dir = runs_base_dir();
+        std::fs::create_dir_all(&base_dir).unwrap();
         let run_id = rid();
         let dir_name = run_id.to_string();
-        let store = luft::core::state::get_run_store(&dir_name, &base_dir).unwrap();
-        store.init_run(run_id, "test task").unwrap();
+        let pool = open_test_pool(&base_dir);
+        let backend = luft::storage::SqliteCheckpointBackend::new(pool, run_id);
+        backend.init_run(run_id, "test task", "test_dir").unwrap();
         for event in events {
-            store.append_event(event).unwrap();
+            backend.append_event(event).unwrap();
         }
         dir_name
     }

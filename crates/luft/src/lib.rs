@@ -93,6 +93,7 @@ mod builder;
 mod error;
 pub mod prelude;
 pub mod phases;
+pub mod query;
 pub mod run;
 
 pub use builder::{Luft, LuftBuilder, RunHandle, RunOutcome};

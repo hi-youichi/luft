@@ -2,7 +2,7 @@ use crate::run::{assign_dir_name, prepare, resolve_fresh, resolve_resume, RunSpe
 use luft_core::contract::backend::AgentBackend;
 use luft_core::contract::event::AgentEvent;
 use luft_core::contract::ids::RunId;
-use luft_core::query::{ReportStatus, StatusOutput};
+use crate::query::{ReportStatus, StatusOutput};
 use luft_core::scheduler::BackendRegistry;
 use luft_planner::PlannerConfig;
 use luft_runtime::{ExecLimits, ScriptError};
@@ -141,6 +141,7 @@ impl LuftBuilder {
             planner_config: self.planner_config,
             exec_limits: self.exec_limits,
             active_runs: Arc::new(Mutex::new(HashMap::new())),
+            pool: None,
         })
     }
 }
@@ -160,6 +161,8 @@ pub struct Luft {
     exec_limits: ExecLimits,
     /// In-process cancellation tokens, shared by scoped `Luft` clones.
     active_runs: Arc<Mutex<HashMap<String, CancellationToken>>>,
+    /// Shared SQLite pool, opened lazily on first run.
+    pool: Option<luft_storage::DbPool>,
 }
 
 impl Luft {
@@ -176,15 +179,15 @@ impl Luft {
             .await
             .map_err(LuftError::Other)?;
         assign_dir_name(&mut spec, &self.base_dir);
-        self.spawn_run(spec)
+        self.spawn_run(spec).await
     }
 
     async fn start_with_resume(&self, run_dir: &str) -> Result<RunHandle, LuftError> {
         let spec = resolve_resume(run_dir, &self.base_dir).map_err(LuftError::Other)?;
-        self.spawn_run(spec)
+        self.spawn_run(spec).await
     }
 
-    fn spawn_run(&self, spec: RunSpec) -> Result<RunHandle, LuftError> {
+    async fn spawn_run(&self, spec: RunSpec) -> Result<RunHandle, LuftError> {
         let run_dir = self.base_dir.join(&spec.run_dir_name);
         std::fs::create_dir_all(&run_dir)?;
 
@@ -203,6 +206,20 @@ impl Luft {
         let registry = self.registry.clone();
         let base_dir = self.base_dir.clone();
         let concurrency = self.concurrency;
+        // Open the shared SQLite pool lazily (avoids runtime-in-runtime panics).
+        let pool = match &self.pool {
+            Some(p) => Some(p.clone()),
+            None => {
+                let db_path = base_dir.join(luft_storage::DEFAULT_DB_PATH);
+                match luft_storage::open_db(&db_path).await {
+                    Ok(p) => Some(p),
+                    Err(e) => {
+                        tracing::warn!(error = %e, "sqlite pool disabled");
+                        None
+                    }
+                }
+            }
+        };
         let active_runs = Arc::clone(&self.active_runs);
         let registry_run_dir = run_dir_name.clone();
         active_runs
@@ -212,7 +229,7 @@ impl Luft {
 
         let join = tokio::spawn(async move {
             let result = async {
-                let prepared = prepare(&spec, registry, &base_dir, &run_ctx, concurrency)
+                let prepared = prepare(&spec, registry, &base_dir, &run_ctx, concurrency, pool.as_ref())
                     .await
                     .map_err(LuftError::Other)?;
                 let runtime = prepared.runtime;
@@ -315,22 +332,22 @@ impl Luft {
     ///
     /// Returns `None` if the run directory does not exist.
     pub fn status(&self, run_dir: &str) -> Result<Option<StatusOutput>, LuftError> {
-        luft_core::query::get_status(run_dir, &self.base_dir).map_err(LuftError::Other)
+        crate::query::get_status(run_dir, &self.base_dir).map_err(LuftError::Other)
     }
 
     /// List all runs under the base directory, sorted by most-recent update.
     pub fn list(&self) -> Result<Vec<StatusOutput>, LuftError> {
-        luft_core::query::list_runs(&self.base_dir).map_err(LuftError::Other)
+        crate::query::list_runs(&self.base_dir).map_err(LuftError::Other)
     }
 
     /// Get the raw chronological event log for a run.
     pub fn events(&self, run_dir: &str) -> Result<Vec<AgentEvent>, LuftError> {
-        luft_core::query::get_events(run_dir, &self.base_dir).map_err(LuftError::Other)
+        crate::query::get_events(run_dir, &self.base_dir).map_err(LuftError::Other)
     }
 
     /// Get the final report value emitted by `report()` in the Lua script.
     pub fn report(&self, run_dir: &str) -> Result<ReportStatus, LuftError> {
-        luft_core::query::get_report(run_dir, &self.base_dir).map_err(LuftError::Other)
+        crate::query::get_report(run_dir, &self.base_dir).map_err(LuftError::Other)
     }
 
     /// Get structured findings (from agent MCP injection) collected during the run.
@@ -338,7 +355,7 @@ impl Luft {
         &self,
         run_dir: &str,
     ) -> Result<Vec<luft_core::contract::finding::Finding>, LuftError> {
-        luft_core::query::get_findings(run_dir, &self.base_dir).map_err(LuftError::Other)
+        crate::query::get_findings(run_dir, &self.base_dir).map_err(LuftError::Other)
     }
 
     /// Cancel an active run by signalling its cancellation token.
@@ -352,7 +369,7 @@ impl Luft {
         {
             token.cancel();
         }
-        luft_core::query::cancel_run(run_dir, &self.base_dir).map_err(LuftError::Other)?;
+        crate::query::cancel_run(run_dir, &self.base_dir).map_err(LuftError::Other)?;
         Ok(())
     }
 
@@ -372,6 +389,7 @@ impl Luft {
             planner_config: self.planner_config.clone(),
             exec_limits: self.exec_limits.clone(),
             active_runs: Arc::clone(&self.active_runs),
+            pool: self.pool.clone(),
         }
     }
 
@@ -387,6 +405,7 @@ impl Luft {
             planner_config: self.planner_config.clone(),
             exec_limits: self.exec_limits.clone(),
             active_runs: Arc::clone(&self.active_runs),
+            pool: self.pool.clone(),
         })
     }
 
@@ -451,7 +470,7 @@ impl RunHandle {
         // Persist the terminal marker immediately as well as signalling the
         // in-process token. This makes status() deterministic after join and
         // supports observers that only have the run directory.
-        let _ = luft_core::query::cancel_run(&self.run_dir_name, &self.base_dir);
+        let _ = crate::query::cancel_run(&self.run_dir_name, &self.base_dir);
     }
 
     /// Await run completion and return the final [`RunOutcome`].
@@ -538,7 +557,7 @@ mod tests {
     //! - the run / query / cancel call surface compiles and is callable,
     //! - end-to-end execution via `run_script` against a `MockBackend`.
     //!
-    //! Run handle internally uses a tokio task. We use `#[tokio::test]` only
+    //! Run handle internally uses a tokio task. We use `#[tokio::test(flavor = "multi_thread")]` only
     //! for tests that need to drive the runtime; everything else is `#[test]`.
 
     use super::*;
@@ -846,7 +865,7 @@ mod tests {
     // gets surfaced via RunOutcome.
     // -----------------------------------------------------------------
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn run_script_simple_trivial() {
         let dir = tempdir().expect("tempdir");
         let luft = LuftBuilder::new()
@@ -873,7 +892,7 @@ mod tests {
         assert_eq!(value, serde_json::json!("ok"));
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn run_script_with_chained_lua_expressions() {
         // Validate that multi-expression scripts (separated by `;` or
         // newlines) execute and return `Ok(RunOutcome)` even when no
@@ -894,7 +913,7 @@ mod tests {
         assert_eq!(outcome.result.unwrap(), serde_json::json!(7));
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn run_script_via_run_handle_works() {
         // Same as `run_script` but using `start_script + join` directly.
         let dir = tempdir().expect("tempdir");
@@ -916,7 +935,7 @@ mod tests {
         assert_eq!(outcome.result.unwrap(), serde_json::json!("v"));
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn run_handle_status_is_unique_per_invocation() {
         // Each `start_script` produces a unique RunId.
         let dir = tempdir().expect("tempdir");
@@ -948,7 +967,7 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn start_script_yields_a_handle_with_subscribe() {
         let dir = tempdir().expect("tempdir");
         let luft = LuftBuilder::new()
@@ -972,7 +991,7 @@ mod tests {
         let _ = rx;
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn run_handle_run_id_is_pinned() {
         let dir = tempdir().expect("tempdir");
         let luft = LuftBuilder::new()
@@ -991,7 +1010,7 @@ mod tests {
         assert_eq!(pinned, outcome.run_id);
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn into_future_consumes_handle_and_returns_outcome() {
         let dir = tempdir().expect("tempdir");
         let luft = LuftBuilder::new()
@@ -1011,7 +1030,7 @@ mod tests {
         assert_eq!(outcome.result.expect("value"), serde_json::json!(42));
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn cancel_token_signals_before_run_starts() {
         let dir = tempdir().expect("tempdir");
         let luft = LuftBuilder::new()
@@ -1031,7 +1050,7 @@ mod tests {
         let _ = handle.join().await;
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn with_concurrency_produces_a_working_independent_luft() {
         let dir = tempdir().expect("tempdir");
         let luft = LuftBuilder::new()
@@ -1056,7 +1075,7 @@ mod tests {
         let _ = luft;
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn run_handle_run_dir_name_is_non_empty_and_marks_a_directory() {
         let dir = tempdir().expect("tempdir");
         let luft = LuftBuilder::new()

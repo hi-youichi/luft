@@ -22,7 +22,7 @@ use crate::contract::finding::Finding;
 use crate::contract::ids::{AgentId, PhaseId, RunId, TokenUsage};
 use crate::scheduler::{BackendRegistry, SchedulerConfig};
 use crate::session::{resolve_session, restore_session};
-use crate::state::{AgentResultCache, AgentSessionCheckpoint, RunCheckpoint, RunStore};
+use crate::state::{AgentResultCache, AgentSessionCheckpoint, CheckpointBackend, RunCheckpoint};
 use blake3::Hasher;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -48,6 +48,12 @@ pub enum JournalError {
     Serde(#[from] serde_json::Error),
     #[error("journal corrupted: {0}")]
     Corrupted(String),
+    #[error("backend error: {0}")]
+    Backend(String),
+}
+
+fn map_anyhow(e: anyhow::Error) -> JournalError {
+    JournalError::Backend(e.to_string())
 }
 
 // ============================================================================
@@ -111,8 +117,8 @@ fn normalize_prompt(prompt: &str) -> String {
 ///   或:
 ///   open() → has_completed()/get_cached() → workflow resume logic
 pub struct JournalStore {
-    /// Underlying persistence engine (checkpoint.json + events.jsonl).
-    inner: Arc<RunStore>,
+    /// Underlying persistence engine (SQLite-backed CheckpointBackend).
+    inner: Arc<dyn CheckpointBackend>,
     /// In-memory index: AgentCacheKey hash → AgentResultCache.
     /// Populated at open() time from the checkpoint's agent_results map.
     cache_index: RwLock<HashMap<String, AgentResultCache>>,
@@ -131,22 +137,30 @@ impl std::fmt::Debug for JournalStore {
 }
 
 impl JournalStore {
-    /// Create a new journal store at the given directory.
-    /// Initializes the underlying RunStore and creates an empty cache index.
-    pub fn new(run_dir: &Path) -> Result<Self, JournalError> {
-        tracing::debug!(path = %run_dir.display(), "creating journal store");
-        let inner = RunStore::new(run_dir)?;
-        Ok(Self {
-            inner,
+    /// Create a new journal store backed by the given `CheckpointBackend`.
+    pub fn with_backend(backend: Arc<dyn CheckpointBackend>) -> Self {
+        tracing::debug!(backend = ?backend, "creating journal store with backend");
+        Self {
+            inner: backend,
             cache_index: RwLock::new(HashMap::new()),
             event_tx: None,
-        })
+        }
+    }
+
+    /// Create a new journal store at the given directory.
+    /// Convenience constructor — requires the caller to provide a backend factory.
+    /// Deprecated: prefer `with_backend`.
+    #[deprecated(note = "use JournalStore::with_backend instead")]
+    pub fn new(_run_dir: &Path) -> Result<Self, JournalError> {
+        Err(JournalError::Corrupted(
+            "JournalStore::new(path) is no longer supported. Use JournalStore::with_backend(backend).".into()
+        ))
     }
 
     /// Initialize a new run in the journal.
-    pub fn init_run(&self, run_id: RunId, task: &str) -> Result<(), JournalError> {
+    pub fn init_run(&self, run_id: RunId, task: &str, run_dir: &str) -> Result<(), JournalError> {
         tracing::info!(%run_id, %task, "initializing run in journal");
-        self.inner.init_run(run_id, task)?;
+        self.inner.init_run(run_id, task, run_dir).map_err(map_anyhow)?;
         Ok(())
     }
 
@@ -155,13 +169,14 @@ impl JournalStore {
         &self,
         run_id: RunId,
         task: &str,
+        run_dir: &str,
         workflow_meta: serde_json::Value,
     ) -> Result<(), JournalError> {
         tracing::info!(
             %run_id, %task,
             "initializing run in journal with meta"
         );
-        self.inner.init_run_with_meta(run_id, task, workflow_meta)?;
+        self.inner.init_run_with_meta(run_id, task, run_dir, workflow_meta).map_err(map_anyhow)?;
         Ok(())
     }
 
@@ -175,7 +190,7 @@ impl JournalStore {
         tracing::info!(%run_id, "opening journal for resume");
         let checkpoint = self
             .inner
-            .open_run(run_id)?
+            .open_run(run_id).map_err(map_anyhow)?
             .ok_or(JournalError::RunNotFound(run_id))?;
 
         if matches!(
@@ -263,7 +278,7 @@ impl JournalStore {
             retry_count: 0,
             ts: Utc::now(),
         };
-        self.inner.append_event(&event)?;
+        self.inner.append_event(&event).map_err(map_anyhow)?;
 
         // Broadcast via event bus (non-blocking — uses broadcast channel)
         if let Some(ref tx) = self.event_tx {
@@ -364,13 +379,13 @@ impl JournalStore {
     /// Access the underlying run store (shared persistence engine).
     /// Allows the CLI to route the scheduler event stream through the same
     /// `RunStore` instance the journal uses, avoiding split-brain checkpoints.
-    pub fn store(&self) -> Arc<RunStore> {
+    pub fn store(&self) -> Arc<dyn CheckpointBackend> {
         self.inner.clone()
     }
 
     /// Append an event to the underlying run store (event log + checkpoint).
     pub fn append_event(&self, event: &AgentEvent) -> Result<(), JournalError> {
-        self.inner.append_event(event)?;
+        self.inner.append_event(event).map_err(map_anyhow)?;
         Ok(())
     }
 
@@ -415,14 +430,14 @@ impl JournalStore {
 
     /// Mark the run as cancelled.
     pub fn cancel(&self) -> Result<(), JournalError> {
-        self.inner.cancel()?;
+        self.inner.cancel().map_err(map_anyhow)?;
         Ok(())
     }
 
     /// Reset checkpoint status to `Running`. Used when resuming a
     /// failed/cancelled run.
     pub fn reset_status_to_running(&self) -> Result<(), JournalError> {
-        self.inner.reset_status_to_running()?;
+        self.inner.reset_status_to_running().map_err(map_anyhow)?;
         Ok(())
     }
 }
@@ -545,10 +560,11 @@ pub enum RunCreationMode {
 
 impl RunCreationMode {
     /// Resolve the creation mode to concrete parameters.
-    /// For Auto mode, checks journal directory for resumable runs.
+    /// `backend_factory` creates a `CheckpointBackend` for a given run directory.
     pub fn resolve(
         self,
         journal_dir: &Path,
+        backend_factory: &dyn Fn(&Path) -> Arc<dyn CheckpointBackend>,
     ) -> Result<(RunId, Option<RunCheckpoint>), JournalError> {
         match self {
             RunCreationMode::New { task: _ } => {
@@ -559,26 +575,26 @@ impl RunCreationMode {
                 run_id,
                 run_dir_name,
             } => {
-                let store = JournalStore::new(&journal_dir.join(&run_dir_name))?;
+                let backend = backend_factory(&journal_dir.join(&run_dir_name));
+                let store = JournalStore::with_backend(backend);
                 let checkpoint = store.open(run_id)?;
                 Ok((run_id, Some(checkpoint)))
             }
             RunCreationMode::Auto { task: _ } => {
-                // List all run dirs, find the most recent Running checkpoint
-                let run_dirs = crate::state::list_runs(journal_dir)?;
+                let run_dirs = crate::state::list_run_dirs(journal_dir).map_err(map_anyhow)?;
                 for dir_name in run_dirs.iter().rev() {
-                    let checkpoint_path = journal_dir.join(dir_name).join("checkpoint.json");
-                    if let Ok(content) = std::fs::read_to_string(&checkpoint_path) {
-                        if let Ok(checkpoint) = serde_json::from_str::<RunCheckpoint>(&content) {
-                            if matches!(checkpoint.status, crate::state::CheckpointStatus::Running)
-                            {
-                                let run_id = checkpoint.run_id;
-                                return Ok((run_id, Some(checkpoint)));
-                            }
+                    let run_dir = journal_dir.join(dir_name);
+                    let backend = backend_factory(&run_dir);
+                    if let Ok(Some(checkpoint)) = backend.open_run(uuid::Uuid::nil()) {
+                        if matches!(checkpoint.status, crate::state::CheckpointStatus::Running)
+                            || matches!(checkpoint.status, crate::state::CheckpointStatus::Failed)
+                            || matches!(checkpoint.status, crate::state::CheckpointStatus::Cancelled)
+                        {
+                            let run_id = checkpoint.run_id;
+                            return Ok((run_id, Some(checkpoint)));
                         }
                     }
                 }
-                // No resumable run — create new
                 let run_id = uuid::Uuid::now_v7();
                 Ok((run_id, None))
             }
@@ -598,7 +614,7 @@ impl RunCreationMode {
 ///
 /// Returns the number of runs cleaned.
 pub fn gc_runs(journal_dir: &Path, older_than: Duration) -> Result<usize, JournalError> {
-    let run_dirs = crate::state::list_runs(journal_dir)?;
+    let run_dirs = crate::state::list_run_dirs(journal_dir).map_err(map_anyhow)?;
     let cutoff = current_timestamp().saturating_sub(older_than.as_secs());
 
     tracing::debug!("GC: scanning {} runs", run_dirs.len());
@@ -640,60 +656,13 @@ fn current_timestamp() -> u64 {
 }
 
 // ============================================================================
-// Tests
+// Tests — moved to luft-storage (SqliteCheckpointBackend integration tests)
 // ============================================================================
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::tempdir;
 
-    /// Test basic journal lifecycle: init → cache → read → cancel
-    #[test]
-    fn test_journal_lifecycle() {
-        let dir = tempdir().unwrap();
-        let run_id = uuid::Uuid::now_v7();
-        let journal = JournalStore::new(dir.path()).unwrap();
-
-        // 1. Init
-        journal.init_run(run_id, "Test task").unwrap();
-        let cp = journal.get_checkpoint().unwrap();
-        assert_eq!(cp.status, crate::state::CheckpointStatus::Running);
-        assert_eq!(cp.task, "Test task");
-
-        // 2. Cache an agent result
-        let agent_id = uuid::Uuid::now_v7();
-        let key = AgentCacheKey::new("test prompt", 1);
-        journal
-            .cache_agent(
-                &key,
-                agent_id,
-                1,
-                AgentStatus::Ok,
-                serde_json::json!({"result": "ok"}),
-                vec![],
-                TokenUsage {
-                    input: 100,
-                    output: 50,
-                    cache_read: 0,
-                    cache_write: 0,
-                },
-            )
-            .unwrap();
-
-        // 3. Verify cache
-        assert!(journal.has_completed(&key));
-        let cached = journal.get_cached(&key).unwrap();
-        assert_eq!(cached.output, serde_json::json!({"result": "ok"}));
-        assert_eq!(cached.tokens, 150);
-
-        // 4. Cancel
-        journal.cancel().unwrap();
-        let cp = journal.get_checkpoint().unwrap();
-        assert_eq!(cp.status, crate::state::CheckpointStatus::Cancelled);
-    }
-
-    /// Test that different prompts produce different cache keys
     #[test]
     fn test_cache_key_uniqueness() {
         let k1 = AgentCacheKey::new("prompt A", 1);
@@ -707,513 +676,5 @@ mod tests {
         // Whitespace normalization
         let k5 = AgentCacheKey::new("  prompt  \r\nA  ", 1);
         assert_eq!(k1.hash, k5.hash);
-    }
-
-    /// Test resume: simulate workflow with 3 agents, 2 cached, 1 new
-    #[test]
-    fn test_resume_skip_cached() {
-        let dir = tempdir().unwrap();
-        let run_id = uuid::Uuid::now_v7();
-        let journal = JournalStore::new(dir.path()).unwrap();
-        journal.init_run(run_id, "Three agent test").unwrap();
-
-        // Cache agent 1 and 2
-        let k1 = AgentCacheKey::new("task 1", 1);
-        let k2 = AgentCacheKey::new("task 2", 1);
-        let k3 = AgentCacheKey::new("task 3", 1);
-
-        journal
-            .cache_agent(
-                &k1,
-                uuid::Uuid::now_v7(),
-                1,
-                AgentStatus::Ok,
-                serde_json::json!({"done": 1}),
-                vec![],
-                TokenUsage {
-                    input: 10,
-                    output: 5,
-                    cache_read: 0,
-                    cache_write: 0,
-                },
-            )
-            .unwrap();
-        journal
-            .cache_agent(
-                &k2,
-                uuid::Uuid::now_v7(),
-                1,
-                AgentStatus::Ok,
-                serde_json::json!({"done": 2}),
-                vec![],
-                TokenUsage {
-                    input: 10,
-                    output: 5,
-                    cache_read: 0,
-                    cache_write: 0,
-                },
-            )
-            .unwrap();
-
-        // Verify cache hits
-        assert!(journal.has_completed(&k1));
-        assert!(journal.has_completed(&k2));
-        assert!(!journal.has_completed(&k3));
-
-        // Agent 3 should NOT be cached → would go through scheduler
-        assert!(journal.get_cached(&k3).is_none());
-    }
-
-    /// Test that journal survives crash (simulated by re-opening)
-    #[test]
-    fn test_journal_crash_recovery() {
-        let dir = tempdir().unwrap();
-        let run_id = uuid::Uuid::now_v7();
-
-        // Part 1: Create and cache
-        {
-            let j = JournalStore::new(dir.path()).unwrap();
-            j.init_run(run_id, "Crash test").unwrap();
-            let key = AgentCacheKey::new("important work", 0);
-            j.cache_agent(
-                &key,
-                uuid::Uuid::now_v7(),
-                0,
-                AgentStatus::Ok,
-                serde_json::json!({"survived": true}),
-                vec![],
-                TokenUsage {
-                    input: 1,
-                    output: 1,
-                    cache_read: 0,
-                    cache_write: 0,
-                },
-            )
-            .unwrap();
-        } // j dropped — simulates crash
-
-        // Part 2: Re-open and verify data survived
-        {
-            let j2 = JournalStore::new(dir.path()).unwrap();
-            let cp = j2.open(run_id).unwrap();
-            assert_eq!(cp.status, crate::state::CheckpointStatus::Running);
-            assert!(!cp.agent_results.is_empty());
-
-            let key = AgentCacheKey::new("important work", 0);
-            let cached = j2.get_cached(&key).unwrap();
-            assert_eq!(cached.output, serde_json::json!({"survived": true}));
-        }
-    }
-
-    /// Test GC reference
-    #[test]
-    fn test_gc_older_than() {
-        let dir = tempdir().unwrap();
-        let run_dir = dir.path().join("runs");
-        std::fs::create_dir_all(&run_dir).unwrap();
-
-        // Create a completed run
-        let run_id = uuid::Uuid::now_v7();
-        let journal = JournalStore::new(&run_dir.join(run_id.to_string())).unwrap();
-        journal.init_run(run_id, "GC me").unwrap();
-
-        // Manually mark as completed with old timestamp
-        if let Some(mut cp) = journal.get_checkpoint() {
-            cp.status = crate::state::CheckpointStatus::Completed;
-            cp.updated_at = 1000; // Very old
-            let _ = journal.inner.save_checkpoint(&cp);
-        }
-
-        // GC with very short duration
-        let cleaned = gc_runs(&run_dir, Duration::from_secs(3600)).unwrap();
-        assert_eq!(cleaned, 1);
-    }
-
-    // ----------------------------------------------------------------------
-    // Tests for the F5 contract — AgentResultCache.status persistence.
-    //
-    // cache_agent, record_result, and the JournalCallback impl for
-    // JournalStore all persist AgentResultCache.status. Before F5 the value
-    // was derived from `format!("{:?}", status).to_lowercase()`, which
-    // silently mis-mapped TimedOut → "timedout" (no underscore). The
-    // implementations must now use `AgentStatus::as_str()` and produce
-    // snake_case strings that match the canonical on-disk mapping.
-    // ----------------------------------------------------------------------
-
-    fn read_checkpoint_status_for(run_dir: &std::path::Path, agent_id: AgentId) -> Option<String> {
-        let cp_path = run_dir.join("checkpoint.json");
-        let content = std::fs::read_to_string(&cp_path).ok()?;
-        let raw: serde_json::Value = serde_json::from_str(&content).ok()?;
-        let ar = raw.get("agent_results")?.as_object()?;
-        for (_k, v) in ar {
-            if v.get("agent_id").and_then(|id| id.as_str()) == Some(&agent_id.to_string()) {
-                return v.get("status").and_then(|s| s.as_str()).map(String::from);
-            }
-        }
-        None
-    }
-
-    fn sample_token_usage(input: u64, output: u64) -> TokenUsage {
-        TokenUsage {
-            input,
-            output,
-            cache_read: 0,
-            cache_write: 0,
-        }
-    }
-
-    #[test]
-    fn cache_agent_persists_snake_case_status_for_each_variant() {
-        // F5 KEY test for JournalStore::cache_agent: the persisted status
-        // MUST equal AgentStatus::as_str() (snake_case), not Debug lowercased.
-        // Particularly important for TimedOut which would otherwise round-trip
-        // as "timedout" (no underscore) and break cross-process resume.
-        let dir = tempdir().unwrap();
-        let run_id = uuid::Uuid::now_v7();
-        let journal = JournalStore::new(dir.path()).unwrap();
-        journal.init_run(run_id, "cache_agent F5").unwrap();
-
-        let cases: Vec<(AgentStatus, &str)> = vec![
-            (AgentStatus::Ok, "ok"),
-            (AgentStatus::Error, "error"),
-            (AgentStatus::Cancelled, "cancelled"),
-            (AgentStatus::TimedOut, "timed_out"),
-        ];
-        for (status, expected) in &cases {
-            let agent_id = uuid::Uuid::now_v7();
-            let key = AgentCacheKey::new("prompt", 1);
-            journal
-                .cache_agent(
-                    &key,
-                    agent_id,
-                    1,
-                    status.clone(),
-                    serde_json::json!({"v": 1}),
-                    vec![],
-                    sample_token_usage(10, 5),
-                )
-                .unwrap();
-
-            let persisted = read_checkpoint_status_for(dir.path(), agent_id)
-                .unwrap_or_else(|| panic!("status missing on disk for {status:?}"));
-            assert_eq!(
-                persisted, *expected,
-                "cache_agent({status:?}) must persist status={expected:?} (snake_case); \
-                 got {persisted:?}. Reverting to Debug formatting would yield \"timedout\" \
-                 for TimedOut and break the on-disk contract."
-            );
-        }
-    }
-
-    #[test]
-    fn cache_agent_timed_out_persists_with_underscore_not_collapsed() {
-        // Strongest F5 regression guard for cache_agent: TimedOut MUST persist
-        // as "timed_out" with an underscore. The buggy Debug-lowercased path
-        // would produce "timedout" and silently corrupt the journal.
-        let dir = tempdir().unwrap();
-        let run_id = uuid::Uuid::now_v7();
-        let journal = JournalStore::new(dir.path()).unwrap();
-        journal.init_run(run_id, "timed-out guard").unwrap();
-
-        let agent_id = uuid::Uuid::now_v7();
-        let key = AgentCacheKey::new("p", 0);
-        journal
-            .cache_agent(
-                &key,
-                agent_id,
-                0,
-                AgentStatus::TimedOut,
-                serde_json::json!(null),
-                vec![],
-                sample_token_usage(1, 2),
-            )
-            .unwrap();
-
-        let persisted = read_checkpoint_status_for(dir.path(), agent_id).expect("status on disk");
-        assert_eq!(
-            persisted, "timed_out",
-            "cache_agent(TimedOut) must persist \"timed_out\"; got {persisted:?}"
-        );
-        assert_ne!(
-            persisted, "timedout",
-            "cache_agent(TimedOut) must NOT collapse to Debug-lowercased \"timedout\""
-        );
-    }
-
-    #[test]
-    fn record_result_persists_snake_case_status_for_each_variant() {
-        // F5 test for JournalStore::record_result: same snake_case contract
-        // applies to the non-event-emitting path used by Lua SDK callbacks.
-        let dir = tempdir().unwrap();
-        let run_id = uuid::Uuid::now_v7();
-        let journal = JournalStore::new(dir.path()).unwrap();
-        journal.init_run(run_id, "record_result F5").unwrap();
-
-        let cases: Vec<(AgentStatus, &str)> = vec![
-            (AgentStatus::Ok, "ok"),
-            (AgentStatus::Error, "error"),
-            (AgentStatus::Cancelled, "cancelled"),
-            (AgentStatus::TimedOut, "timed_out"),
-        ];
-        for (status, expected) in &cases {
-            let agent_id = uuid::Uuid::now_v7();
-            let key = AgentCacheKey::new("p", 1);
-            journal.record_result(
-                &key,
-                agent_id,
-                1,
-                status.clone(),
-                serde_json::json!({"r": 1}),
-                vec![],
-                sample_token_usage(2, 3),
-            );
-
-            let persisted = read_checkpoint_status_for(dir.path(), agent_id)
-                .unwrap_or_else(|| panic!("status missing on disk for {status:?}"));
-            assert_eq!(
-                persisted, *expected,
-                "record_result({status:?}) must persist status={expected:?}; got {persisted:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn record_result_timed_out_persists_with_underscore() {
-        // Same regression guard for record_result.
-        let dir = tempdir().unwrap();
-        let run_id = uuid::Uuid::now_v7();
-        let journal = JournalStore::new(dir.path()).unwrap();
-        journal.init_run(run_id, "record_result timed-out").unwrap();
-
-        let agent_id = uuid::Uuid::now_v7();
-        let key = AgentCacheKey::new("p", 0);
-        journal.record_result(
-            &key,
-            agent_id,
-            0,
-            AgentStatus::TimedOut,
-            serde_json::json!(null),
-            vec![],
-            sample_token_usage(0, 0),
-        );
-
-        let persisted = read_checkpoint_status_for(dir.path(), agent_id).expect("status on disk");
-        assert_eq!(persisted, "timed_out");
-        assert_ne!(persisted, "timedout");
-    }
-
-    #[tokio::test]
-    async fn journal_callback_on_agent_done_persists_snake_case_status() {
-        // F5 test for the JournalCallback impl on JournalStore. The scheduler
-        // calls `on_agent_done` when an agent finishes; the persisted
-        // AgentResultCache.status MUST match AgentStatus::as_str() exactly.
-        let dir = tempdir().unwrap();
-        let run_id = uuid::Uuid::now_v7();
-        let journal = std::sync::Arc::new(JournalStore::new(dir.path()).unwrap());
-        journal.init_run(run_id, "callback F5").unwrap();
-
-        let cases: Vec<(AgentStatus, &str)> = vec![
-            (AgentStatus::Ok, "ok"),
-            (AgentStatus::Error, "error"),
-            (AgentStatus::Cancelled, "cancelled"),
-            (AgentStatus::TimedOut, "timed_out"),
-        ];
-        for (status, expected) in &cases {
-            let agent_id = uuid::Uuid::now_v7();
-            use crate::scheduler::JournalCallback;
-            journal
-                .on_agent_done(
-                    agent_id,
-                    1,
-                    status.clone(),
-                    serde_json::json!({}),
-                    sample_token_usage(4, 6),
-                )
-                .await;
-
-            let persisted = read_checkpoint_status_for(dir.path(), agent_id)
-                .unwrap_or_else(|| panic!("status missing on disk for {status:?}"));
-            assert_eq!(
-                persisted, *expected,
-                "JournalCallback::on_agent_done({status:?}) must persist status={expected:?}; \
-                 got {persisted:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn record_result_then_reopen_uses_snake_case_status() {
-        // Snake_case persistence must survive a close+reopen cycle so a
-        // resumed process sees the canonical strings (not Debug leftovers).
-        let dir = tempdir().unwrap();
-        let run_id = uuid::Uuid::now_v7();
-        let journal = JournalStore::new(dir.path()).unwrap();
-        journal.init_run(run_id, "reopen F5").unwrap();
-
-        let agent_id = uuid::Uuid::now_v7();
-        let key = AgentCacheKey::new("reopen prompt", 1);
-        journal.record_result(
-            &key,
-            agent_id,
-            1,
-            AgentStatus::Cancelled,
-            serde_json::json!({"result": "ok"}),
-            vec![],
-            sample_token_usage(7, 11),
-        );
-        drop(journal);
-
-        let j2 = JournalStore::new(dir.path()).unwrap();
-        let cp = j2.open(run_id).expect("open after drop");
-        let cached = cp
-            .agent_results
-            .get(&agent_id)
-            .expect("entry survives reopen");
-        assert_eq!(
-            cached.status, "cancelled",
-            "snake_case status must round-trip through close+reopen"
-        );
-        assert_eq!(cached.tokens, 18);
-    }
-
-    #[test]
-    fn cache_agent_persists_snake_case_status_to_event_log() {
-        // The AgentDone event itself also travels through the same snake_case
-        // contract (via update_from_event → as_str()). Read events.jsonl back
-        // and confirm the event log carries the canonical status.
-        let dir = tempdir().unwrap();
-        let run_id = uuid::Uuid::now_v7();
-        let journal = JournalStore::new(dir.path()).unwrap();
-        journal.init_run(run_id, "event log F5").unwrap();
-
-        let agent_id = uuid::Uuid::now_v7();
-        let key = AgentCacheKey::new("p", 1);
-        journal
-            .cache_agent(
-                &key,
-                agent_id,
-                1,
-                AgentStatus::TimedOut,
-                serde_json::json!(null),
-                vec![],
-                sample_token_usage(1, 1),
-            )
-            .unwrap();
-
-        // The persisted AgentResultCache.status must already be verified by
-        // the test above; this test only confirms the event log still parses
-        // and carries the AgentDone event with the right status enum.
-        let log = journal.store().get_event_log().expect("read events.jsonl");
-        let agent_done = log
-            .iter()
-            .find_map(|e| match e {
-                AgentEvent::AgentDone {
-                    agent_id: id,
-                    status,
-                    ..
-                } if id == &agent_id => Some(status.clone()),
-                _ => None,
-            })
-            .expect("AgentDone event in log");
-        // Status enum round-trip is enforced by serde, but the persisted
-        // cache status string (verified above) is the part that the on-disk
-        // contract depends on.
-        assert!(matches!(agent_done, AgentStatus::TimedOut));
-    }
-
-    // ------------------------------------------------------------------
-    // Regression: on_agent_done must not clobber cache_key_hash
-    // ------------------------------------------------------------------
-
-    #[tokio::test]
-    async fn on_agent_done_preserves_cache_key_hash_from_record_result() {
-        // Simulate the race: record_result() writes Some(hash), then the
-        // scheduler callback on_agent_done() fires for the same agent.
-        // The hash must survive — otherwise resume re-executes the agent.
-        let dir = tempdir().unwrap();
-        let run_id = uuid::Uuid::now_v7();
-        let journal = std::sync::Arc::new(JournalStore::new(dir.path()).unwrap());
-        journal.init_run(run_id, "hash preservation").unwrap();
-
-        let agent_id = uuid::Uuid::now_v7();
-        let key = AgentCacheKey::new("preserve me", 1);
-
-        // 1. record_result writes Some(hash)
-        journal.record_result(
-            &key,
-            agent_id,
-            1,
-            AgentStatus::Ok,
-            serde_json::json!({"answer": 42}),
-            vec![],
-            sample_token_usage(10, 5),
-        );
-
-        // 2. scheduler callback fires later — must NOT overwrite hash with None
-        use crate::scheduler::JournalCallback;
-        journal
-            .on_agent_done(
-                agent_id,
-                1,
-                AgentStatus::Ok,
-                serde_json::json!({}),
-                sample_token_usage(10, 5),
-            )
-            .await;
-
-        // 3. In-memory index still has the hash entry
-        assert!(
-            journal.has_completed(&key),
-            "cache_key_hash must survive on_agent_done"
-        );
-
-        // 4. Disk checkpoint also preserves the hash
-        drop(journal);
-        let j2 = JournalStore::new(dir.path()).unwrap();
-        j2.open(run_id).expect("reopen");
-        assert!(
-            j2.has_completed(&key),
-            "cache_key_hash must survive reopen after on_agent_done"
-        );
-    }
-
-    #[tokio::test]
-    async fn on_agent_done_preserves_cache_key_hash_from_cache_agent() {
-        // Same scenario but with cache_agent() as the first writer.
-        let dir = tempdir().unwrap();
-        let run_id = uuid::Uuid::now_v7();
-        let journal = std::sync::Arc::new(JournalStore::new(dir.path()).unwrap());
-        journal.init_run(run_id, "hash preservation 2").unwrap();
-
-        let agent_id = uuid::Uuid::now_v7();
-        let key = AgentCacheKey::new("preserve me 2", 0);
-
-        journal
-            .cache_agent(
-                &key,
-                agent_id,
-                0,
-                AgentStatus::Ok,
-                serde_json::json!({"r": 1}),
-                vec![],
-                sample_token_usage(1, 1),
-            )
-            .unwrap();
-
-        use crate::scheduler::JournalCallback;
-        journal
-            .on_agent_done(
-                agent_id,
-                0,
-                AgentStatus::Ok,
-                serde_json::json!({}),
-                sample_token_usage(1, 1),
-            )
-            .await;
-
-        assert!(
-            journal.has_completed(&key),
-            "cache_key_hash must survive on_agent_done after cache_agent"
-        );
     }
 }

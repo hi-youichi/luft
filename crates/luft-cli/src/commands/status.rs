@@ -11,7 +11,7 @@ pub fn status_run_cmd(run_dir: String) -> Result<()> {
 
 pub(crate) fn status_run_cmd_inner(w: &mut impl Write, run_dir: String) -> Result<()> {
     let base_dir = runs_base_dir();
-    let checkpoint = luft_core::query::get_checkpoint(&run_dir, &base_dir)?
+    let checkpoint = luft::query::get_checkpoint(&run_dir, &base_dir)?
         .ok_or_else(|| anyhow::anyhow!("run not found or has no checkpoint: {}", run_dir))?;
 
     writeln!(w, "=== Run Status ===")?;
@@ -63,11 +63,8 @@ pub(crate) fn status_run_cmd_inner(w: &mut impl Write, run_dir: String) -> Resul
 mod tests {
     use super::*;
     use luft::core::contract::finding::{Finding, Severity};
-    use luft::core::state::{
-        get_run_store, AgentResultCache, PhaseSummary, RunCheckpoint, RunStore,
-    };
+    use luft::core::state::{CheckpointBackend, AgentResultCache, PhaseSummary, RunCheckpoint};
     use std::path::PathBuf;
-    use std::sync::Arc;
     use tempfile::TempDir;
 
     /// Arbitrary Unix-epoch seconds used as a placeholder `completed_at` in test
@@ -103,28 +100,37 @@ mod tests {
         }
     }
 
+    fn open_test_pool(base_dir: &std::path::Path) -> luft::storage::DbPool {
+        std::fs::create_dir_all(base_dir).unwrap();
+        let db_path = base_dir.join(luft::storage::DEFAULT_DB_PATH);
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("create tokio runtime");
+        rt.block_on(luft::storage::open_db(&db_path)).unwrap()
+    }
+
     fn create_run(task: &str) -> (String, uuid::Uuid) {
         let base_dir = runs_base_dir();
         std::fs::create_dir_all(&base_dir).unwrap();
-        let run_uuid = uuid::Uuid::now_v7();
-        let dir_name = run_uuid.to_string();
-        let store = get_run_store(&dir_name, &base_dir).unwrap();
-        let id = uuid::Uuid::now_v7();
-        store.init_run(id, task).unwrap();
-        (dir_name, id)
+        let run_id = uuid::Uuid::now_v7();
+        let dir_name = run_id.to_string();
+        let pool = open_test_pool(&base_dir);
+        let backend = luft::storage::SqliteCheckpointBackend::new(pool, run_id);
+        backend.init_run(run_id, task, "test_dir").unwrap();
+        (dir_name, run_id)
     }
 
-    /// Initialize a fresh run and return its store handle, mutable checkpoint,
-    /// and directory name. The caller mutates `cp` as needed and then calls
-    /// `store.save_checkpoint(&cp)` to persist before rendering output.
-    fn setup_checkpoint(task: &str) -> (Arc<RunStore>, RunCheckpoint, String) {
-        let (run_dir, _id) = create_run(task);
+    fn setup_checkpoint(task: &str) -> (luft::storage::SqliteCheckpointBackend, RunCheckpoint, String) {
+        let (run_dir, run_id) = create_run(task);
         let base_dir = runs_base_dir();
-        let store = get_run_store(&run_dir, &base_dir).unwrap();
-        let cp = store
-            .get_checkpoint()
-            .expect("checkpoint exists immediately after init_run");
-        (store, cp, run_dir)
+        let pool = open_test_pool(&base_dir);
+        let backend = luft::storage::SqliteCheckpointBackend::new(pool, run_id);
+        let cp = backend
+            .open_run(run_id)
+            .expect("open_run should succeed")
+            .expect("checkpoint should exist after init_run");
+        (backend, cp, run_dir)
     }
 
     fn capture_output(run_dir: String) -> (String, anyhow::Result<()>) {
@@ -242,6 +248,7 @@ mod tests {
 
     #[test]
     #[serial_test::serial]
+    #[ignore = "obsolete: file-system errors no longer apply with SQLite backend"]
     fn run_dir_is_file_io_error() {
         let _env = TestEnv::new();
         let base_dir = runs_base_dir();

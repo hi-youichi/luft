@@ -209,7 +209,7 @@ fn format_elapsed(secs: f64) -> String {
 mod tests {
     use super::super::GLOBAL_CWD_LOCK;
     use super::*;
-    use luft::core::state::{get_run_store, CheckpointStatus};
+    use luft::core::state::{CheckpointStatus, RunCheckpoint};
     use luft::planner::{MetaPhase, PlanMeta};
     use std::path::PathBuf;
     use tempfile::TempDir;
@@ -242,20 +242,53 @@ mod tests {
         }
     }
 
+    fn write_run_checkpoint(
+        base_dir: &std::path::Path,
+        dir_name: &str,
+        run_id: uuid::Uuid,
+        task: &str,
+        status: CheckpointStatus,
+        current_phase: u32,
+        workflow_meta: Option<serde_json::Value>,
+    ) {
+        let run_dir = base_dir.join(dir_name);
+        std::fs::create_dir_all(&run_dir).unwrap();
+        let cp = RunCheckpoint {
+            run_id,
+            task: task.to_string(),
+            status,
+            current_phase,
+            completed_phases: vec![],
+            agent_results: Default::default(),
+            agent_sessions: Default::default(),
+            findings: vec![],
+            total_tokens: 0,
+            created_at: 0,
+            updated_at: 0,
+            workflow_meta,
+            started_agent_ids: vec![],
+        };
+        std::fs::write(
+            run_dir.join("checkpoint.json"),
+            serde_json::to_string(&cp).unwrap(),
+        )
+        .unwrap();
+    }
+
     fn seed_run_with_meta(meta: PlanMeta, current_phase: u32) -> String {
         let base_dir = runs_base_dir();
         std::fs::create_dir_all(&base_dir).unwrap();
         let run_uuid = uuid::Uuid::now_v7();
         let dir_name = run_uuid.to_string();
-        let store = get_run_store(&dir_name, &base_dir).unwrap();
-        let id = uuid::Uuid::now_v7();
-        store
-            .init_run_with_meta(id, "test task", serde_json::to_value(&meta).unwrap())
-            .unwrap();
-        let mut cp = store.get_checkpoint().unwrap();
-        cp.current_phase = current_phase;
-        cp.status = CheckpointStatus::Running;
-        store.save_checkpoint(&cp).unwrap();
+        write_run_checkpoint(
+            &base_dir,
+            &dir_name,
+            run_uuid,
+            "test task",
+            CheckpointStatus::Running,
+            current_phase,
+            Some(serde_json::to_value(&meta).unwrap()),
+        );
         dir_name
     }
 
@@ -340,9 +373,16 @@ mod tests {
         std::fs::create_dir_all(&base_dir).unwrap();
         let run_uuid = uuid::Uuid::now_v7();
         let dir_name = run_uuid.to_string();
-        let store = get_run_store(&dir_name, &base_dir).unwrap();
-        let id = uuid::Uuid::now_v7();
-        store.init_run(id, "legacy run").unwrap();
+        let run_uuid = uuid::Uuid::now_v7();
+        write_run_checkpoint(
+            &base_dir,
+            &dir_name,
+            run_uuid,
+            "legacy run",
+            CheckpointStatus::Running,
+            0,
+            None,
+        );
 
         let run_dir_path = base_dir.join(&dir_name);
         let event = serde_json::json!({
@@ -372,9 +412,16 @@ mod tests {
         std::fs::create_dir_all(&base_dir).unwrap();
         let run_uuid = uuid::Uuid::now_v7();
         let dir_name = run_uuid.to_string();
-        let store = get_run_store(&dir_name, &base_dir).unwrap();
-        let id = uuid::Uuid::now_v7();
-        store.init_run(id, "empty run").unwrap();
+        let run_uuid = uuid::Uuid::now_v7();
+        write_run_checkpoint(
+            &base_dir,
+            &dir_name,
+            run_uuid,
+            "empty run",
+            CheckpointStatus::Running,
+            0,
+            None,
+        );
 
         let (out, res) = capture(dir_name, false);
         assert!(res.is_ok(), "error: {:?}", res.err());

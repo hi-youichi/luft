@@ -293,7 +293,8 @@ async fn dispatch(
 mod tests {
     use super::*;
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
+    #[serial_test::serial]
     async fn dispatch_generate_unknown_backend() {
         let cli = Cli {
             command: Commands::Generate(GenerateArgs {
@@ -320,7 +321,8 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
+    #[serial_test::serial]
     async fn dispatch_generate_mock_backend_planner_exhausted() {
         let cli = Cli {
             command: Commands::Generate(GenerateArgs {
@@ -347,7 +349,8 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
+    #[serial_test::serial]
     async fn dispatch_run_unknown_backend() {
         let cli = Cli {
             command: Commands::Run(RunArgs {
@@ -387,7 +390,8 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
+    #[serial_test::serial]
     async fn dispatch_run_without_nl_or_workflow() {
         let cli = Cli {
             command: Commands::Run(RunArgs {
@@ -428,7 +432,8 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
+    #[serial_test::serial]
     async fn dispatch_workflows() {
         let cli = Cli {
             command: Commands::Workflows,
@@ -444,7 +449,8 @@ mod tests {
         .unwrap();
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
+    #[serial_test::serial]
     async fn dispatch_save() {
         let cli = Cli {
             command: Commands::Save {
@@ -468,7 +474,8 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
+    #[serial_test::serial]
     async fn dispatch_list() {
         let cli = Cli {
             command: Commands::List { limit: None },
@@ -484,7 +491,8 @@ mod tests {
         .unwrap();
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
+    #[serial_test::serial]
     async fn dispatch_status_not_found() {
         let cli = Cli {
             command: Commands::Status {
@@ -507,7 +515,8 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
+    #[serial_test::serial]
     async fn dispatch_logs_not_found() {
         let cli = Cli {
             command: Commands::Logs {

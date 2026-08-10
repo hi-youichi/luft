@@ -161,7 +161,7 @@ async fn run_session(
         }
         futures::future::Either::Right((_, stdin_task)) => {
             stdin_abort.abort();
-            let _ = stdin_task; // drop after abort
+            drop(stdin_task); // drop after abort
             let in_flight = in_flight.lock().await.clone();
             Err(in_flight)
         }
@@ -196,7 +196,5 @@ async fn connect_with_retry(url: &str) -> Result<WebSocketStream<MaybeTlsStream<
     Err(anyhow::Error::new(
         last_error.expect("connect retry must record an error"),
     ))
-    .context(format!(
-        "failed to connect to Luft MCP daemon"
-    ))
+    .context("failed to connect to Luft MCP daemon")
 }

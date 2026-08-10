@@ -854,7 +854,7 @@ mod tests {
         assert!(!result.has_more);
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn list_runs_after_execute() {
         let impl_ = make_impl();
         let script = "meta = { reasoning = \"t\", phases = {} }\nfunction main() phase(\"t\") local r = agent({ prompt = \"hi\", name = \"a1\" }) report({ok=r.ok}) end";
@@ -871,7 +871,7 @@ mod tests {
 
     // ── get_run_status ───────────────────────────────────────────────────
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn get_run_status_not_found() {
         let impl_ = make_impl();
         let req = GetRunStatusRequest {
@@ -881,7 +881,7 @@ mod tests {
         assert!(err.to_string().contains("run not found"));
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn get_run_status_has_rich_fields() {
         let impl_ = make_impl();
         let script = "meta = { reasoning = \"t\", phases = {} }\nfunction main() phase(\"only\") local r = agent({ prompt = \"hi\", name = \"a1\" }) report({ok=r.ok}) end";
@@ -901,7 +901,7 @@ mod tests {
 
     // ── get_run_events ───────────────────────────────────────────────────
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn get_run_events_not_found() {
         let impl_ = make_impl();
         let req = GetRunEventsRequest {
@@ -916,7 +916,7 @@ mod tests {
         assert!(!err.to_string().is_empty());
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn get_run_events_pagination_fields_present() {
         let impl_ = make_impl();
         let script = "meta = { reasoning = \"t\", phases = {} }\nfunction main() report({ok=true}) end";
@@ -951,7 +951,7 @@ mod tests {
 
     // ── cancel_run ───────────────────────────────────────────────────────
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn cancel_run_not_found() {
         let impl_ = make_impl();
         let req = CancelRunRequest {
@@ -963,7 +963,7 @@ mod tests {
 
     // ── start_workflow ───────────────────────────────────────────────────
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn execute_workflow_validation_error() {
         let impl_ = make_impl();
         let req = ExecuteWorkflowRequest {
@@ -977,7 +977,7 @@ mod tests {
         assert!(impl_.start_workflow(req).await.is_err());
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn execute_workflow_neither_script_nor_path() {
         let impl_ = make_impl();
         let req = ExecuteWorkflowRequest {
@@ -994,7 +994,7 @@ mod tests {
             .is_err_and(|e| e.to_string().contains("either 'script' or 'path'")));
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn execute_workflow_resume_exclusive_with_script() {
         let impl_ = make_impl();
         let req = ExecuteWorkflowRequest {
@@ -1011,7 +1011,7 @@ mod tests {
             .is_err_and(|e| e.to_string().contains("mutually exclusive")));
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn execute_workflow_concurrency_out_of_range() {
         let impl_ = make_impl();
         let req = ExecuteWorkflowRequest {

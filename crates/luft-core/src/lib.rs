@@ -44,6 +44,7 @@
 //! [`MockFileBackend`]: mock_file_backend::MockFileBackend
 
 pub mod contract;
+pub mod in_memory_backend;
 pub mod journal;
 pub mod run_dir;
 pub mod scheduler;
@@ -69,8 +70,8 @@ pub use scheduler::{
     BackendRegistry, JournalCallback, RetryPolicy, Scheduler, SchedulerConfig, SchedulerError,
 };
 pub use state::{
-    get_run_store, list_runs, AgentResultCache, AgentSessionCheckpoint, CheckpointStatus,
-    PhaseSummary, RunCheckpoint, RunStore,
+    list_run_dirs, AgentResultCache, AgentSessionCheckpoint, CheckpointBackend, CheckpointStatus,
+    PhaseSummary, RunCheckpoint,
 };
 
 #[cfg(feature = "testing")]

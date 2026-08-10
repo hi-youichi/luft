@@ -336,7 +336,7 @@ async fn run_auto_fix_loop(
         )?;
 
         let prepared =
-            svc::prepare(spec, registry, base_dir, &ctx, args.max_concurrency).await?;
+            svc::prepare(spec, registry, base_dir, &ctx, args.max_concurrency, None).await?;
 
         if spec.resuming {
             println!(
