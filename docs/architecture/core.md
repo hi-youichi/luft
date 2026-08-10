@@ -80,7 +80,7 @@ pub type EventSender = tokio::sync::broadcast::Sender<AgentEvent>;
 | Agent | `AgentStarted` · `AgentProgress` · `AgentDone` |
 | SDK 原语 | `ReportEmitted` · `BudgetSet` · `ParallelStarted/Done` · `WorkflowStarted/Done` · `ConvergeStarted/Done` |
 | Pipeline | `PipelineStarted` · `PipelineStageStarted` · `PipelineItemDone` · `PipelineDone` |
-| 基础设施 | `Log` · `AcpRaw` |
+| 基础设施 | `Log` · `AcpRaw` · `AcpRequest` |
 
 > 待补充: 事件大小限制、背压处理、消费者准入策略。
 

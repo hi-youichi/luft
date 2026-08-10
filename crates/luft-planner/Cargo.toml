@@ -9,9 +9,9 @@ keywords = ["luft", "agent", "orchestration", "lua", "planner"]
 categories = ["asynchronous"]
 
 [dependencies]
-luft-core = { path = "../luft-core", version = "0.4.3", features = ["testing"] }
-luft-runtime = { path = "../luft-runtime", version = "0.4.3" }
-luft-skills = { path = "../luft-skills", version = "0.4.3" }
+luft-core = { path = "../luft-core", version = "0.5", features = ["testing"] }
+luft-runtime = { path = "../luft-runtime", version = "0.5" }
+luft-skills = { path = "../luft-skills", version = "0.5" }
 mlua = { version = "0.10", features = ["lua54", "vendored", "async", "serialize", "send"] }
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["compat"] }

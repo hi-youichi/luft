@@ -352,6 +352,7 @@ cargo run -- run -w examples/architecture-report.lua -b opencode \
 |---|---|---|---|
 | Log | `"log"` | 脚本日志（`log()` 调用） | `level`: `trace`/`debug`/`info`/`warn`/`error`；`msg`: 日志消息 |
 | AcpRaw | `"acp_raw"` | ACP 协议原始 session/update（仅 opencode backend） | `kind`: 更新类型（如 `agent_message_chunk`）；`raw`: 完整 ACP 消息 |
+| AcpRequest | `"acp_request"` | ACP 客户端请求（如 session/resume、session/prompt） | `method`: ACP 方法；`raw`: 序列化后的请求参数 |
 
 ### span_id 配对规则
 

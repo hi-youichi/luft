@@ -39,8 +39,8 @@ RunCheckpoint struct 包含以下字段:
 使用 #[serde(rename_all = "lowercase")]:
 - Running -> "running" (可 resume)
 - Completed -> "completed" (不可 resume)
-- Failed -> "failed" (不可 resume)
-- Cancelled -> "cancelled" (不可 resume)
+- Failed -> "failed" (可 resume — 失败 agent 会被重试)
+- Cancelled -> "cancelled" (可 resume — 已完成 agent 跳过，其余正常执行)
 
 ### 2.3 AgentResultCache
 
@@ -287,7 +287,8 @@ RunStore 通过全局 DashMap 索引 (get_run_store()), 同一进程内同一 ru
 - save_checkpoint(cp) - 公开 API: 更新内存 + 落盘
 - upsert_agent_result(cache) - 直接插入/更新 agent 结果 (JournalStore 使用)
 - cancel() - 设置 Cancelled 状态并落盘; 支持跨进程 (从磁盘加载)
-- can_resume() - 检查 status == Running
+- reset_status_to_running() - 将终态 (Failed/Cancelled) 重置为 Running; 用于 resume failed/cancelled run
+- can_resume() - 检查 status != Completed
 - get_checkpoint() - 返回内存 checkpoint 的克隆
 - get_event_log() - 从 events.jsonl 回放全部事件
 
@@ -360,6 +361,8 @@ JournalStore 实现 JournalCallback trait, scheduler 在每个 agent 完成后�
 ### 5.5 AgentCacheKey
 
 确定性去重键, 用于 --resume 时跳过已完成的 agent 调用:
+
+**Resume cache 行为**: resume 时只有 `status == "ok"` 的 agent 会被跳过 (cache hit)。`error`/`timed_out`/`cancelled` 的 agent 视为 cache miss, 会被重新执行, 执行后覆盖旧缓存。这确保 failed/cancelled run 的 resume 只重跑失败部分。
 - hash: String - blake3 hex
 - prompt_preview: String - 前 80 字符 (人类可读)
 - phase_id: PhaseId
@@ -380,21 +383,21 @@ luft run --resume <run_dir_name> 的完整路径:
 
 轻量级只读检查, 不加载完整 checkpoint:
 - 读 checkpoint.json, 只解析 status 字段
-- Completed/Cancelled/Failed -> NotResumable(status)
-- Running 或 JSON 损坏或文件不存在 -> CanResume (宽松策略)
+- Completed -> NotResumable(status)
+- Failed/Cancelled/Running 或 JSON 损坏或文件不存在 -> CanResume (宽松策略)
 
 ### 6.3 resolve_resume (run.rs)
 
 完整恢复:
 1. 读取并反序列化 checkpoint.json
-2. 检查 status 必须为 Running, 否则 bail
+2. 检查 status 必须非 Completed (Failed/Cancelled/Running 均可 resume), 否则 bail
 3. 读取 workflow.lua (必须存在)
 4. 从 checkpoint.workflow_meta 恢复 PlanMeta
 5. 返回 RunSpec { resuming: true, ... }
 
 ### 6.4 prepare 中的 resume 逻辑
 
-如果 resuming: journal.open(spec.run_id) 加载 checkpoint + 重建索引
+如果 resuming: journal.open(spec.run_id) 加载 checkpoint + 重建索引, 然后 journal.reset_status_to_running() 将终态重置为 Running
 否则: 写入 workflow.lua + journal.init_run() 初始化 checkpoint
 
 resume 时注入已完成的 phase spans: 从 checkpoint.completed_spans 提取 name 列表, 调用 runtime.set_completed_spans()
@@ -410,7 +413,7 @@ resume 时注入已完成的 phase spans: 从 checkpoint.completed_spans 提取 
 ### 6.6 latest_resumable 与 find_resumable_by_task
 
 - latest_resumable(base_dir) - --resume 无参数时找最新有 checkpoint.json 的 run
-- find_resumable_by_task(task, base_dir) - 按 task 名称匹配, 返回最新的 Running run
+- find_resumable_by_task(task, base_dir) - 按 task 名称匹配, 返回最新的非 Completed run
 
 ## 7. 查询层 (query.rs)
 

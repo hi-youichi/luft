@@ -85,7 +85,9 @@ AgentEvent ──► journal (store.append_event)    → events.jsonl + checkpoi
            └─► EventWriter (write_event)        → SQLite tables (runs/agents/turns/...)
 ```
 
-- **AcpRaw 事件跳过**：原始 ACP 消息是实时观测流，不落盘。
+- **AcpRaw 事件跳过**：原始 ACP `session/update` 消息是实时观测流，不落盘。
+- **AcpRequest 事件落盘**：ACP 客户端发出的 `session/resume` 与 `session/prompt`
+  请求会作为请求方向事件落盘，包含 `method` 和序列化后的 `raw` 参数。
 - **SQLite 可选**：DB 打开失败时只 warn，journal + JSONL 保持为 source of truth。
 - **共用同一个 `RunStore`**：journal 与事件落盘共用实例，杜绝 split-brain checkpoint。
 
