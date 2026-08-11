@@ -1,7 +1,7 @@
 //! Backend factory: construct an [`AgentBackend`] by id, with auto-detection.
 
 use anyhow::Result;
-use luft::core::{AgentBackend, MockBackend, MockBehavior, TokenUsage};
+use luft::core::{AgentBackend, FailKind, MockBackend, MockBehavior, TokenUsage};
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -27,14 +27,21 @@ pub fn create_backend(
     model: Option<String>,
 ) -> Result<Arc<dyn AgentBackend>> {
     match id {
-        "mock" => Ok(Arc::new(MockBackend::new(
-            "mock",
-            vec![MockBehavior::Success {
-                output: serde_json::Value::Null,
-                tokens: TokenUsage::default(),
-                delay: std::time::Duration::from_millis(10),
-            }],
-        ))),
+        "mock" => {
+            let behavior = match std::env::var("LUFT_MOCK_BEHAVIOR").as_deref() {
+                Ok("hang") => MockBehavior::Hang,
+                Ok("error") => MockBehavior::Fail {
+                    kind: FailKind::Protocol,
+                    delay: Duration::ZERO,
+                },
+                _ => MockBehavior::Success {
+                    output: serde_json::json!({"result":"ok"}),
+                    tokens: TokenUsage::default(),
+                    delay: Duration::from_millis(10),
+                },
+            };
+            Ok(Arc::new(MockBackend::new("mock", vec![behavior])))
+        }
         "opencode" => Ok(Arc::new(luft::adapters::AcpAdapter::new(
             apply_acp_overrides(luft::adapters::AcpConfig {
                 emit_raw_events,

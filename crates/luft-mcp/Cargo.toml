@@ -28,8 +28,9 @@ tracing        = "0.1"
 
 [dev-dependencies]
 tempfile = "3"
-tokio     = { version = "1", features = ["rt", "rt-multi-thread", "sync", "io-util", "macros"] }
+tokio     = { version = "1", features = ["rt", "rt-multi-thread", "sync", "io-util", "macros", "net", "time"] }
 chrono   = { version = "0.4", features = ["serde", "clock"] }
 uuid     = { version = "1", features = ["v7", "serde"] }
+luft-core = { path = "../luft-core", version = "0.5", features = ["testing"] }
 luft-service = { path = "../luft-service", version = "0.5" }
 

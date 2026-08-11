@@ -233,7 +233,16 @@ async fn dispatch(
     cancel: tokio_util::sync::CancellationToken,
     sig_tx: broadcast::Sender<signal::SignalInfo>,
 ) -> Result<()> {
-    logging::init(cli.log_level.as_deref(), "warn", cli.log_file.as_deref())?;
+    let cfg = config::load_config();
+    let (cfg_level, cfg_file) = match &cfg {
+        Some(c) => (c.log.level.as_deref(), c.log.file.as_deref()),
+        None => (None, None),
+    };
+    logging::init(
+        cli.log_level.as_deref().or(cfg_level),
+        "warn",
+        cli.log_file.as_deref().or(cfg_file),
+    )?;
 
     match cli.command {
         Commands::Generate(args) => commands::generate::generate_script(args).await?,

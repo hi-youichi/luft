@@ -15,6 +15,9 @@ pub enum DaemonSubcommand {
         /// Run in foreground (blocks terminal). Internal use.
         #[arg(long)]
         foreground: bool,
+        /// Base directory for workflow run data. Defaults to `.luft/runs`.
+        #[arg(long)]
+        base_dir: Option<String>,
     },
     /// Stop the running daemon.
     Stop,
@@ -24,25 +27,34 @@ pub enum DaemonSubcommand {
 
 pub async fn run(cmd: DaemonSubcommand) -> Result<()> {
     match cmd {
-        DaemonSubcommand::Start { port, foreground, } => start(port, foreground).await,
+        DaemonSubcommand::Start { port, foreground, base_dir } => start(port, foreground, base_dir).await,
         DaemonSubcommand::Stop => stop().await,
         DaemonSubcommand::Status => status(),
     }
 }
 
-async fn start(port: u16, foreground: bool) -> Result<()> {
+async fn start(port: u16, foreground: bool, base_dir: Option<String>) -> Result<()> {
     if !foreground {
         return spawn_detached(port).await;
     }
-    run_foreground(port).await
+    run_foreground(port, base_dir).await
 }
 
-async fn run_foreground(port: u16) -> Result<()> {
-    let mut ids = backend::detect_available_backends();
-    if ids.is_empty() {
-        ids.push("mock");
-    }
+async fn run_foreground(port: u16, base_dir: Option<String>) -> Result<()> {
     let mut reg = luft_core::scheduler::BackendRegistry::new();
+
+    // When LUFT_MOCK_BEHAVIOR is set, force mock-only mode and skip backend
+    // detection. This gives deterministic, hermetic test environments.
+    let ids: Vec<&str> = if std::env::var("LUFT_MOCK_BEHAVIOR").is_ok() {
+        vec!["mock"]
+    } else {
+        let mut ids = backend::detect_available_backends();
+        if ids.is_empty() {
+            ids.push("mock");
+        }
+        ids
+    };
+
     for id in &ids {
         match backend::create_backend(id, false, None) {
             Ok(b) => {
@@ -54,7 +66,11 @@ async fn run_foreground(port: u16) -> Result<()> {
     }
 
     println!("Daemon backends: {}", ids.join(", "));
-    let luft = luft::Luft::builder().registry(reg).build()?;
+    let mut builder = luft::Luft::builder().registry(reg);
+    if let Some(dir) = &base_dir {
+        builder = builder.base_dir(dir);
+    }
+    let luft = builder.build()?;
 
     let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{port}")).await?;
     luft_daemon::serve(luft, listener).await

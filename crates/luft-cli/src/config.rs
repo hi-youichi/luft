@@ -11,6 +11,21 @@ pub struct LuftConfig {
     pub backend: BackendConfig,
     #[serde(default)]
     pub planner: PlannerConfig,
+    #[serde(default)]
+    pub log: LogConfig,
+}
+
+/// Program-log settings (`[log]` section).
+///
+/// Controls the global `tracing` subscriber installed by [`crate::logging::init`].
+/// Both fields are optional; when absent the CLI flag / `RUST_LOG` / built-in
+/// default chain applies as before.
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct LogConfig {
+    /// Log level: trace|debug|info|warn|error.
+    pub level: Option<String>,
+    /// Log file path. Default: `~/.luft/logs/luft.log`.
+    pub file: Option<PathBuf>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
