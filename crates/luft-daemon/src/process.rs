@@ -1,5 +1,7 @@
 //! PID file management for daemon discovery.
 
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
@@ -28,8 +30,7 @@ pub fn pid_file_path() -> PathBuf {
 pub fn write(pid: u32, addr: &str) -> Result<()> {
     let path = pid_file_path();
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("create dir {:?}", parent))?;
+        std::fs::create_dir_all(parent).with_context(|| format!("create dir {:?}", parent))?;
     }
     let content = PidFile {
         pid,
@@ -50,10 +51,10 @@ pub fn read() -> Result<Option<PidFile>> {
     if !path.exists() {
         return Ok(None);
     }
-    let data = std::fs::read_to_string(&path)
-        .with_context(|| format!("read pid file {:?}", path))?;
-    let parsed: PidFile = serde_json::from_str(&data)
-        .with_context(|| format!("parse pid file {:?}", path))?;
+    let data =
+        std::fs::read_to_string(&path).with_context(|| format!("read pid file {:?}", path))?;
+    let parsed: PidFile =
+        serde_json::from_str(&data).with_context(|| format!("parse pid file {:?}", path))?;
     Ok(Some(parsed))
 }
 
@@ -150,5 +151,63 @@ mod tests {
         std::env::set_var("LUFT_HOME", tmp.path());
         std::fs::write(pid_file_path(), "not json").unwrap();
         assert!(read().is_err());
+    }
+
+    #[test]
+    fn start_lock_is_exclusive_and_released() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("LUFT_HOME", tmp.path());
+
+        let first = try_acquire_start_lock().unwrap().expect("first lock");
+        assert!(try_acquire_start_lock().unwrap().is_none());
+
+        drop(first);
+        assert!(try_acquire_start_lock().unwrap().is_some());
+    }
+}
+
+/// Path used to serialize daemon auto-start across independent clients.
+pub fn start_lock_path() -> PathBuf {
+    pid_file_path().with_file_name("daemon.start.lock")
+}
+
+/// Try to acquire the cross-process auto-start lock.
+///
+/// The lock is represented by an atomically-created file. A stale lock is
+/// removed only when its recorded owner is no longer alive.
+pub fn try_acquire_start_lock() -> Result<Option<StartLock>> {
+    let path = start_lock_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).with_context(|| format!("create dir {:?}", parent))?;
+    }
+
+    match OpenOptions::new().write(true).create_new(true).open(&path) {
+        Ok(mut file) => {
+            writeln!(file, "{}", std::process::id())?;
+            Ok(Some(StartLock { path }))
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            let owner = std::fs::read_to_string(&path)
+                .ok()
+                .and_then(|s| s.trim().parse::<u32>().ok());
+            if owner.is_some_and(is_alive) {
+                Ok(None)
+            } else {
+                let _ = std::fs::remove_file(&path);
+                Ok(None)
+            }
+        }
+        Err(e) => Err(e.into()),
+    }
+}
+
+pub struct StartLock {
+    path: PathBuf,
+}
+
+impl Drop for StartLock {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
     }
 }

@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use tokio_tungstenite::connect_async;
 use tracing::{debug, warn};
 
@@ -23,7 +23,32 @@ pub async fn discover_or_autostart() -> Result<String> {
         warn!("stale daemon PID file, removing");
         process::remove();
     }
-    autostart().await
+    // Serialize the check-then-spawn sequence across separate MCP clients.
+    // Re-check after acquiring the lock because another process may have
+    // completed startup while we were waiting.
+    loop {
+        if let Some(lock) = process::try_acquire_start_lock()? {
+            let result = async {
+                if let Some(addr) = process::discover()? {
+                    if try_connect(&addr).await.is_ok() {
+                        return Ok(addr);
+                    }
+                    process::remove();
+                }
+                autostart().await
+            }
+            .await;
+            drop(lock);
+            return result;
+        }
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        if let Some(addr) = process::discover()? {
+            if try_connect(&addr).await.is_ok() {
+                return Ok(addr);
+            }
+        }
+    }
 }
 
 /// Spawn `luft daemon` as a child, then poll until it's reachable.
@@ -44,8 +69,6 @@ async fn autostart() -> Result<String> {
         .arg(port.to_string())
         .arg("--foreground");
 
-    
-
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
@@ -64,16 +87,32 @@ async fn autostart() -> Result<String> {
         cmd.creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP);
     }
 
-    cmd.stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
+    let log_path = process::pid_file_path()
+        .parent()
+        .context("daemon PID path has no parent")?
+        .join("daemon.log");
+    let log_file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .with_context(|| format!("open daemon log {:?}", log_path))?;
 
-    cmd.spawn()?;
+    cmd.stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::from(log_file.try_clone()?))
+        .stderr(std::process::Stdio::from(log_file));
+
+    let mut child = cmd.spawn()?;
 
     // Poll with backoff: total ~10s
     let mut delay = 50u64;
     for i in 0..40 {
         tokio::time::sleep(Duration::from_millis(delay)).await;
+        if let Some(status) = child.try_wait()? {
+            bail!(
+                "daemon exited before becoming ready: {status}; see {}",
+                log_path.display()
+            );
+        }
         match try_connect(&addr).await {
             Ok(()) => {
                 debug!(%addr, attempts = i, "daemon is reachable");
