@@ -14,6 +14,7 @@ pub type EventSender = tokio::sync::broadcast::Sender<AgentEvent>;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AgentEvent {
+    // ── Run / phase / agent lifecycle ───────────────────────────────
     RunStarted {
         run_id: RunId,
         task: String,
@@ -53,6 +54,7 @@ pub enum AgentEvent {
         agent_id: AgentId,
         delta: ProgressDelta,
     },
+    // ── ACP protocol observability ──────────────────────────────────
     /// Raw ACP `session/update` passthrough — the verbatim notification, surfaced
     /// for observability. Produced only when the ACP backend has raw events
     /// enabled. Not persisted to
@@ -121,7 +123,8 @@ pub enum AgentEvent {
         level: LogLevel,
         msg: String,
     },
-    // SDK primitive events (§ sdk-events.md) — DSL-granularity observability for
+    // ── SDK primitive events (§ sdk-events.md) ──────────────────────
+    // DSL-granularity observability for
     // the orchestration script. Blocking primitives emit a Started/Done span
     // pair correlated by `span_id`; instantaneous ones emit a single event.
     BudgetSet {
@@ -181,7 +184,7 @@ pub enum AgentEvent {
         elapsed_ms: u64,
         error: Option<String>,
     },
-    // M2 Pipeline events
+    // ── M2 Pipeline events ──────────────────────────────────────────
     PipelineStarted {
         run_id: RunId,
         total_stages: usize,

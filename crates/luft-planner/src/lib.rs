@@ -34,6 +34,7 @@
 //! script spawns at runtime.
 
 use luft_core::contract::backend::{AgentBackend, AgentTask, RunContext};
+use luft_core::contract::ids::RunId;
 use luft_core::contract::event::AgentEvent;
 use luft_runtime::{validate_script, validate_workflow};
 use std::path::PathBuf;
@@ -96,12 +97,26 @@ pub async fn plan_workflow(
     backend: Arc<dyn AgentBackend>,
     cfg: &PlannerConfig,
 ) -> Result<PlannedWorkflow, PlannerError> {
+    plan_workflow_with_run_id(task, backend, cfg, RunId::now_v7()).await
+}
+
+/// Generate a workflow while preserving the caller's run id in planner logs
+/// and the one-shot planner agent context.
+pub async fn plan_workflow_with_run_id(
+    task: &str,
+    backend: Arc<dyn AgentBackend>,
+    cfg: &PlannerConfig,
+    run_id: RunId,
+) -> Result<PlannedWorkflow, PlannerError> {
     let attempts = cfg.max_retries.max(1);
     let mut last_error = String::new();
+
+    tracing::info!(%run_id, attempts, "planner started");
 
     for attempt in 0..attempts {
         if attempt > 0 {
             tracing::warn!(
+                %run_id,
                 attempt,
                 total = attempts,
                 "retrying script generation after validation failure"
@@ -114,14 +129,14 @@ pub async fn plan_workflow(
             cfg.generate_mock,
         );
 
-        let output = run_planner_agent(&*backend, &prompt, cfg.planner_model.clone())
+        let output = run_planner_agent(&*backend, &prompt, cfg.planner_model.clone(), run_id)
             .await
             .map_err(PlannerError::Backend)?;
 
         let script = match extract_script(&output) {
             Some(s) => s,
             None => {
-                tracing::warn!(attempt, "agent output contained no lua code block");
+                tracing::warn!(%run_id, attempt, "agent output contained no lua code block");
                 last_error = "no ```lua code block (or text) found in agent output".to_string();
                 continue;
             }
@@ -132,7 +147,7 @@ pub async fn plan_workflow(
                 let mock_data = if cfg.generate_mock {
                     let mock = extract_mock_block(&output);
                     if mock.is_none() {
-                        tracing::warn!(attempt, "--with-mock requested but no mock block found");
+                        tracing::warn!(%run_id, attempt, "--with-mock requested but no mock block found");
                     }
                     mock
                 } else {
@@ -142,7 +157,7 @@ pub async fn plan_workflow(
                     Ok(Some(m)) => {
                         let v = meta::validate_meta(&m, &script);
                         for w in &v.warnings {
-                            tracing::warn!(warning = %w, "planner meta validation warning");
+                            tracing::warn!(%run_id, warning = %w, "planner meta validation warning");
                         }
                         if !v.is_valid() {
                             last_error = format!("meta validation failed: {}", v.errors.join("; "));
@@ -152,7 +167,7 @@ pub async fn plan_workflow(
                     }
                     Ok(None) => None,
                     Err(e) => {
-                        tracing::warn!(error = %e, "meta extraction failed; ignoring");
+                        tracing::warn!(%run_id, error = %e, "meta extraction failed; ignoring");
                         None
                     }
                 };
@@ -163,7 +178,7 @@ pub async fn plan_workflow(
                 });
             }
             Err(e) => {
-                tracing::warn!(attempt, error = %e, "generated script failed validation");
+                tracing::warn!(%run_id, attempt, error = %e, "generated script failed validation");
                 last_error = e;
             }
         }
@@ -180,11 +195,13 @@ async fn run_planner_agent(
     backend: &dyn AgentBackend,
     prompt: &str,
     model: Option<String>,
+    run_id: RunId,
 ) -> Result<serde_json::Value, String> {
-    // The planner needs a one-shot RunContext; events are discarded.
+    // The planner uses a one-shot RunContext, but preserves the caller's run
+    // id so planner logs can be correlated with the eventual workflow.
     let (events, _rx) = tokio::sync::broadcast::channel::<AgentEvent>(16);
     let ctx = RunContext {
-        run_id: uuid::Uuid::now_v7(),
+        run_id,
         cancel: tokio_util::sync::CancellationToken::new(),
         events,
     };
@@ -205,6 +222,7 @@ async fn run_planner_agent(
         workdir_override: None,
         session_id: None,
     };
+    tracing::info!(%run_id, agent_id = %task.agent_id, "planner agent starting");
     backend
         .run(task, ctx)
         .await

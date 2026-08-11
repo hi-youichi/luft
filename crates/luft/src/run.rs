@@ -51,9 +51,20 @@ pub async fn resolve_script(
     backend: Arc<dyn luft_core::contract::backend::AgentBackend>,
     planner_cfg: luft_planner::PlannerConfig,
 ) -> Result<String> {
+    resolve_script_with_run_id(source, backend, planner_cfg, RunId::now_v7()).await
+}
+
+/// Resolve a script while preserving the caller's run id for planner logs.
+pub async fn resolve_script_with_run_id(
+    source: ScriptSource<'_>,
+    backend: Arc<dyn luft_core::contract::backend::AgentBackend>,
+    planner_cfg: luft_planner::PlannerConfig,
+    run_id: RunId,
+) -> Result<String> {
     match source {
         ScriptSource::Nl(nl) => {
-            let planned = luft_planner::plan_workflow(nl, backend, &planner_cfg).await?;
+            let planned =
+                luft_planner::plan_workflow_with_run_id(nl, backend, &planner_cfg, run_id).await?;
             Ok(planned.script)
         }
         ScriptSource::Workflow(path) => std::fs::read_to_string(path)
@@ -75,7 +86,17 @@ pub async fn resolve_script_with_meta(
     backend: Arc<dyn AgentBackend>,
     planner_cfg: luft_planner::PlannerConfig,
 ) -> Result<ResolvedScript> {
-    let script = resolve_script(source, backend, planner_cfg).await?;
+    resolve_script_with_meta_with_run_id(source, backend, planner_cfg, RunId::now_v7()).await
+}
+
+/// Resolve a script and extract metadata while preserving the caller's run id.
+pub async fn resolve_script_with_meta_with_run_id(
+    source: ScriptSource<'_>,
+    backend: Arc<dyn AgentBackend>,
+    planner_cfg: luft_planner::PlannerConfig,
+    run_id: RunId,
+) -> Result<ResolvedScript> {
+    let script = resolve_script_with_run_id(source, backend, planner_cfg, run_id).await?;
     let meta = match luft_planner::extract_meta(&script) {
         Ok(m) => m,
         Err(e) => {
@@ -114,8 +135,9 @@ pub async fn resolve_fresh(
         ScriptSource::Workflow(p) => p.display().to_string(),
         ScriptSource::Script(_) => "luft workflow".to_string(),
     };
-    let resolved = resolve_script_with_meta(source, backend, planner_cfg).await?;
     let run_id = RunId::now_v7();
+    let resolved =
+        resolve_script_with_meta_with_run_id(source, backend, planner_cfg, run_id).await?;
     Ok(RunSpec {
         run_id,
         script: resolved.script,
@@ -337,7 +359,8 @@ pub async fn prepare(
                     spec.run_id,
                     &spec.task_label,
                     &spec.run_dir_name,
-                    serde_json::to_value(meta).unwrap(),
+                    serde_json::to_value(meta)
+                        .map_err(|e| anyhow::anyhow!("failed to serialize workflow metadata: {e}"))?,
                 )
                 .map_err(|e| anyhow::anyhow!("failed to init journal with meta: {}", e))?,
             None => journal

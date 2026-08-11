@@ -2,9 +2,10 @@
 //!
 //! **Frozen contracts, scheduler, journal, and state management.**
 //!
-//! `luft-core` is the zero-dependency foundation of the Luft ecosystem.
+//! `luft-core` is the dependency-aware foundation of the Luft ecosystem.
 //! It defines the traits, types, scheduling logic, and persistence interfaces
-//! that every other crate builds on. Types defined here are **frozen contracts**
+//! that every other crate builds on, while keeping those contracts centralized.
+//! Types defined here are **frozen contracts**
 //! — breaking changes are treated as major version bumps.
 //!
 //! ## Module Overview

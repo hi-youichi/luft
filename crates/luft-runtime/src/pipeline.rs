@@ -215,8 +215,8 @@ impl PipelineExecutor {
 
         let n_stages = self.config.stages.len();
         let n_items = items.len();
-        tracing::info!(n_stages, n_items, "pipeline execution started");
         let run_id = self.run_id;
+        tracing::info!(%run_id, n_stages, n_items, "pipeline execution started");
 
         // Emit PipelineStarted event
         self.emit(AgentEvent::PipelineStarted {
@@ -238,7 +238,7 @@ impl PipelineExecutor {
         for (stage_idx, stage) in self.config.stages.iter().enumerate() {
             let stage_start = Instant::now();
             let stage_label = stage.label.clone();
-            tracing::info!(stage_idx, %stage_label, items = current_items.len(), "pipeline stage started");
+            tracing::info!(%run_id, stage_idx, %stage_label, items = current_items.len(), "pipeline stage started");
 
             // Emit PipelineStageStarted event
             self.emit(AgentEvent::PipelineStageStarted {
@@ -284,14 +284,14 @@ impl PipelineExecutor {
                         item.stage_statuses[stage_idx] = StageStatus::Ok;
                     }
                     Err(e) => {
-                        tracing::warn!(item_index = item.index, stage_idx, error = %e, "pipeline item failed at stage");
+                        tracing::warn!(%run_id, item_index = item.index, stage_idx, error = %e, "pipeline item failed at stage");
                         item.stage_statuses[stage_idx] = StageStatus::Failed(e);
                     }
                 }
             }
 
             let stage_elapsed = stage_start.elapsed();
-            tracing::info!(stage_idx, %stage_label, elapsed_ms = stage_elapsed.as_millis() as u64, "pipeline stage finished");
+            tracing::info!(%run_id, stage_idx, %stage_label, elapsed_ms = stage_elapsed.as_millis() as u64, "pipeline stage finished");
         }
 
         let total_elapsed = pipeline_start.elapsed().as_millis() as u64;
@@ -334,6 +334,7 @@ impl PipelineExecutor {
         });
 
         tracing::info!(
+            %run_id,
             total_elapsed_ms = total_elapsed,
             ok = ok_count,
             failed = failed_count,

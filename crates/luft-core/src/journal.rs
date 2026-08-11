@@ -137,6 +137,13 @@ impl std::fmt::Debug for JournalStore {
 }
 
 impl JournalStore {
+    /// Read the run id already owned by the underlying checkpoint backend.
+    /// Maintenance and callback paths use this to keep logs correlated without
+    /// widening every JournalStore method signature.
+    fn current_run_id(&self) -> Option<RunId> {
+        self.inner.get_checkpoint().map(|checkpoint| checkpoint.run_id)
+    }
+
     /// Create a new journal store backed by the given `CheckpointBackend`.
     pub fn with_backend(backend: Arc<dyn CheckpointBackend>) -> Self {
         tracing::debug!(backend = ?backend, "creating journal store with backend");
@@ -256,7 +263,7 @@ impl JournalStore {
 
         // Persist the full cache entry directly to checkpoint disk (preserves cache_key_hash)
         if let Err(e) = self.inner.upsert_agent_result(&cache) {
-            tracing::warn!(%agent_id, error = %e, "failed to persist agent cache");
+            tracing::warn!(run_id = ?self.current_run_id(), %agent_id, error = %e, "failed to persist agent cache");
         }
 
         // Also append event to log (this triggers update_from_event which finds the existing hash)
@@ -326,7 +333,7 @@ impl JournalStore {
         }
 
         if let Err(e) = self.inner.upsert_agent_result(&cache) {
-            tracing::warn!(%agent_id, error = %e, "failed to persist agent result");
+            tracing::warn!(run_id = ?self.current_run_id(), %agent_id, error = %e, "failed to persist agent result");
         }
     }
 
@@ -356,7 +363,7 @@ impl JournalStore {
             resumable,
         };
         if let Err(e) = self.inner.upsert_agent_session(&session) {
-            tracing::warn!(%agent_id, error = %e, "failed to persist agent session");
+            tracing::warn!(run_id = ?self.current_run_id(), %agent_id, error = %e, "failed to persist agent session");
         }
     }
 
@@ -639,7 +646,7 @@ pub fn gc_runs(journal_dir: &Path, older_than: Duration) -> Result<usize, Journa
         );
 
         if is_old && is_terminal {
-            tracing::info!(dir = %dir_name, "GC: removing old terminal run");
+            tracing::info!(run_id = %checkpoint.run_id, dir = %dir_name, "GC: removing old terminal run");
             std::fs::remove_dir_all(&run_dir)?;
             cleaned += 1;
         }

@@ -8,9 +8,9 @@
 | `runtime/converge.rs` | 6 | 6 | 100% |
 | `runtime/pipeline.rs` | 1 | 1 | 100% |
 | `adapters/acp_adapter.rs` | 3 | 2 | 67% |
-| `runtime/sandbox.rs` | 3 | 0 | 0% |
+| `runtime/sandbox.rs` | 3 | 3 | 100% |
 | `core/journal.rs` | 5 | 0 | 0% |
-| **总计** | **~29** | **14** | **48%** |
+| **历史审计总计** | **~29** | **14** | **48%** |
 
 ## 2. 已修复的关键盲区
 
@@ -23,13 +23,14 @@
 | Converge 收敛退出 | 0 处日志 | `info!("converged: ...")` + run_id |
 | Converge 完成 | 0 处日志 | `info!("converge completed")` + rounds/findings/converged |
 
-## 3. 仍存的盲区
+## 3. 当前仍存的盲区
 
 | 路径 | 原因 |
 |------|------|
-| `Runtime::execute` 入口 | `Runtime` 结构体无 `run_id` 字段 |
-| `Planner::plan_workflow` | 函数签名无 `run_id` 参数 |
 | `Journal::flush/close` | 调用链未传递 `run_id` |
+
+已完成的上下文补充：`Runtime::execute` 主要生命周期日志已带 `run_id`；Planner 已增加带 caller `run_id` 的入口，同时保留旧 API 兼容包装。
+Journal 的 agent 持久化失败、GC 日志也从 checkpoint 恢复 `run_id`；`flush()` 是无操作兼容方法，不产生事件日志。
 
 ## 4. 日志级别约定
 

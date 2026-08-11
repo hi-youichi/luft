@@ -110,7 +110,7 @@ impl Runtime {
     /// MUST be called from a blocking context (not an async worker thread),
     /// because the SDK primitives call `Handle::block_on` internally.
     pub fn execute(&self, script: &str) -> Result<serde_json::Value, ScriptError> {
-        tracing::info!("begin script execution ({} bytes)", script.len());
+        tracing::info!(run_id = %self.run_id, bytes = script.len(), "begin script execution");
         let start = std::time::Instant::now();
 
         // Phase 1: exec top-level (meta assignment + function definitions only).
@@ -120,6 +120,7 @@ impl Runtime {
         let run_id = self.run_id;
         if let Some(meta) = extract_meta(&self.lua)? {
             tracing::info!(
+                run_id = %run_id,
                 phases = meta.phases.len(),
                 reasoning = %meta.reasoning,
                 "meta extracted"
@@ -130,7 +131,7 @@ impl Runtime {
                 phases: meta.phases.clone(),
             });
         } else {
-            tracing::warn!("no meta table found in script");
+            tracing::warn!(run_id = %run_id, "no meta table found in script");
         }
 
         // Phase 3: call main().
@@ -145,6 +146,7 @@ impl Runtime {
         let guard = self.report_sink.lock().unwrap();
         let has_report = guard.is_some();
         tracing::info!(
+            run_id = %self.run_id,
             elapsed_ms = elapsed.as_millis() as u64,
             has_report,
             "script execution finished"
