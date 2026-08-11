@@ -84,6 +84,10 @@ async fn handle_connection(
     }
 }
 
+// tungstenite's handshake callback fixes the response type, so boxing its
+// large error would change the adapter signature without reducing runtime
+// risk; keep the lint suppression local to this protocol boundary.
+#[allow(clippy::result_large_err)]
 async fn handle_websocket(
     buf_stream: BufStream<tokio::net::TcpStream>,
     peer: std::net::SocketAddr,
@@ -104,7 +108,6 @@ async fn handle_websocket(
                 }
             }
         }
-        #[allow(clippy::result_large_err)]
         Ok(res)
     })
     .await?;

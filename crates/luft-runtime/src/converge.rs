@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! Converge — adversarial verification and convergence logic.
 //!
 //! This module implements the core dynamic workflow convergence algorithm:
@@ -79,6 +78,10 @@ pub struct RoundStats {
 }
 
 /// Internal state during convergence iteration.
+// The Lua registrar is intentionally disabled until the converge execution
+// path is re-enabled in sandbox::register_sdk; keep its state model compiled
+// and tested without hiding unrelated dead-code warnings in this module.
+#[allow(dead_code)]
 struct ConvergeState {
     items: Vec<serde_json::Value>,
     findings: Vec<Finding>,
@@ -93,6 +96,7 @@ struct ConvergeState {
 /// 2. Has adversarial agents attempt to refute each finding
 /// 3. Votes on findings; survivors proceed to next round
 /// 4. Repeats until convergence or max rounds
+#[allow(dead_code)]
 pub async fn execute_convergence(
     items: Vec<serde_json::Value>,
     producer_prompt: &str,
@@ -239,6 +243,7 @@ pub async fn execute_convergence(
 }
 
 /// Generate findings for items using producer agents (parallel execution).
+#[allow(dead_code)]
 async fn generate_findings(
     items: &[serde_json::Value],
     prompt_template: &str,
@@ -295,6 +300,7 @@ async fn generate_findings(
 }
 
 /// Verify findings using adversarial agents.
+#[allow(dead_code)]
 async fn verify_findings(
     findings: &[Finding],
     prompt_template: &str,
@@ -388,6 +394,7 @@ struct ProducerStats {
 }
 
 #[derive(Debug, Default)]
+#[allow(dead_code)]
 struct VoteStats {
     approval_rate: f32,
 }
@@ -397,6 +404,7 @@ struct VoteStats {
 // ============================================================================
 
 /// Extract a string from mlua::String, converting to owned String to avoid borrow issues.
+#[allow(dead_code)]
 fn extract_string(s: mlua::String) -> Option<String> {
     s.to_str().ok().map(|s| s.to_string())
 }
@@ -405,6 +413,7 @@ fn extract_string(s: mlua::String) -> Option<String> {
 ///
 /// `handle` is the tokio runtime handle used to block on the async scheduler.
 /// It must be called from a blocking execution context (see `sandbox`).
+#[allow(dead_code)]
 pub fn register_converge_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<()> {
     let globals = lua.globals();
     let sched = cx.scheduler.clone();
@@ -551,6 +560,7 @@ pub fn register_converge_sdk(lua: &Lua, cx: &SdkContext) -> mlua::Result<()> {
 }
 
 /// Parse converge options from a Lua table.
+#[allow(dead_code)]
 fn parse_converge_options(options: &Table) -> ConvergeConfig {
     let mut config = ConvergeConfig::default();
 
@@ -579,6 +589,7 @@ fn parse_converge_options(options: &Table) -> ConvergeConfig {
 }
 
 /// Convert a Lua Value to serde_json::Value.
+#[allow(dead_code)]
 fn lua_value_to_json(value: &Value) -> Result<serde_json::Value, mlua::Error> {
     match value {
         Value::Nil => Ok(serde_json::Value::Null),
@@ -636,6 +647,7 @@ fn lua_value_to_json(value: &Value) -> Result<serde_json::Value, mlua::Error> {
 }
 
 /// Convert serde_json::Value to a Lua Value.
+#[allow(dead_code)]
 fn json_to_lua_value(lua: &Lua, json: serde_json::Value) -> Result<Value, mlua::Error> {
     match json {
         serde_json::Value::Null => Ok(Value::Nil),

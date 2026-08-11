@@ -353,3 +353,48 @@ pub fn get_report(run_dir: &str, base_dir: &Path) -> anyhow::Result<ReportStatus
     }
     Ok(ReportStatus::NotFound)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn base_dir() -> TempDir {
+        tempfile::tempdir().expect("create query test directory")
+    }
+
+    #[test]
+    fn list_runs_returns_empty_for_new_database() {
+        let dir = base_dir();
+
+        let runs = list_runs(dir.path()).expect("query empty database");
+
+        assert!(runs.is_empty());
+    }
+
+    #[test]
+    fn missing_run_returns_no_status_or_checkpoint() {
+        let dir = base_dir();
+
+        assert!(get_status("missing", dir.path()).unwrap().is_none());
+        assert!(get_checkpoint("missing", dir.path()).unwrap().is_none());
+    }
+
+    #[test]
+    fn missing_run_errors_when_querying_events_or_findings() {
+        let dir = base_dir();
+
+        assert!(get_events("missing", dir.path()).is_err());
+        assert!(get_findings("missing", dir.path()).is_err());
+    }
+
+    #[test]
+    fn missing_run_report_returns_not_found_error() {
+        let dir = base_dir();
+
+        match get_report("missing", dir.path()) {
+            Ok(_) => panic!("missing run should return an error"),
+            Err(error) => assert!(error.to_string().contains("run not found: missing")),
+        }
+    }
+}

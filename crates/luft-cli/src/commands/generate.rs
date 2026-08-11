@@ -181,7 +181,8 @@ mod tests {
     // NOTE: the `None` backend + detect_backend == "opencode" path (lines 20–21)
     // is not covered here because the AcpAdapter's spawn_blocking task escapes
     // the tokio test runtime and hangs indefinitely when the child process
-    // exits — the connect_timeout is not wired through to the ACP client.
+    // exits. The handshake timeout is wired through; this test gap is about
+    // child-process cleanup, not timeout configuration.
 
     // ── generate_script_with_backend (private) ───────────────────
 
@@ -253,4 +254,3 @@ mod tests {
         );
     }
 }
-

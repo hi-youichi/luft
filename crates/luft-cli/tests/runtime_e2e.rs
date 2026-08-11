@@ -254,7 +254,6 @@ async fn workflow_events_emitted() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn resume_skips_cached_agent() {
-    let dir = tempfile::tempdir().unwrap();
     let run_id = uuid::Uuid::now_v7();
     let journal = Arc::new(JournalStore::with_backend(Arc::new(
         luft_core::in_memory_backend::InMemoryBackend::new(),

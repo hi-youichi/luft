@@ -858,15 +858,13 @@ fn event_type_tag(event: &AgentEvent) -> &'static str {
 mod tests {
     use super::*;
     use crate::db::open_db;
-    use luft_core::contract::backend::AgentStatus;
-    use luft_core::contract::ids::TokenUsage;
     use tempfile::tempdir;
 
     fn make_backend(run_id: RunId) -> SqliteCheckpointBackend {
         let dir = tempdir().unwrap();
         let db_path = dir.path().join("test.db");
         // Keep tempdir alive for the test by leaking it
-        let dir_box = Box::leak(Box::new(dir));
+        Box::leak(Box::new(dir));
         let pool = tokio::runtime::Runtime::new().unwrap().block_on(async {
             open_db(&db_path).await.unwrap()
         });
