@@ -5,23 +5,60 @@
 //! field types we extract text/usage from the serialized JSON. Only the top-level
 //! [`SessionUpdate`] variant names are matched directly.
 
+use crate::WORKFLOW_VALIDATE_SCHEMA_TOOL;
 use agent_client_protocol::schema::SessionUpdate;
 use luft_core::contract::event::{AgentEvent, EventSender, ProgressDelta};
 use luft_core::contract::ids::{AgentId, RunId, TokenUsage};
 use serde::Serialize;
 use std::sync::Mutex;
 
-/// Shared sink for the streamed agent message + token usage of one run.
+/// Shared sink for the streamed agent message and final result metadata of one run.
 #[derive(Default)]
 pub struct Accumulator {
-    pub message: Mutex<String>,
-    pub tokens: Mutex<TokenUsage>,
-    pub workflow_validate_schema: Mutex<Option<serde_json::Value>>,
+    inner: Mutex<AccumulatorInner>,
 }
+
+#[derive(Default)]
+struct AccumulatorInner {
+    message: String,
+    tokens: TokenUsage,
+    workflow_validate_schema: Option<serde_json::Value>,
+}
+
+const STRUCTURED_OUTPUT_TOOL: &str = WORKFLOW_VALIDATE_SCHEMA_TOOL;
 
 impl Accumulator {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn append_message(&self, text: &str) {
+        self.inner.lock().unwrap().message.push_str(text);
+    }
+
+    pub fn set_tokens(&self, usage: TokenUsage) {
+        self.inner.lock().unwrap().tokens = usage;
+    }
+
+    pub fn set_structured_output(&self, value: serde_json::Value) {
+        self.inner.lock().unwrap().workflow_validate_schema = Some(value);
+    }
+
+    pub fn structured_output_submitted(&self) -> bool {
+        self.inner
+            .lock()
+            .unwrap()
+            .workflow_validate_schema
+            .is_some()
+    }
+
+    pub fn take_snapshot(&self) -> (String, TokenUsage, Option<serde_json::Value>) {
+        let mut inner = self.inner.lock().unwrap();
+        (
+            std::mem::take(&mut inner.message),
+            inner.tokens,
+            inner.workflow_validate_schema.take(),
+        )
     }
 }
 
@@ -58,7 +95,7 @@ pub fn handle_update(
         SessionUpdate::AgentMessageChunk(chunk) => {
             if let Some(text) = json_find_text(chunk) {
                 tracing::debug!(text_len = text.len(), "ACP agent_message_chunk");
-                acc.message.lock().unwrap().push_str(&text);
+                acc.append_message(&text);
                 emit(events, run_id, agent_id, ProgressDelta::Message { text });
             }
         }
@@ -84,19 +121,8 @@ pub fn handle_update(
 
             tracing::debug!(title = %title, kind = %kind, "ACP tool_call");
 
-            if title.contains("workflow_validate_schema") {
-                if let Some(raw_input) = v
-                    .get("rawInput")
-                    .cloned()
-                    .or_else(|| v.get("raw_input").cloned())
-                {
-                    if !raw_input.is_null()
-                        && !raw_input.as_object().map(|o| o.is_empty()).unwrap_or(false)
-                    {
-                        tracing::debug!(title = %title, "captured workflow_validate_schema rawInput from ToolCall");
-                        *acc.workflow_validate_schema.lock().unwrap() = Some(raw_input);
-                    }
-                }
+            if title.contains(STRUCTURED_OUTPUT_TOOL) {
+                capture_structured_output(&v, acc, "ToolCall");
             }
 
             emit(
@@ -114,19 +140,8 @@ pub fn handle_update(
 
             tracing::debug!(title = %find_str(&v, "title").unwrap_or_default(), path = ?find_str(&v, "path"), "ACP tool_call_update");
 
-            if title_contains(&v, "workflow_validate_schema") {
-                if let Some(raw_input) = v
-                    .get("rawInput")
-                    .cloned()
-                    .or_else(|| v.get("raw_input").cloned())
-                {
-                    if !raw_input.is_null()
-                        && !raw_input.as_object().map(|o| o.is_empty()).unwrap_or(false)
-                    {
-                        tracing::debug!("captured workflow_validate_schema rawInput from ToolCallUpdate");
-                        *acc.workflow_validate_schema.lock().unwrap() = Some(raw_input);
-                    }
-                }
+            if title_contains(&v, STRUCTURED_OUTPUT_TOOL) {
+                capture_structured_output(&v, acc, "ToolCallUpdate");
             }
 
             if let Some(path) = find_str(&v, "path") {
@@ -166,7 +181,7 @@ pub fn handle_update(
             output = usage.output,
             "token usage update"
         );
-        *acc.tokens.lock().unwrap() = usage;
+        acc.set_tokens(usage);
         emit(events, run_id, agent_id, ProgressDelta::Tokens { usage });
     } else {
         tracing::trace!("no usage data in update");
@@ -196,6 +211,31 @@ fn title_contains(v: &serde_json::Value, needle: &str) -> bool {
         .and_then(|t| t.as_str())
         .map(|s| s.contains(needle))
         .unwrap_or(false)
+}
+
+/// Capture a non-empty structured-output payload from an ACP tool update.
+///
+/// ACP has used both camelCase and snake_case for this field, so the fallback
+/// stays in one place instead of being duplicated across update variants.
+fn capture_structured_output(v: &serde_json::Value, acc: &Accumulator, source: &str) {
+    let Some(raw_input) = v
+        .get("rawInput")
+        .cloned()
+        .or_else(|| v.get("raw_input").cloned())
+    else {
+        return;
+    };
+
+    if raw_input.is_null()
+        || raw_input
+            .as_object()
+            .is_some_and(|object| object.is_empty())
+    {
+        return;
+    }
+
+    tracing::debug!(source, "captured workflow_validate_schema rawInput");
+    acc.set_structured_output(raw_input);
 }
 
 fn find_str(v: &serde_json::Value, key: &str) -> Option<String> {
@@ -349,30 +389,33 @@ mod tests {
     #[tokio::test]
     async fn accumulator_is_default() {
         let acc = Accumulator::new();
-        assert!(acc.message.lock().unwrap().is_empty());
-        assert_eq!(acc.tokens.lock().unwrap().input, 0);
-        assert_eq!(acc.tokens.lock().unwrap().output, 0);
+        let (message, tokens, structured) = acc.take_snapshot();
+        assert!(message.is_empty());
+        assert_eq!(tokens.input, 0);
+        assert_eq!(tokens.output, 0);
+        assert!(structured.is_none());
     }
 
     #[tokio::test]
     async fn accumulator_accumulates_text() {
         let acc = Accumulator::new();
-        acc.message.lock().unwrap().push_str("Hello");
-        acc.message.lock().unwrap().push_str(" World");
-        assert_eq!(acc.message.lock().unwrap().as_str(), "Hello World");
+        acc.append_message("Hello");
+        acc.append_message(" World");
+        assert_eq!(acc.take_snapshot().0, "Hello World");
     }
 
     #[tokio::test]
     async fn accumulator_tracks_tokens() {
         let acc = Accumulator::new();
-        *acc.tokens.lock().unwrap() = TokenUsage {
+        acc.set_tokens(TokenUsage {
             input: 100,
             output: 50,
             cache_read: 10,
             cache_write: 5,
-        };
-        assert_eq!(acc.tokens.lock().unwrap().input, 100);
-        assert_eq!(acc.tokens.lock().unwrap().output, 50);
+        });
+        let tokens = acc.take_snapshot().1;
+        assert_eq!(tokens.input, 100);
+        assert_eq!(tokens.output, 50);
     }
 
     #[test]
@@ -446,7 +489,7 @@ mod tests {
 
         handle_update(&update, RunId::nil(), AgentId::nil(), &acc, &tx, false);
 
-        assert_eq!(acc.message.lock().unwrap().as_str(), "hello");
+        assert_eq!(acc.take_snapshot().0, "hello");
         let evt = rx.try_recv().unwrap();
         match evt {
             AgentEvent::AgentProgress { delta, .. } => match delta {
@@ -468,7 +511,7 @@ mod tests {
 
         handle_update(&update, RunId::nil(), AgentId::nil(), &acc, &tx, false);
 
-        assert!(acc.message.lock().unwrap().is_empty());
+        assert!(acc.take_snapshot().0.is_empty());
         let evt = rx.try_recv().unwrap();
         match evt {
             AgentEvent::AgentProgress { delta, .. } => match delta {
@@ -508,7 +551,8 @@ mod tests {
             "kind": "rust",
             "summary": "collects agent results"
         });
-        let mut tc = agent_client_protocol::schema::ToolCall::new("tc-1", "workflow_validate_schema");
+        let mut tc =
+            agent_client_protocol::schema::ToolCall::new("tc-1", "workflow_validate_schema");
         tc.raw_input = Some(raw.clone());
 
         let update = SessionUpdate::ToolCall(tc);
@@ -517,8 +561,11 @@ mod tests {
 
         handle_update(&update, RunId::nil(), AgentId::nil(), &acc, &tx, false);
 
-        let captured = acc.workflow_validate_schema.lock().unwrap().clone();
-        assert!(captured.is_some(), "workflow_validate_schema should be captured");
+        let captured = acc.take_snapshot().2;
+        assert!(
+            captured.is_some(),
+            "workflow_validate_schema should be captured"
+        );
         assert_eq!(captured.unwrap(), raw);
     }
 
@@ -539,7 +586,7 @@ mod tests {
 
         handle_update(&update, RunId::nil(), AgentId::nil(), &acc, &tx, false);
 
-        let captured = acc.workflow_validate_schema.lock().unwrap().clone();
+        let captured = acc.take_snapshot().2;
         assert!(
             captured.is_some(),
             "workflow_validate_schema should be captured via ToolCallUpdate"
@@ -549,7 +596,8 @@ mod tests {
 
     #[test]
     fn handle_update_workflow_validate_schema_empty_raw_input_not_captured() {
-        let mut tc = agent_client_protocol::schema::ToolCall::new("tc-1", "workflow_validate_schema");
+        let mut tc =
+            agent_client_protocol::schema::ToolCall::new("tc-1", "workflow_validate_schema");
         tc.raw_input = Some(serde_json::json!({}));
 
         let update = SessionUpdate::ToolCall(tc);
@@ -558,7 +606,7 @@ mod tests {
 
         handle_update(&update, RunId::nil(), AgentId::nil(), &acc, &tx, false);
 
-        let captured = acc.workflow_validate_schema.lock().unwrap().clone();
+        let captured = acc.take_snapshot().2;
         assert!(captured.is_none(), "empty rawInput should not be captured");
     }
 
@@ -573,7 +621,7 @@ mod tests {
 
         handle_update(&update, RunId::nil(), AgentId::nil(), &acc, &tx, false);
 
-        let captured = acc.workflow_validate_schema.lock().unwrap().clone();
+        let captured = acc.take_snapshot().2;
         assert!(
             captured.is_none(),
             "non-workflow_validate_schema tool should not capture"
@@ -654,7 +702,7 @@ mod tests {
             );
         }
 
-        assert_eq!(acc.message.lock().unwrap().as_str(), "hello world!");
+        assert_eq!(acc.take_snapshot().0, "hello world!");
     }
 
     #[test]

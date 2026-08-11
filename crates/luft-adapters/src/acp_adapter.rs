@@ -76,6 +76,7 @@ const POST_SUBMISSION_IDLE: Duration = Duration::from_secs(5);
 /// what [`stop_reason_as_str`] would have produced for a real `EndTurn`
 /// response. This is the **single source of truth** for the synthesized
 /// spelling; do not inline `"EndTurn"` elsewhere.
+#[cfg(test)]
 const STOP_REASON_END_TURN: &str = "EndTurn";
 
 /// What caused `idle_watchdog` to return.
@@ -96,7 +97,7 @@ enum WatchdogOutcome {
 /// single struct keeps the closure call sites thin and easy to scan.
 struct SessionState {
     acc: Arc<update_mapper::Accumulator>,
-    stop_holder: Arc<Mutex<Option<String>>>,
+    stop_holder: Arc<Mutex<Option<result_collector::StopReasonKind>>>,
     events: EventSender,
     activity_tx: tokio::sync::mpsc::UnboundedSender<()>,
     activity_rx: tokio::sync::mpsc::UnboundedReceiver<()>,
@@ -629,9 +630,9 @@ fn handle_session_update(
     // Capture pre-update submission state so we can detect the None → Some
     // transition on `workflow_validate_schema` and signal the idle watchdog to switch
     // to a short, non-resetting timer.
-    let was_submitted = acc.workflow_validate_schema.lock().unwrap().is_some();
+    let was_submitted = acc.structured_output_submitted();
     update_mapper::handle_update(&n.update, run_id, agent_id, acc, events, emit_raw);
-    if !was_submitted && acc.workflow_validate_schema.lock().unwrap().is_some() {
+    if !was_submitted && acc.structured_output_submitted() {
         submit_signal.notify_one();
         tracing::debug!(
             "ACP workflow_validate_schema captured; watchdog switching to post-submission mode"
@@ -683,7 +684,7 @@ struct HandshakePromptContext<'a> {
     events: &'a EventSender,
     run_id: RunId,
     agent_id: AgentId,
-    stop_holder: &'a Arc<Mutex<Option<String>>>,
+    stop_holder: &'a Arc<Mutex<Option<result_collector::StopReasonKind>>>,
     session_id: &'a Arc<Mutex<Option<String>>>,
     resume_session_id: Option<&'a str>,
     requested_session_id: Option<&'a str>,
@@ -1038,11 +1039,11 @@ fn emit_acp_request<T: serde::Serialize>(
 }
 
 /// Persist a `PromptResponse` into shared state: the `StopReason` is stored
-/// as a stable string via [`stop_reason_as_str`]; token usage is folded into
+/// as a stable typed value; token usage is folded into
 /// the accumulator.
 fn record_prompt_result(
     pr: &agent_client_protocol::schema::PromptResponse,
-    stop_holder: &Arc<Mutex<Option<String>>>,
+    stop_holder: &Arc<Mutex<Option<result_collector::StopReasonKind>>>,
     #[cfg_attr(
         not(feature = "unstable_end_turn_token_usage"),
         allow(unused_variables)
@@ -1050,7 +1051,7 @@ fn record_prompt_result(
     acc: &Arc<update_mapper::Accumulator>,
 ) {
     tracing::debug!(stop_reason = ?pr.stop_reason, "ACP prompt complete");
-    *stop_holder.lock().unwrap() = Some(stop_reason_as_str(&pr.stop_reason));
+    *stop_holder.lock().unwrap() = Some(stop_reason_kind(&pr.stop_reason));
     #[cfg(feature = "unstable_end_turn_token_usage")]
     {
         if let Some(u) = pr.usage.as_ref() {
@@ -1060,30 +1061,31 @@ fn record_prompt_result(
                 total = u.total_tokens,
                 "ACP prompt usage"
             );
-            *acc.tokens.lock().unwrap() = TokenUsage {
+            acc.set_tokens(TokenUsage {
                 input: u.input_tokens,
                 output: u.output_tokens,
                 cache_read: u.cached_read_tokens.unwrap_or(0),
                 cache_write: u.cached_write_tokens.unwrap_or(0),
-            };
+            });
         }
     }
 }
 
-/// Convert an ACP [`StopReason`] into a stable PascalCase string. This is the
-/// **single source of truth** for the spelling used in [`stop_holder`] and in
-/// the synthesized post-submission timeout value ([`STOP_REASON_END_TURN`]).
-/// Renaming a variant or adding a new one forces an intentional decision
-/// here rather than silently relying on the derived `Debug` format.
+/// Convert an ACP [`StopReason`] into Luft's stable typed representation.
+#[cfg(test)]
 fn stop_reason_as_str(r: &StopReason) -> String {
+    stop_reason_kind(r).as_str().to_string()
+}
+
+fn stop_reason_kind(r: &StopReason) -> result_collector::StopReasonKind {
     match r {
-        StopReason::EndTurn => STOP_REASON_END_TURN.to_string(),
-        StopReason::MaxTokens => "MaxTokens".to_string(),
-        StopReason::MaxTurnRequests => "MaxTurnRequests".to_string(),
-        StopReason::Refusal => "Refusal".to_string(),
-        StopReason::Cancelled => "Cancelled".to_string(),
+        StopReason::EndTurn => result_collector::StopReasonKind::EndTurn,
+        StopReason::MaxTokens => result_collector::StopReasonKind::MaxTokens,
+        StopReason::MaxTurnRequests => result_collector::StopReasonKind::MaxTurnRequests,
+        StopReason::Refusal => result_collector::StopReasonKind::Refusal,
+        StopReason::Cancelled => result_collector::StopReasonKind::Cancelled,
         #[allow(unreachable_patterns)]
-        other => format!("{other:?}"),
+        _ => result_collector::StopReasonKind::Unknown,
     }
 }
 
@@ -1095,7 +1097,7 @@ fn stop_reason_as_str(r: &StopReason) -> String {
 fn handle_watchdog_outcome(
     res: WatchdogOutcome,
     child: &mut tokio::process::Child,
-    stop_holder: &Arc<Mutex<Option<String>>>,
+    stop_holder: &Arc<Mutex<Option<result_collector::StopReasonKind>>>,
     idle_timeout: Duration,
 ) -> Result<(), BackendError> {
     let _ = child.start_kill();
@@ -1128,7 +1130,7 @@ fn handle_watchdog_outcome(
             // the connection already wrote.
             let mut guard = stop_holder.lock().unwrap();
             if guard.is_none() {
-                *guard = Some(STOP_REASON_END_TURN.to_string());
+                *guard = Some(result_collector::StopReasonKind::EndTurn);
             }
             Ok(())
         }
@@ -1167,11 +1169,16 @@ fn is_connection_closed(s: &str) -> bool {
 
 /// Build the final [`AgentResult`] from the accumulator and stop-reason slot.
 fn collect_session_result(task: &AgentTask, state: &SessionState) -> AgentResult {
-    let stop = state.stop_holder.lock().unwrap().take().unwrap_or_default();
-    let message = std::mem::take(&mut *state.acc.message.lock().unwrap());
-    let tokens = *state.acc.tokens.lock().unwrap();
-    let structured = state.acc.workflow_validate_schema.lock().unwrap().take();
-    let mut result = result_collector::collect(task, &stop, message, tokens, structured);
+    let stop = state
+        .stop_holder
+        .lock()
+        .unwrap()
+        .take()
+        .unwrap_or(result_collector::StopReasonKind::Unknown);
+    let (message, tokens, structured) = state.acc.take_snapshot();
+    let mut result = result_collector::collect_with_stop_reason(
+        task, stop, message, tokens, structured,
+    );
     result.session_id = state.session_id.lock().unwrap().clone();
     result
 }
@@ -1541,9 +1548,8 @@ mod tests {
     // ── stop_reason_as_str (F5 / F6) ────────────────────────────────
     //
     // The persisted stop_reason string is consumed by
-    // `result_collector::status_from_stop_reason`, which substring-matches
-    // on the PascalCase Debug-derived spelling. We pin the spelling here
-    // so that any future change to the helper is intentional.
+    // The string helper remains only as a compatibility diagnostic; runtime
+    // collection now passes the typed StopReasonKind directly.
 
     #[test]
     fn stop_reason_as_str_end_turn_matches_constant() {
@@ -1576,7 +1582,8 @@ mod tests {
 
     #[tokio::test]
     async fn handle_watchdog_post_submission_synthesizes_end_turn() {
-        let stop: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+        let stop: Arc<Mutex<Option<result_collector::StopReasonKind>>> =
+            Arc::new(Mutex::new(None));
         // We don't have a real child here; use a dummy. We only care that
         // `start_kill` doesn't panic on a process we never spawned.
         let mut child = match tokio::process::Command::new("cmd")
@@ -1601,12 +1608,16 @@ mod tests {
             r.is_ok(),
             "post-submission outcome should fall through to collect"
         );
-        assert_eq!(stop.lock().unwrap().as_deref(), Some("EndTurn"));
+        assert_eq!(
+            *stop.lock().unwrap(),
+            Some(result_collector::StopReasonKind::EndTurn)
+        );
     }
 
     #[tokio::test]
     async fn handle_watchdog_post_submission_preserves_existing_stop() {
-        let stop: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(Some("Cancelled".into())));
+        let stop: Arc<Mutex<Option<result_collector::StopReasonKind>>> =
+            Arc::new(Mutex::new(Some(result_collector::StopReasonKind::Cancelled)));
         let mut child = match tokio::process::Command::new("cmd")
             .arg("/C")
             .arg("exit 0")
@@ -1627,12 +1638,16 @@ mod tests {
         );
         assert!(r.is_ok());
         // Must not clobber a stop reason the connection already wrote.
-        assert_eq!(stop.lock().unwrap().as_deref(), Some("Cancelled"));
+        assert_eq!(
+            *stop.lock().unwrap(),
+            Some(result_collector::StopReasonKind::Cancelled)
+        );
     }
 
     #[tokio::test]
     async fn handle_watchdog_pre_idle_returns_timeout_error() {
-        let stop: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+        let stop: Arc<Mutex<Option<result_collector::StopReasonKind>>> =
+            Arc::new(Mutex::new(None));
         let mut child = match tokio::process::Command::new("cmd")
             .arg("/C")
             .arg("exit 0")
@@ -1656,7 +1671,8 @@ mod tests {
 
     #[tokio::test]
     async fn handle_watchdog_channel_closed_returns_timeout_error() {
-        let stop: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+        let stop: Arc<Mutex<Option<result_collector::StopReasonKind>>> =
+            Arc::new(Mutex::new(None));
         let mut child = match tokio::process::Command::new("cmd")
             .arg("/C")
             .arg("exit 0")

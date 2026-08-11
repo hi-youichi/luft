@@ -9,8 +9,47 @@ use luft_core::contract::ids::TokenUsage;
 
 /// Assemble an [`AgentResult`] from a finished ACP run.
 ///
-/// `stop_reason` is the `Debug` string of the ACP `StopReason` (matched loosely
-/// so we don't depend on exact macro-generated variant names).
+/// Stable, typed interpretation of an ACP stop reason.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StopReasonKind {
+    EndTurn,
+    Cancelled,
+    MaxTokens,
+    MaxTurnRequests,
+    Refusal,
+    Unknown,
+}
+
+impl StopReasonKind {
+    /// Preserve the historical spelling used by diagnostics and tests.
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::EndTurn => "EndTurn",
+            Self::Cancelled => "Cancelled",
+            Self::MaxTokens => "MaxTokens",
+            Self::MaxTurnRequests => "MaxTurnRequests",
+            Self::Refusal => "Refusal",
+            Self::Unknown => "Unknown",
+        }
+    }
+}
+
+/// Assemble an [`AgentResult`] from a typed stop reason.
+pub(crate) fn collect_with_stop_reason(
+    task: &AgentTask,
+    stop_reason: StopReasonKind,
+    message: String,
+    tokens: TokenUsage,
+    workflow_validate_schema: Option<serde_json::Value>,
+) -> AgentResult {
+    collect_inner(task, stop_reason, message, tokens, workflow_validate_schema)
+}
+
+/// Assemble an [`AgentResult`] from a finished ACP run.
+///
+/// This compatibility wrapper accepts the historical stable spelling. New
+/// internal call sites should use [`collect_with_stop_reason`].
+#[cfg(test)]
 pub fn collect(
     task: &AgentTask,
     stop_reason: &str,
@@ -18,10 +57,28 @@ pub fn collect(
     tokens: TokenUsage,
     workflow_validate_schema: Option<serde_json::Value>,
 ) -> AgentResult {
+    let reason = match stop_reason {
+        "EndTurn" => StopReasonKind::EndTurn,
+        "Cancelled" => StopReasonKind::Cancelled,
+        "MaxTokens" => StopReasonKind::MaxTokens,
+        "MaxTurnRequests" => StopReasonKind::MaxTurnRequests,
+        "Refusal" => StopReasonKind::Refusal,
+        _ => StopReasonKind::Unknown,
+    };
+    collect_inner(task, reason, message, tokens, workflow_validate_schema)
+}
+
+fn collect_inner(
+    task: &AgentTask,
+    stop_reason: StopReasonKind,
+    message: String,
+    tokens: TokenUsage,
+    workflow_validate_schema: Option<serde_json::Value>,
+) -> AgentResult {
     let status = status_from_stop_reason(stop_reason);
     let findings = extract_findings_from_output(&message);
-    tracing::debug!(agent_id = %task.agent_id, ?status, findings = findings.len(), tokens = tokens.total(), stop_reason, has_structured = workflow_validate_schema.is_some(), "collecting agent result");
-let output = if let Some(json) = workflow_validate_schema {
+    tracing::debug!(agent_id = %task.agent_id, ?status, findings = findings.len(), tokens = tokens.total(), stop_reason = stop_reason.as_str(), has_structured = workflow_validate_schema.is_some(), "collecting agent result");
+    let output = if let Some(json) = workflow_validate_schema {
         normalize_structured_output(json)
     } else if !findings.is_empty() {
         serde_json::to_value(&findings).unwrap_or(serde_json::Value::Null)
@@ -55,14 +112,14 @@ let output = if let Some(json) = workflow_validate_schema {
     }
 }
 
-fn status_from_stop_reason(s: &str) -> AgentStatus {
-    if s.contains("EndTurn") {
-        AgentStatus::Ok
-    } else if s.contains("Cancel") {
-        AgentStatus::Cancelled
-    } else {
-        // MaxTokens / MaxTurns / Refused / unknown → treat as error.
-        AgentStatus::Error
+fn status_from_stop_reason(reason: StopReasonKind) -> AgentStatus {
+    match reason {
+        StopReasonKind::EndTurn => AgentStatus::Ok,
+        StopReasonKind::Cancelled => AgentStatus::Cancelled,
+        StopReasonKind::MaxTokens
+        | StopReasonKind::MaxTurnRequests
+        | StopReasonKind::Refusal
+        | StopReasonKind::Unknown => AgentStatus::Error,
     }
 }
 

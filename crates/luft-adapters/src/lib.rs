@@ -45,6 +45,9 @@ mod permission;
 mod result_collector;
 mod update_mapper;
 
+/// MCP tool used to submit a workflow's structured result.
+pub(crate) const WORKFLOW_VALIDATE_SCHEMA_TOOL: &str = "workflow_validate_schema";
+
 pub use acp_adapter::{AcpAdapter, AcpConfig};
 
 use luft_core::BackendRegistry;
